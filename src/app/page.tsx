@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
 
 type HomeProps = {
@@ -40,7 +41,13 @@ export default async function Home({ searchParams }: HomeProps) {
     <div className="site-shell">
       <header className="header">
         <Link className="wordmark" href="/" aria-label="NAGU BOT 홈">
-          <span className="wordmark-symbol" aria-hidden="true">N</span>
+          <Image
+            className="wordmark-symbol"
+            src={naguBotLogo}
+            alt=""
+            aria-hidden="true"
+            sizes="34px"
+          />
           <span>NAGU BOT</span>
         </Link>
         <span className={`header-status ${connected ? "is-connected" : ""}`}>

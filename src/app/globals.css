@@ -58,12 +58,8 @@ body {
 .wordmark-symbol {
   width: 34px;
   height: 34px;
-  display: grid;
-  place-items: center;
   border-radius: 50%;
-  color: white;
-  background: var(--accent);
-  font-size: 18px;
+  object-fit: cover;
 }
 
 .header-status {
