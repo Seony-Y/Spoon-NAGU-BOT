@@ -16,6 +16,37 @@ type SessionRow = {
   id_hash: string;
   token_payload: string;
   bot_enabled: number;
+  blocked: number;
+};
+
+type BotSettingsRow = {
+  greeting_message: string;
+  commands_enabled: number;
+  welcome_enabled: number;
+  donation_enabled: number;
+  heart_enabled: number;
+  commands_initialized: number;
+};
+
+export type BotSettings = {
+  greetingMessage: string;
+  commandsEnabled: boolean;
+  welcomeEnabled: boolean;
+  donationEnabled: boolean;
+  heartEnabled: boolean;
+};
+
+export type BotCommand = {
+  command: string;
+  response: string;
+};
+
+export type AdminSession = {
+  sessionKey: string;
+  botEnabled: boolean;
+  blocked: boolean;
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type EnabledBotSession = {
@@ -27,23 +58,13 @@ const globalForDatabase = globalThis as typeof globalThis & {
   naguSessionDatabase?: DatabaseSync;
 };
 
-function getDatabase() {
-  if (globalForDatabase.naguSessionDatabase) {
-    return globalForDatabase.naguSessionDatabase;
-  }
-
-  const databasePath = resolve(
-    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH || ".data/nagu.db",
-  );
-  mkdirSync(dirname(databasePath), { recursive: true });
-
-  const database = new DatabaseSync(databasePath);
-  database.exec("PRAGMA journal_mode = WAL");
+function migrateDatabase(database: DatabaseSync) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS oauth_sessions (
       id_hash TEXT PRIMARY KEY,
       token_payload TEXT NOT NULL,
       bot_enabled INTEGER NOT NULL DEFAULT 0,
+      blocked INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
@@ -55,6 +76,43 @@ function getDatabase() {
   if (!columns.some((column) => column.name === "bot_enabled")) {
     database.exec("ALTER TABLE oauth_sessions ADD COLUMN bot_enabled INTEGER NOT NULL DEFAULT 0");
   }
+  if (!columns.some((column) => column.name === "blocked")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS bot_settings (
+      session_key TEXT PRIMARY KEY,
+      greeting_message TEXT NOT NULL DEFAULT '{nickname}님, 어서 오세요!',
+      commands_enabled INTEGER NOT NULL DEFAULT 1,
+      welcome_enabled INTEGER NOT NULL DEFAULT 1,
+      donation_enabled INTEGER NOT NULL DEFAULT 1,
+      heart_enabled INTEGER NOT NULL DEFAULT 1,
+      commands_initialized INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS bot_commands (
+      session_key TEXT NOT NULL,
+      command TEXT NOT NULL,
+      response TEXT NOT NULL,
+      PRIMARY KEY (session_key, command)
+    );
+  `);
+}
+
+function getDatabase() {
+  if (globalForDatabase.naguSessionDatabase) {
+    migrateDatabase(globalForDatabase.naguSessionDatabase);
+    return globalForDatabase.naguSessionDatabase;
+  }
+
+  const databasePath = resolve(
+    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH || ".data/nagu.db",
+  );
+  mkdirSync(dirname(databasePath), { recursive: true });
+
+  const database = new DatabaseSync(databasePath);
+  database.exec("PRAGMA journal_mode = WAL");
+  migrateDatabase(database);
 
   globalForDatabase.naguSessionDatabase = database;
   return database;
@@ -116,7 +174,10 @@ export function updateSession(sessionId: string, token: SpoonToken) {
 }
 
 export function deleteSessionByKey(sessionKey: string) {
-  getDatabase()
+  const database = getDatabase();
+  database.prepare("DELETE FROM bot_commands WHERE session_key = ?").run(sessionKey);
+  database.prepare("DELETE FROM bot_settings WHERE session_key = ?").run(sessionKey);
+  database
     .prepare("DELETE FROM oauth_sessions WHERE id_hash = ?")
     .run(sessionKey);
 }
@@ -127,7 +188,7 @@ export function deleteSession(sessionId: string) {
 
 export function setBotEnabled(sessionId: string, enabled: boolean) {
   const result = getDatabase()
-    .prepare("UPDATE oauth_sessions SET bot_enabled = ?, updated_at = ? WHERE id_hash = ?")
+    .prepare("UPDATE oauth_sessions SET bot_enabled = ?, updated_at = ? WHERE id_hash = ? AND blocked = 0")
     .run(enabled ? 1 : 0, Date.now(), getSessionKey(sessionId));
   return result.changes > 0;
 }
@@ -147,11 +208,137 @@ export function isBotEnabled(sessionId: string) {
 
 export function listEnabledBotSessions(): EnabledBotSession[] {
   const rows = getDatabase()
-    .prepare("SELECT id_hash, token_payload, bot_enabled FROM oauth_sessions WHERE bot_enabled = 1")
+    .prepare("SELECT id_hash, token_payload, bot_enabled, blocked FROM oauth_sessions WHERE bot_enabled = 1 AND blocked = 0")
     .all() as SessionRow[];
 
   return rows.flatMap((row) => {
     const token = decryptStoredToken(row.id_hash, row.token_payload);
     return token ? [{ sessionKey: row.id_hash, token }] : [];
   });
+}
+
+function ensureBotSettings(sessionKey: string) {
+  const database = getDatabase();
+  database.prepare("INSERT OR IGNORE INTO bot_settings (session_key) VALUES (?)").run(sessionKey);
+  const settings = database.prepare("SELECT * FROM bot_settings WHERE session_key = ?")
+    .get(sessionKey) as BotSettingsRow;
+
+  if (settings.commands_initialized === 0) {
+    const insert = database.prepare(
+      "INSERT OR IGNORE INTO bot_commands (session_key, command, response) VALUES (?, ?, ?)",
+    );
+    insert.run(sessionKey, "!안녕", "{nickname}님, 반가워요!");
+    insert.run(sessionKey, "!명령어", "사용 가능한 명령어를 확인해 주세요.");
+    database.prepare("UPDATE bot_settings SET commands_initialized = 1 WHERE session_key = ?")
+      .run(sessionKey);
+  }
+
+  return settings;
+}
+
+export function getBotSettingsByKey(sessionKey: string): BotSettings {
+  const row = ensureBotSettings(sessionKey);
+  return {
+    greetingMessage: row.greeting_message,
+    commandsEnabled: row.commands_enabled === 1,
+    welcomeEnabled: row.welcome_enabled === 1,
+    donationEnabled: row.donation_enabled === 1,
+    heartEnabled: row.heart_enabled === 1,
+  };
+}
+
+export function getBotSettings(sessionId: string) {
+  return getBotSettingsByKey(getSessionKey(sessionId));
+}
+
+export function updateBotSettings(sessionId: string, settings: BotSettings) {
+  ensureBotSettings(getSessionKey(sessionId));
+  getDatabase().prepare(`
+    UPDATE bot_settings
+    SET greeting_message = ?, commands_enabled = ?, welcome_enabled = ?, donation_enabled = ?, heart_enabled = ?
+    WHERE session_key = ?
+  `).run(
+    settings.greetingMessage,
+    settings.commandsEnabled ? 1 : 0,
+    settings.welcomeEnabled ? 1 : 0,
+    settings.donationEnabled ? 1 : 0,
+    settings.heartEnabled ? 1 : 0,
+    getSessionKey(sessionId),
+  );
+}
+
+export function listBotCommandsByKey(sessionKey: string): BotCommand[] {
+  ensureBotSettings(sessionKey);
+  return getDatabase().prepare(
+    "SELECT command, response FROM bot_commands WHERE session_key = ? ORDER BY command",
+  ).all(sessionKey) as BotCommand[];
+}
+
+export function listBotCommands(sessionId: string) {
+  return listBotCommandsByKey(getSessionKey(sessionId));
+}
+
+export function upsertBotCommand(sessionId: string, command: string, response: string) {
+  const sessionKey = getSessionKey(sessionId);
+  ensureBotSettings(sessionKey);
+  getDatabase().prepare(`
+    INSERT INTO bot_commands (session_key, command, response) VALUES (?, ?, ?)
+    ON CONFLICT(session_key, command) DO UPDATE SET response = excluded.response
+  `).run(sessionKey, command, response);
+}
+
+export function deleteBotCommand(sessionId: string, command: string) {
+  getDatabase().prepare("DELETE FROM bot_commands WHERE session_key = ? AND command = ?")
+    .run(getSessionKey(sessionId), command);
+}
+
+export function findBotCommandResponse(sessionKey: string, message: string, nickname: string | null) {
+  ensureBotSettings(sessionKey);
+  const command = message.trim().toLocaleLowerCase("ko-KR");
+  const row = getDatabase().prepare(
+    "SELECT response FROM bot_commands WHERE session_key = ? AND command = ?",
+  ).get(sessionKey, command) as Pick<BotCommand, "response"> | undefined;
+  if (!row) return null;
+
+  const response = row.response.replaceAll("{nickname}", nickname?.trim() || "청취자");
+  return response.length <= 200 ? response : response.slice(0, 200);
+}
+
+export function isSessionBlockedByKey(sessionKey: string) {
+  const row = getDatabase().prepare("SELECT blocked FROM oauth_sessions WHERE id_hash = ?")
+    .get(sessionKey) as Pick<SessionRow, "blocked"> | undefined;
+  return row?.blocked === 1;
+}
+
+export function isSessionBlocked(sessionId: string | undefined) {
+  return sessionId ? isSessionBlockedByKey(getSessionKey(sessionId)) : false;
+}
+
+export function setSessionBlockedByKey(sessionKey: string, blocked: boolean) {
+  const result = getDatabase().prepare(`
+    UPDATE oauth_sessions
+    SET blocked = ?, bot_enabled = CASE WHEN ? = 1 THEN 0 ELSE bot_enabled END, updated_at = ?
+    WHERE id_hash = ?
+  `).run(blocked ? 1 : 0, blocked ? 1 : 0, Date.now(), sessionKey);
+  return result.changes > 0;
+}
+
+export function listAdminSessions(): AdminSession[] {
+  const rows = getDatabase().prepare(`
+    SELECT id_hash, bot_enabled, blocked, created_at, updated_at
+    FROM oauth_sessions ORDER BY updated_at DESC
+  `).all() as Array<{
+    id_hash: string;
+    bot_enabled: number;
+    blocked: number;
+    created_at: number;
+    updated_at: number;
+  }>;
+  return rows.map((row) => ({
+    sessionKey: row.id_hash,
+    botEnabled: row.bot_enabled === 1,
+    blocked: row.blocked === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
 }

@@ -14,6 +14,20 @@ export type BotAutomationState = {
   announcedHeartMilestone: number;
 };
 
+export type BotAutomationOptions = {
+  greetingMessage: string;
+  welcomeEnabled: boolean;
+  donationEnabled: boolean;
+  heartEnabled: boolean;
+};
+
+const defaultOptions: BotAutomationOptions = {
+  greetingMessage: "{nickname}님, 어서 오세요!",
+  welcomeEnabled: true,
+  donationEnabled: true,
+  heartEnabled: true,
+};
+
 export function createBotAutomationState(): BotAutomationState {
   return {
     activity: { hearts: 0, spoons: 0, welcomedListeners: 0 },
@@ -28,11 +42,16 @@ export function resetBotAutomationState(state: BotAutomationState) {
   state.announcedHeartMilestone = 0;
 }
 
-export function processBotAutomation(state: BotAutomationState, event: ParsedSseEvent) {
+export function processBotAutomation(
+  state: BotAutomationState,
+  event: ParsedSseEvent,
+  options: BotAutomationOptions = defaultOptions,
+) {
   if (event.event === "presence") {
     if (state.greetedUserIds.has(event.data.user.id)) return null;
     state.greetedUserIds.add(event.data.user.id);
     state.activity.welcomedListeners += 1;
+    if (!options.welcomeEnabled) return null;
     const name = event.data.user.nickname ?? "청취자";
     const prefix = event.data.fanRank === 1
       ? "1위 팬"
@@ -41,17 +60,19 @@ export function processBotAutomation(state: BotAutomationState, event: ParsedSse
         : event.data.favoriteTemperature !== null && event.data.favoriteTemperature >= 36.5
           ? "단골"
           : "";
-    return `${prefix ? `${prefix} ` : ""}${name}님, 어서 오세요!`;
+    return `${prefix ? `${prefix} ` : ""}${options.greetingMessage.replaceAll("{nickname}", name)}`;
   }
 
   if (event.event === "donation") {
     state.activity.spoons += event.data.amount;
+    if (!options.donationEnabled) return null;
     const name = event.data.user.nickname ?? "청취자";
     return `${name}님, ${event.data.amount.toLocaleString("ko-KR")}스푼 후원 감사합니다!`;
   }
 
   if (event.event === "like") {
     state.activity.hearts += event.data.totalAmount;
+    if (!options.heartEnabled) return null;
     const milestone = Math.floor(state.activity.hearts / HEART_MILESTONE) * HEART_MILESTONE;
     if (milestone > state.announcedHeartMilestone) {
       state.announcedHeartMilestone = milestone;

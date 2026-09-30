@@ -7,10 +7,12 @@ import {
   resetBotAutomationState,
   type BotActivity,
 } from "./bot-automation";
-import { getCommandReply } from "./chat-message";
 import { sendBotChat } from "./chat";
 import {
+  findBotCommandResponse,
+  getBotSettingsByKey,
   getSessionKey,
+  isSessionBlockedByKey,
   isBotEnabled,
   listEnabledBotSessions,
   setBotEnabled,
@@ -142,10 +144,13 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   } as BotEvent);
   runtime.events.splice(MAX_EVENTS);
 
+  const settings = getBotSettingsByKey(sessionKey);
   const reply = event.event === "chat"
-    ? getCommandReply(event.data.message, event.data.user.nickname)
-    : processBotAutomation(runtime, event);
-  if (reply) void sendBotChat(sessionKey, reply);
+    ? settings.commandsEnabled
+      ? findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
+      : null
+    : processBotAutomation(runtime, event, settings);
+  if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
 }
 
 export async function consumeEventStream(
@@ -192,6 +197,10 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
   let retriedUnauthorized = false;
 
   while (!signal.aborted) {
+    if (isSessionBlockedByKey(sessionKey)) {
+      setRuntimeState(sessionKey, "blocked");
+      return;
+    }
     setRuntimeState(sessionKey, "connecting");
     let session;
     try {
@@ -356,5 +365,15 @@ export function restoreEnabledBots() {
       continue;
     }
     startBotByKey(sessionKey);
+  }
+}
+
+export function blockBotByKey(sessionKey: string) {
+  setBotEnabledByKey(sessionKey, false);
+  const runtime = runtimes.get(sessionKey);
+  runtime?.controller?.abort();
+  if (runtime) {
+    runtime.enabled = false;
+    runtime.state = "blocked";
   }
 }

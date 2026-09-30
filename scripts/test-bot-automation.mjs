@@ -57,4 +57,28 @@ assert.deepEqual(state.activity, { hearts: 0, spoons: 0, welcomedListeners: 0 })
 assert.equal(state.greetedUserIds.size, 0);
 assert.equal(state.announcedHeartMilestone, 0);
 
-console.log("Automation checks passed: greetings, hearts, donations, and reset");
+const configuredState = createBotAutomationState();
+const configuredOptions = {
+  greetingMessage: "{nickname}님, 오늘 방송에 잘 오셨어요!",
+  welcomeEnabled: true,
+  donationEnabled: false,
+  heartEnabled: false,
+};
+assert.equal(
+  processBotAutomation(configuredState, presence, configuredOptions),
+  "1위 팬 일등팬님, 오늘 방송에 잘 오셨어요!",
+);
+assert.equal(processBotAutomation(configuredState, like(100), configuredOptions), null);
+assert.equal(processBotAutomation(configuredState, {
+  event: "donation",
+  data: {
+    user: { id: "fan-2", nickname: "후원자" },
+    amount: 100,
+    message: null,
+    time: "2026-09-30T00:00:00Z",
+  },
+}, configuredOptions), null);
+assert.equal(configuredState.activity.hearts, 100);
+assert.equal(configuredState.activity.spoons, 100);
+
+console.log("Automation checks passed: settings, greetings, hearts, donations, and reset");

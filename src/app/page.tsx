@@ -3,12 +3,13 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
-import refreshIcon from "@/asset/icon-refresh.svg";
 import { getAuthSession } from "@/lib/auth";
 import { loadAudienceStatus } from "@/lib/audience";
 import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
+import { getBotSettings, isSessionBlocked, listBotCommands } from "@/lib/session-store";
+import { RefreshLiveButton } from "./refresh-live-button";
 
 type HomeProps = {
   searchParams: Promise<{
@@ -16,6 +17,7 @@ type HomeProps = {
     error?: string;
     bot?: string;
     chat?: string;
+    settings?: string;
   }>;
 };
 
@@ -29,6 +31,7 @@ const errorMessages: Record<string, string> = {
   authentication_required: "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요.",
   events_scope_required: "실시간 이벤트 권한을 먼저 승인해 주세요.",
   bot_start_failed: "봇 참여를 시작하지 못했습니다. 다시 시도해 주세요.",
+  account_blocked: "관리자가 이 DJ 연결을 차단했습니다.",
   server_configuration: "서버 환경 변수가 아직 준비되지 않았습니다.",
 };
 
@@ -82,6 +85,15 @@ const chatNotices: Record<string, { tone: "success" | "error"; title: string; de
   unavailable: { tone: "error", title: "채팅 전송 실패", detail: "일시적인 오류입니다. 잠시 후 다시 시도해 주세요." },
 };
 
+const settingsNotices: Record<string, { tone: "success" | "error"; text: string }> = {
+  greeting_sent: { tone: "success", text: "인사말을 저장하고 현재 방송 채팅에 바로 보냈습니다." },
+  automation_saved: { tone: "success", text: "자동화 설정을 저장했습니다. 다음 이벤트부터 적용됩니다." },
+  command_saved: { tone: "success", text: "명령어를 저장했습니다. 같은 명령어는 새 응답으로 교체됩니다." },
+  command_deleted: { tone: "success", text: "명령어를 삭제했습니다." },
+  invalid_greeting: { tone: "error", text: "인사말은 1자 이상 200자 이하로 입력해 주세요." },
+  invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
+};
+
 function summarizeEvent(event: BotEvent) {
   const name = event.data.user.nickname ?? "익명";
 
@@ -101,6 +113,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const cookieStore = await cookies();
   const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
+  const connectionBlocked = isSessionBlocked(sessionId);
   let session = await getAuthSession(sessionId);
   const liveResult = await loadLiveStatus(sessionId, session);
   session = liveResult.session;
@@ -112,6 +125,7 @@ export default async function Home({ searchParams }: HomeProps) {
     : liveResult.authenticationExpired || audienceResult.authenticationExpired
       ? "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요."
       : null;
+  const connectionError = connectionBlocked ? errorMessages.account_blocked : error;
   const scopes = session?.scope.split(" ").filter(Boolean) ?? [];
   const disconnected = params.status === "disconnected";
   const liveStatus = liveResult.status;
@@ -119,6 +133,13 @@ export default async function Home({ searchParams }: HomeProps) {
   const hasEventScope = scopes.some((scope) => scope.startsWith("events."));
   const hasChatScope = scopes.includes("chat.send");
   const chatNotice = params.chat ? chatNotices[params.chat] : null;
+  const settingsNotice = params.settings
+    ? settingsNotices[params.settings] ?? (params.settings.startsWith("greeting_saved_")
+      ? { tone: "error" as const, text: "인사말은 저장했지만 현재 방송 채팅에는 보내지 못했습니다." }
+      : null)
+    : null;
+  const botSettings = connected && sessionId ? getBotSettings(sessionId) : null;
+  const botCommands = connected && sessionId ? listBotCommands(sessionId) : [];
 
   return (
     <div className="site-shell">
@@ -163,12 +184,18 @@ export default async function Home({ searchParams }: HomeProps) {
             <div className="connection-copy">
               <p className="section-label">계정 연결</p>
               <h2 id="connection-title">
-                {connected ? "Spoon 계정이 연결됐어요" : "Spoon 계정을 연결해 주세요"}
+                {connected
+                  ? "Spoon 계정이 연결됐어요"
+                  : connectionBlocked
+                    ? "관리자가 연결을 차단했어요"
+                    : "Spoon 계정을 연결해 주세요"}
               </h2>
               <p>
                 {connected
                   ? "NAGU BOT이 승인된 권한으로 방송을 도울 준비가 됐습니다."
-                  : "방송 정보와 채팅 기능을 사용하려면 DJ 계정의 동의가 필요합니다."}
+                  : connectionBlocked
+                    ? "차단 해제 전에는 계정 재연결과 봇 참여를 사용할 수 없습니다."
+                    : "방송 정보와 채팅 기능을 사용하려면 DJ 계정의 동의가 필요합니다."}
               </p>
             </div>
 
@@ -182,12 +209,12 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
-            {error && (
+            {connectionError && (
               <div className="notice error" role="alert">
                 <span className="notice-icon" aria-hidden="true">!</span>
                 <div>
                   <strong>연결 실패</strong>
-                  <span>{error}</span>
+                  <span>{connectionError}</span>
                 </div>
               </div>
             )}
@@ -210,7 +237,7 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
-            <div className="connection-actions">
+            {!connectionBlocked && <div className="connection-actions">
               <a className="connect" href="/oauth/connect">
                 {connected ? "계정 다시 연결하기" : "Spoon 계정 연결하기"}
               </a>
@@ -219,7 +246,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <button className="disconnect" type="submit">연결 해제</button>
                 </form>
               )}
-            </div>
+            </div>}
 
             <p className="privacy">
               인증 정보는 암호화되어 안전하게 보관되며 비밀번호는 저장하지 않습니다.
@@ -231,9 +258,12 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="live-heading">
                 <div>
                   <p className="section-label">방송 상태</p>
-                  <h2 id="live-title">
-                    {liveStatus.kind === "live" ? liveStatus.live.title : "현재 방송 정보"}
-                  </h2>
+                  <div className="live-title-row">
+                    <h2 id="live-title">
+                      {liveStatus.kind === "live" ? liveStatus.live.title : "현재 방송 정보"}
+                    </h2>
+                    <RefreshLiveButton />
+                  </div>
                 </div>
                 <span className={`live-badge ${liveStatus.kind === "live" ? "is-live" : ""}`}>
                   <span className="status-dot" aria-hidden="true" />
@@ -266,7 +296,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
                   {liveStatus.live.welcomeMessage && (
                     <div className="live-message">
-                      <span>방송 인사말</span>
+                      <span>Spoon 방송 인사말 · 읽기 전용</span>
                       <p>{liveStatus.live.welcomeMessage}</p>
                     </div>
                   )}
@@ -308,10 +338,6 @@ export default async function Home({ searchParams }: HomeProps) {
                 </div>
               )}
 
-              <Link className="refresh-live" href="/">
-                <Image src={refreshIcon} alt="" aria-hidden="true" />
-                방송 정보 새로고침
-              </Link>
             </article>
           )}
 
@@ -412,6 +438,75 @@ export default async function Home({ searchParams }: HomeProps) {
                     : "NAGU BOT이 실시간 이벤트 스트림을 유지하고 있습니다."
                   : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
               </p>
+
+              {botSettings && (
+                <section className="automation-settings" aria-labelledby="automation-title">
+                  <div className="automation-heading">
+                    <div>
+                      <p className="section-label">운영 설정</p>
+                      <h3 id="automation-title">인사말과 자동 응답</h3>
+                    </div>
+                    <span>수정 즉시 적용</span>
+                  </div>
+
+                  {settingsNotice && (
+                    <div className={`notice ${settingsNotice.tone}`} role={settingsNotice.tone === "error" ? "alert" : "status"}>
+                      <span className="notice-icon" aria-hidden="true">{settingsNotice.tone === "success" ? "✓" : "!"}</span>
+                      <div><strong>{settingsNotice.text}</strong></div>
+                    </div>
+                  )}
+
+                  <form className="greeting-form" action="/bot/settings" method="post">
+                    <input type="hidden" name="mode" value="greeting" />
+                    <label htmlFor="greeting-message">NAGU BOT 방송 인사말</label>
+                    <textarea
+                      id="greeting-message"
+                      name="greetingMessage"
+                      defaultValue={botSettings.greetingMessage}
+                      maxLength={200}
+                      rows={3}
+                      required
+                    />
+                    <p><code>{"{nickname}"}</code>을 청취자 닉네임으로 바꿔 전송합니다.</p>
+                    <button type="submit" disabled={!hasChatScope}>저장하고 지금 알리기</button>
+                  </form>
+
+                  <form className="automation-toggles" action="/bot/settings" method="post">
+                    <input type="hidden" name="mode" value="automation" />
+                    <label><input type="checkbox" name="welcomeEnabled" defaultChecked={botSettings.welcomeEnabled} /> 입장 환영</label>
+                    <label><input type="checkbox" name="donationEnabled" defaultChecked={botSettings.donationEnabled} /> 후원 감사</label>
+                    <label><input type="checkbox" name="heartEnabled" defaultChecked={botSettings.heartEnabled} /> 하트 달성</label>
+                    <label><input type="checkbox" name="commandsEnabled" defaultChecked={botSettings.commandsEnabled} /> 채팅 명령어</label>
+                    <button type="submit">자동화 저장</button>
+                  </form>
+
+                  <div className="command-editor">
+                    <h4>명령어 관리</h4>
+                    {botCommands.length > 0 && (
+                      <ul>
+                        {botCommands.map((item) => (
+                          <li key={item.command}>
+                            <div><strong>{item.command}</strong><span>{item.response}</span></div>
+                            <form action="/bot/settings" method="post">
+                              <input type="hidden" name="mode" value="delete_command" />
+                              <input type="hidden" name="command" value={item.command} />
+                              <button type="submit" aria-label={`${item.command} 삭제`}>삭제</button>
+                            </form>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <form className="command-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="upsert_command" />
+                      <label htmlFor="command-name">명령어</label>
+                      <input id="command-name" name="command" placeholder="!공지" maxLength={20} required />
+                      <label htmlFor="command-response">응답</label>
+                      <input id="command-response" name="response" placeholder="응답 메시지" maxLength={200} required />
+                      <button type="submit">추가 또는 수정</button>
+                    </form>
+                  </div>
+                </section>
+              )}
 
               <dl className="activity-metrics">
                 <div>
@@ -575,6 +670,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
       <footer className="footer">
         <span>NAGU BOT</span>
+        <Link href="/admin">관리자</Link>
         <span>2026 © NAGU BOT</span>
       </footer>
     </div>

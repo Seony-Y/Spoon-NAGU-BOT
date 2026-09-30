@@ -7,7 +7,8 @@ Spoon OAuth and bot management server for Railway.
 1. Copy `.env.example` to `.env.local`.
 2. Add the Spoon Client Secret after the app is approved.
 3. Generate a session secret with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
-4. Run `npm run dev`.
+4. Set a strong `ADMIN_PASSWORD` for the `/admin` operations page.
+5. Run `npm run dev`.
 
 The registered redirect URI must exactly match `SPOON_REDIRECT_URI`.
 
@@ -59,6 +60,14 @@ While participating, the bot also:
 - totals `like.totalAmount` and announces each new 100-heart milestone (`events.like`)
 
 Spoon only sends presence events after the DJ makes the bot a manager and the bot reconnects. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
+
+The dashboard stores an editable NAGU BOT greeting, automation toggles, and chat commands per OAuth connection. Saving the greeting also attempts to announce it in the current broadcast; later presence events use the new value without reconnecting. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+
+## Administration
+
+Open `/admin` and sign in with `ADMIN_PASSWORD` to block or unblock an OAuth connection. Blocking immediately stops its running event worker, disables restart restoration, and rejects authentication, bot participation, chat, settings changes, and OAuth reconnection for that same connection.
+
+The Spoon Open API does not expose a stable DJ account identifier. Blocking therefore applies to the stored OAuth connection, and a DJ who clears the session cookie and grants a completely new OAuth connection can appear as a new record.
 
 ## Validation
 

@@ -12,6 +12,7 @@ import {
   getSession,
   getSessionByKey,
   getSessionKey,
+  isSessionBlockedByKey,
   saveSession,
   updateSessionByKey,
 } from "./session-store";
@@ -42,6 +43,7 @@ async function refreshSessionByKey(sessionKey: string, force = false) {
 }
 
 async function getAuthSessionByKey(sessionKey: string, force = false) {
+  if (isSessionBlockedByKey(sessionKey)) return null;
   const current = getSessionByKey(sessionKey);
   if (!current || (!force && current.expires_at - Date.now() > REFRESH_MARGIN_MS)) return current;
 

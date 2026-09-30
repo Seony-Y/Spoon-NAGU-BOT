@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { createAuthSession } from "@/lib/auth";
 import { SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
+import { isSessionBlocked } from "@/lib/session-store";
 import { exchangeCode } from "@/lib/spoon";
 
 export const runtime = "nodejs";
@@ -22,6 +23,9 @@ function redirectWithError(request: NextRequest, error: string) {
 }
 
 export async function GET(request: NextRequest) {
+  if (isSessionBlocked(request.cookies.get(SESSION_COOKIE)?.value)) {
+    return redirectWithError(request, "account_blocked");
+  }
   const query = request.nextUrl.searchParams;
   const state = query.get("state");
 

@@ -1,0 +1,65 @@
+import { type NextRequest, NextResponse } from "next/server";
+import { getAuthSession } from "@/lib/auth";
+import { sendChat } from "@/lib/chat";
+import { SESSION_COOKIE } from "@/lib/session";
+import {
+  deleteBotCommand,
+  getBotSettings,
+  updateBotSettings,
+  upsertBotCommand,
+} from "@/lib/session-store";
+
+export const runtime = "nodejs";
+
+function redirect(request: NextRequest, status: string) {
+  return NextResponse.redirect(new URL(`/?settings=${status}`, request.url), 303);
+}
+
+export async function POST(request: NextRequest) {
+  const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = await getAuthSession(sessionId);
+  if (!sessionId || !session) return redirect(request, "authentication_required");
+
+  const formData = await request.formData();
+  const mode = formData.get("mode");
+
+  if (mode === "greeting") {
+    const greetingMessage = String(formData.get("greetingMessage") ?? "").trim();
+    if (!greetingMessage || greetingMessage.length > 200) return redirect(request, "invalid_greeting");
+
+    updateBotSettings(sessionId, { ...getBotSettings(sessionId), greetingMessage });
+    const announcement = greetingMessage.replaceAll("{nickname}", "여러분");
+    const result = await sendChat(sessionId, announcement);
+    return redirect(request, result.kind === "sent" ? "greeting_sent" : `greeting_saved_${result.kind}`);
+  }
+
+  if (mode === "automation") {
+    const current = getBotSettings(sessionId);
+    updateBotSettings(sessionId, {
+      ...current,
+      commandsEnabled: formData.get("commandsEnabled") === "on",
+      welcomeEnabled: formData.get("welcomeEnabled") === "on",
+      donationEnabled: formData.get("donationEnabled") === "on",
+      heartEnabled: formData.get("heartEnabled") === "on",
+    });
+    return redirect(request, "automation_saved");
+  }
+
+  if (mode === "upsert_command") {
+    const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
+    const response = String(formData.get("response") ?? "").trim();
+    if (!/^![^\s]{1,19}$/.test(command) || !response || response.length > 200) {
+      return redirect(request, "invalid_command");
+    }
+    upsertBotCommand(sessionId, command, response);
+    return redirect(request, "command_saved");
+  }
+
+  if (mode === "delete_command") {
+    const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
+    if (command) deleteBotCommand(sessionId, command);
+    return redirect(request, "command_deleted");
+  }
+
+  return redirect(request, "invalid_request");
+}
