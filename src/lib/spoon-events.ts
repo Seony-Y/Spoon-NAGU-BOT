@@ -51,10 +51,12 @@ export type SpoonEventData = {
 export type SpoonEventName = keyof SpoonEventData;
 
 export type ParsedSseEvent = {
-  id?: string;
-  event: SpoonEventName;
-  data: SpoonEventData[SpoonEventName];
-};
+  [EventName in SpoonEventName]: {
+    id?: string;
+    event: EventName;
+    data: SpoonEventData[EventName];
+  };
+}[SpoonEventName];
 
 const eventNames = new Set<SpoonEventName>([
   "chat",
@@ -91,7 +93,7 @@ export function parseSseFrame(frame: string): ParsedSseEvent | null {
       id: lines.find((line) => line.startsWith("id:"))?.slice(3).trim(),
       event,
       data: JSON.parse(data) as SpoonEventData[SpoonEventName],
-    };
+    } as ParsedSseEvent;
   } catch {
     return null;
   }

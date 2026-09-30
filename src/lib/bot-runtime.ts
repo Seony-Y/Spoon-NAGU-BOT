@@ -1,6 +1,8 @@
 import "server-only";
 
 import { getBotAuthSession } from "./auth";
+import { getCommandReply } from "./chat-message";
+import { sendBotChat } from "./chat";
 import {
   getSessionKey,
   isBotEnabled,
@@ -130,6 +132,11 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     receivedAt,
   } as BotEvent);
   runtime.events.splice(MAX_EVENTS);
+
+  if (event.event === "chat") {
+    const reply = getCommandReply(event.data.message, event.data.user.nickname);
+    if (reply) void sendBotChat(sessionKey, reply);
+  }
 }
 
 export async function consumeEventStream(

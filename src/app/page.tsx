@@ -14,6 +14,7 @@ type HomeProps = {
     status?: string;
     error?: string;
     bot?: string;
+    chat?: string;
   }>;
 };
 
@@ -67,6 +68,19 @@ const botStateLabels: Record<BotConnectionState, string> = {
   error: "연결 오류",
 };
 
+const chatNotices: Record<string, { tone: "success" | "error"; title: string; detail: string }> = {
+  sent: { tone: "success", title: "채팅 전송 완료", detail: "Spoon 방송 채팅에 메시지를 보냈습니다." },
+  invalid_message: { tone: "error", title: "메시지를 입력해 주세요", detail: "공백만 있는 메시지는 보낼 수 없습니다." },
+  message_too_long: { tone: "error", title: "메시지가 너무 깁니다", detail: "채팅은 UTF-16 기준 200자까지 보낼 수 있습니다." },
+  authentication_required: { tone: "error", title: "계정 재연결 필요", detail: "Spoon 인증이 만료되었습니다." },
+  missing_scope: { tone: "error", title: "채팅 권한 필요", detail: "계정을 다시 연결해 chat.send 권한을 승인해 주세요." },
+  chat_blocked: { tone: "error", title: "채팅 전송 제한", detail: "채팅이 동결됐거나 봇이 채팅 금지 상태입니다." },
+  bot_blocked: { tone: "error", title: "방송 입장 차단", detail: "DJ가 Spoon에서 봇 차단 상태를 확인해야 합니다." },
+  offline: { tone: "error", title: "방송 전입니다", detail: "방송을 시작한 뒤 다시 보내 주세요." },
+  rate_limited: { tone: "error", title: "채팅이 혼잡합니다", detail: "잠시 기다린 뒤 다시 보내 주세요." },
+  unavailable: { tone: "error", title: "채팅 전송 실패", detail: "일시적인 오류입니다. 잠시 후 다시 시도해 주세요." },
+};
+
 function summarizeEvent(event: BotEvent) {
   const name = event.data.user.nickname ?? "익명";
 
@@ -100,6 +114,8 @@ export default async function Home({ searchParams }: HomeProps) {
   const liveStatus = liveResult.status;
   const bot = connected && sessionId ? getBotSnapshot(sessionId) : null;
   const hasEventScope = scopes.some((scope) => scope.startsWith("events."));
+  const hasChatScope = scopes.includes("chat.send");
+  const chatNotice = params.chat ? chatNotices[params.chat] : null;
 
   return (
     <div className="site-shell">
@@ -380,6 +396,51 @@ export default async function Home({ searchParams }: HomeProps) {
               {!hasEventScope && (
                 <p className="bot-help">실시간 이벤트 권한을 승인한 뒤 참여할 수 있습니다.</p>
               )}
+
+              <div className="chat-console">
+                <div className="chat-console-heading">
+                  <div>
+                    <p className="section-label">채팅 전송</p>
+                    <h3>봇 메시지</h3>
+                  </div>
+                  <span>최대 200자</span>
+                </div>
+
+                {chatNotice && (
+                  <div className={`notice ${chatNotice.tone}`} role={chatNotice.tone === "error" ? "alert" : "status"}>
+                    <span className="notice-icon" aria-hidden="true">
+                      {chatNotice.tone === "success" ? "✓" : "!"}
+                    </span>
+                    <div>
+                      <strong>{chatNotice.title}</strong>
+                      <span>{chatNotice.detail}</span>
+                    </div>
+                  </div>
+                )}
+
+                <form action="/bot/chat" method="post">
+                  <label htmlFor="bot-message">보낼 메시지</label>
+                  <textarea
+                    id="bot-message"
+                    name="message"
+                    maxLength={200}
+                    rows={3}
+                    placeholder="방송 채팅에 보낼 메시지를 입력하세요."
+                    required
+                    disabled={!hasChatScope}
+                  />
+                  <button type="submit" disabled={!hasChatScope}>채팅 보내기</button>
+                </form>
+
+                {!hasChatScope && (
+                  <p className="bot-help">계정을 다시 연결해 chat.send 권한을 승인해 주세요.</p>
+                )}
+
+                <div className="command-list" aria-label="자동 응답 명령어">
+                  <span><strong>!안녕</strong> 닉네임으로 환영 인사</span>
+                  <span><strong>!명령어</strong> 사용 가능한 명령어 안내</span>
+                </div>
+              </div>
 
               <div className="event-feed">
                 <div className="event-feed-heading">

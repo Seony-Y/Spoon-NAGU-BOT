@@ -39,6 +39,15 @@ The dashboard's **봇 참여** button persists the desired participation state a
 
 Enabled bots reconnect when the Railway process restarts. The enabled state and tokens are stored in SQLite; the recent event list is held in process memory and starts empty after a restart.
 
+## Chat
+
+With the `chat.send` scope, the dashboard can send messages of up to 200 UTF-16 code units to the current broadcast. A `401` refreshes the access token once; missing permission, frozen chat, bot blocking, offline broadcasts, and rate limiting are shown separately.
+
+While the bot event stream is connected, these built-in commands reply automatically through the same serialized send queue:
+
+- `!안녕` — greet the listener by nickname
+- `!명령어` — list the available commands
+
 ## Validation
 
 ```bash
