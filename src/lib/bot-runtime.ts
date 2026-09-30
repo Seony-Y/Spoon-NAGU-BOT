@@ -1,6 +1,12 @@
 import "server-only";
 
 import { getBotAuthSession } from "./auth";
+import {
+  createBotAutomationState,
+  processBotAutomation,
+  resetBotAutomationState,
+  type BotActivity,
+} from "./bot-automation";
 import { getCommandReply } from "./chat-message";
 import { sendBotChat } from "./chat";
 import {
@@ -58,11 +64,14 @@ export type BotSnapshot = {
   connectedAt?: string;
   lastEventAt?: string;
   events: BotEvent[];
+  activity: BotActivity;
 };
 
 type BotRuntime = BotSnapshot & {
   controller?: AbortController;
   task?: Promise<void>;
+  greetedUserIds: Set<string>;
+  announcedHeartMilestone: number;
 };
 
 const globalForBots = globalThis as typeof globalThis & {
@@ -133,10 +142,10 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   } as BotEvent);
   runtime.events.splice(MAX_EVENTS);
 
-  if (event.event === "chat") {
-    const reply = getCommandReply(event.data.message, event.data.user.nickname);
-    if (reply) void sendBotChat(sessionKey, reply);
-  }
+  const reply = event.event === "chat"
+    ? getCommandReply(event.data.message, event.data.user.nickname)
+    : processBotAutomation(runtime, event);
+  if (reply) void sendBotChat(sessionKey, reply);
 }
 
 export async function consumeEventStream(
@@ -267,6 +276,8 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       }
 
       if (reason === "LIVE_ENDED") {
+        const endedRuntime = runtimes.get(sessionKey);
+        if (endedRuntime) resetBotAutomationState(endedRuntime);
         setRuntimeState(sessionKey, "waiting");
         await abortableDelay(OFFLINE_RETRY_MS, signal);
         continue;
@@ -286,10 +297,14 @@ function startBotByKey(sessionKey: string) {
   if (existing?.task && !existing.controller?.signal.aborted) return;
 
   const controller = new AbortController();
+  const automation = existing ?? createBotAutomationState();
   const runtime: BotRuntime = {
     enabled: true,
     state: "starting",
     events: existing?.events ?? [],
+    activity: automation.activity,
+    greetedUserIds: automation.greetedUserIds,
+    announcedHeartMilestone: automation.announcedHeartMilestone,
     controller,
   };
   runtimes.set(sessionKey, runtime);
@@ -327,6 +342,7 @@ export function getBotSnapshot(sessionId: string): BotSnapshot {
     connectedAt: runtime?.connectedAt,
     lastEventAt: runtime?.lastEventAt,
     events: runtime?.events.slice(0, 10) ?? [],
+    activity: runtime?.activity ?? { hearts: 0, spoons: 0, welcomedListeners: 0 },
   };
 }
 

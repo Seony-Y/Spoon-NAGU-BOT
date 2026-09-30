@@ -31,6 +31,26 @@ export type SpoonLive = {
   tags: string[];
 };
 
+export type SpoonListener = {
+  id: string;
+  nickname: string;
+};
+
+export type SpoonListenersPage = {
+  listeners: SpoonListener[];
+  nextCursor: string | null;
+};
+
+export type SpoonFan = SpoonListener & {
+  rank: number;
+  spoonCount: number | null;
+};
+
+export type SpoonFans = {
+  totalCount: number;
+  fans: SpoonFan[];
+};
+
 type SpoonOAuthError = {
   error?: string;
   error_description?: string;
@@ -171,4 +191,28 @@ export async function getCurrentLive(accessToken: string): Promise<SpoonLive | n
   }
 
   return (await response.json()) as SpoonLive;
+}
+
+async function requestSpoonApi<T>(accessToken: string, path: string): Promise<T> {
+  const { baseUrl } = getSpoonConfig();
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { detailCode?: string };
+    throw new SpoonApiErrorResponse(response.status, error.detailCode);
+  }
+
+  return (await response.json()) as T;
+}
+
+export function getLiveListenersPage(accessToken: string, cursor?: string) {
+  const query = cursor ? `?${new URLSearchParams({ cursor })}` : "";
+  return requestSpoonApi<SpoonListenersPage>(accessToken, `/v1/live/listeners${query}`);
+}
+
+export function getLiveFans(accessToken: string) {
+  return requestSpoonApi<SpoonFans>(accessToken, "/v1/live/fans");
 }

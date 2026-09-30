@@ -48,6 +48,18 @@ While the bot event stream is connected, these built-in commands reply automatic
 - `!안녕` — greet the listener by nickname
 - `!명령어` — list the available commands
 
+## Audience and automation
+
+With `listeners.read`, the dashboard follows every `nextCursor` and shows the current listener snapshot. With `fans.read`, it shows the current broadcast's top 30 fan ranking. These APIs can include the bot account itself.
+
+While participating, the bot also:
+
+- greets each listener ID once per broadcast (`events.presence`)
+- thanks each donation and totals the received spoons (`events.donation`)
+- totals `like.totalAmount` and announces each new 100-heart milestone (`events.like`)
+
+Spoon only sends presence events after the DJ makes the bot a manager and the bot reconnects. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
+
 ## Validation
 
 ```bash

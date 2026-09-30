@@ -5,6 +5,7 @@ import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
 import refreshIcon from "@/asset/icon-refresh.svg";
 import { getAuthSession } from "@/lib/auth";
+import { loadAudienceStatus } from "@/lib/audience";
 import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
@@ -103,10 +104,12 @@ export default async function Home({ searchParams }: HomeProps) {
   let session = await getAuthSession(sessionId);
   const liveResult = await loadLiveStatus(sessionId, session);
   session = liveResult.session;
+  const audienceResult = await loadAudienceStatus(sessionId, session);
+  session = audienceResult.session;
   const connected = session !== null;
   const error = params.error
     ? errorMessages[params.error] ?? "연동에 실패했습니다."
-    : liveResult.authenticationExpired
+    : liveResult.authenticationExpired || audienceResult.authenticationExpired
       ? "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요."
       : null;
   const scopes = session?.scope.split(" ").filter(Boolean) ?? [];
@@ -312,6 +315,83 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
+          {connected && (
+            <article className="audience-card" aria-labelledby="audience-title">
+              <div className="audience-heading">
+                <div>
+                  <p className="section-label">방송 구성원</p>
+                  <h2 id="audience-title">청취자와 팬 랭킹</h2>
+                </div>
+                <Link href="/">목록 새로고침</Link>
+              </div>
+
+              <div className="audience-columns">
+                <section aria-labelledby="listeners-title">
+                  <div className="audience-section-heading">
+                    <h3 id="listeners-title">현재 청취자</h3>
+                    {audienceResult.listeners.kind === "ready" && (
+                      <span>{audienceResult.listeners.items.length.toLocaleString("ko-KR")}명</span>
+                    )}
+                  </div>
+                  {audienceResult.listeners.kind === "ready" && audienceResult.listeners.items.length > 0 && (
+                    <ol className="listener-list">
+                      {audienceResult.listeners.items.map((listener) => (
+                        <li key={listener.id}>
+                          <span className="listener-avatar" aria-hidden="true">
+                            {listener.nickname.slice(0, 1) || "?"}
+                          </span>
+                          <strong>{listener.nickname}</strong>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {audienceResult.listeners.kind === "ready" && audienceResult.listeners.items.length === 0 && (
+                    <p className="audience-empty">현재 청취자가 없습니다.</p>
+                  )}
+                  {audienceResult.listeners.kind === "offline" && <p className="audience-empty">방송 전입니다.</p>}
+                  {audienceResult.listeners.kind === "missing_scope" && (
+                    <p className="audience-empty">listeners.read 권한이 필요합니다.</p>
+                  )}
+                  {(audienceResult.listeners.kind === "unavailable" || audienceResult.listeners.kind === "unauthorized") && (
+                    <p className="audience-empty">청취자 목록을 불러오지 못했습니다.</p>
+                  )}
+                </section>
+
+                <section aria-labelledby="fans-title">
+                  <div className="audience-section-heading">
+                    <h3 id="fans-title">팬 랭킹</h3>
+                    {audienceResult.fans.kind === "ready" && (
+                      <span>상위 {audienceResult.fans.items.length}명</span>
+                    )}
+                  </div>
+                  {audienceResult.fans.kind === "ready" && audienceResult.fans.items.length > 0 && (
+                    <ol className="fan-list">
+                      {audienceResult.fans.items.map((fan) => (
+                        <li key={fan.id}>
+                          <span className="fan-rank">{fan.rank}</span>
+                          <strong>{fan.nickname}</strong>
+                          <span>{(fan.spoonCount ?? 0).toLocaleString("ko-KR")}스푼</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {audienceResult.fans.kind === "ready" && audienceResult.fans.items.length === 0 && (
+                    <p className="audience-empty">현재 랭킹에 오른 팬이 없습니다.</p>
+                  )}
+                  {audienceResult.fans.kind === "offline" && <p className="audience-empty">방송 전입니다.</p>}
+                  {audienceResult.fans.kind === "missing_scope" && (
+                    <p className="audience-empty">fans.read 권한이 필요합니다.</p>
+                  )}
+                  {(audienceResult.fans.kind === "unavailable" || audienceResult.fans.kind === "unauthorized") && (
+                    <p className="audience-empty">팬 랭킹을 불러오지 못했습니다.</p>
+                  )}
+                </section>
+              </div>
+
+              <p className="audience-footnote">목록에는 이벤트 스트림으로 입장한 봇 계정도 포함될 수 있습니다.</p>
+            </article>
+          )}
+
           {connected && bot && (
             <article className="bot-card" aria-labelledby="bot-title">
               <div className="bot-heading">
@@ -332,6 +412,27 @@ export default async function Home({ searchParams }: HomeProps) {
                     : "NAGU BOT이 실시간 이벤트 스트림을 유지하고 있습니다."
                   : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
               </p>
+
+              <dl className="activity-metrics">
+                <div>
+                  <dt>환영 인원</dt>
+                  <dd>{bot.activity.welcomedListeners.toLocaleString("ko-KR")}명</dd>
+                </div>
+                <div>
+                  <dt>누적 하트</dt>
+                  <dd>{bot.activity.hearts.toLocaleString("ko-KR")}개</dd>
+                </div>
+                <div>
+                  <dt>누적 후원</dt>
+                  <dd>{bot.activity.spoons.toLocaleString("ko-KR")}스푼</dd>
+                </div>
+              </dl>
+
+              {scopes.includes("events.presence") && (
+                <p className="manager-help">
+                  입장 환영은 Spoon에서 봇을 매니저로 지정한 뒤 봇을 퇴장·재참여해야 동작합니다.
+                </p>
+              )}
 
               {params.bot === "started" && bot.enabled && (
                 <div className="notice success" role="status">

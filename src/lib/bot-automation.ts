@@ -1,0 +1,63 @@
+import type { ParsedSseEvent } from "./spoon-events";
+
+const HEART_MILESTONE = 100;
+
+export type BotActivity = {
+  hearts: number;
+  spoons: number;
+  welcomedListeners: number;
+};
+
+export type BotAutomationState = {
+  activity: BotActivity;
+  greetedUserIds: Set<string>;
+  announcedHeartMilestone: number;
+};
+
+export function createBotAutomationState(): BotAutomationState {
+  return {
+    activity: { hearts: 0, spoons: 0, welcomedListeners: 0 },
+    greetedUserIds: new Set(),
+    announcedHeartMilestone: 0,
+  };
+}
+
+export function resetBotAutomationState(state: BotAutomationState) {
+  state.activity = { hearts: 0, spoons: 0, welcomedListeners: 0 };
+  state.greetedUserIds.clear();
+  state.announcedHeartMilestone = 0;
+}
+
+export function processBotAutomation(state: BotAutomationState, event: ParsedSseEvent) {
+  if (event.event === "presence") {
+    if (state.greetedUserIds.has(event.data.user.id)) return null;
+    state.greetedUserIds.add(event.data.user.id);
+    state.activity.welcomedListeners += 1;
+    const name = event.data.user.nickname ?? "청취자";
+    const prefix = event.data.fanRank === 1
+      ? "1위 팬"
+      : event.data.isManager
+        ? "매니저"
+        : event.data.favoriteTemperature !== null && event.data.favoriteTemperature >= 36.5
+          ? "단골"
+          : "";
+    return `${prefix ? `${prefix} ` : ""}${name}님, 어서 오세요!`;
+  }
+
+  if (event.event === "donation") {
+    state.activity.spoons += event.data.amount;
+    const name = event.data.user.nickname ?? "청취자";
+    return `${name}님, ${event.data.amount.toLocaleString("ko-KR")}스푼 후원 감사합니다!`;
+  }
+
+  if (event.event === "like") {
+    state.activity.hearts += event.data.totalAmount;
+    const milestone = Math.floor(state.activity.hearts / HEART_MILESTONE) * HEART_MILESTONE;
+    if (milestone > state.announcedHeartMilestone) {
+      state.announcedHeartMilestone = milestone;
+      return `하트 ${milestone.toLocaleString("ko-KR")}개를 달성했어요! 감사합니다!`;
+    }
+  }
+
+  return null;
+}
