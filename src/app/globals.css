@@ -131,10 +131,18 @@ h1 {
 
 .hero-visual {
   align-self: stretch;
-  background-image: url("https://spoon-support.spooncast.net/images/header/support_header_01.png");
-  background-position: center bottom;
-  background-repeat: no-repeat;
-  background-size: contain;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: 28px;
+}
+
+.hero-visual img {
+  width: min(100%, 400px);
+  height: auto;
+  max-height: 300px;
+  object-fit: contain;
+  object-position: center bottom;
 }
 
 .connection-section {
@@ -291,6 +299,12 @@ h1 {
   .hero-visual {
     width: min(100%, 320px);
     justify-self: center;
+    padding-top: 0;
+  }
+
+  .hero-visual img {
+    width: min(100%, 280px);
+    max-height: 190px;
   }
 
   .connection-section {

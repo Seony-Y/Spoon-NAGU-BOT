@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import naguBot from "@/asset/NaGuBot.png";
 
 type HomeProps = {
   searchParams: Promise<{
@@ -55,7 +57,14 @@ export default async function Home({ searchParams }: HomeProps) {
               <h1 id="page-title">방송 운영을<br />더 편리하게</h1>
               <p className="summary">NAGU BOT이 반복 안내와 채팅 명령을 도와드려요.</p>
             </div>
-            <div className="hero-visual" role="img" aria-label="헤드폰을 쓴 Spoon 캐릭터" />
+            <div className="hero-visual">
+              <Image
+                src={naguBot}
+                alt="NAGU BOT 캐릭터"
+                priority
+                sizes="(max-width: 760px) 280px, 400px"
+              />
+            </div>
           </div>
         </section>
 
