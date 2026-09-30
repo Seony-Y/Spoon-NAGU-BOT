@@ -15,6 +15,7 @@ export type BotAutomationState = {
 };
 
 export type BotAutomationOptions = {
+  djNickname: string;
   greetingMessage: string;
   welcomeEnabled: boolean;
   donationEnabled: boolean;
@@ -22,7 +23,8 @@ export type BotAutomationOptions = {
 };
 
 const defaultOptions: BotAutomationOptions = {
-  greetingMessage: "{nickname}님, 어서 오세요!",
+  djNickname: "DJ",
+  greetingMessage: "안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!",
   welcomeEnabled: true,
   donationEnabled: true,
   heartEnabled: true,
@@ -60,7 +62,10 @@ export function processBotAutomation(
         : event.data.favoriteTemperature !== null && event.data.favoriteTemperature >= 36.5
           ? "단골"
           : "";
-    return `${prefix ? `${prefix} ` : ""}${options.greetingMessage.replaceAll("{nickname}", name)}`;
+    const greeting = options.greetingMessage
+      .replaceAll("{name}", options.djNickname || "DJ")
+      .replaceAll("{nickname}", name);
+    return `${prefix ? `${prefix} ` : ""}${greeting}`;
   }
 
   if (event.event === "donation") {

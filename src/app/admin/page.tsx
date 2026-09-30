@@ -60,10 +60,11 @@ export default async function AdminPage({ searchParams }: AdminProps) {
 
             <div className="admin-table-wrap">
               <table>
-                <thead><tr><th>연결 ID</th><th>봇 상태</th><th>최근 갱신</th><th>관리</th></tr></thead>
+                <thead><tr><th>DJ 닉네임</th><th>연결 ID</th><th>봇 상태</th><th>최근 갱신</th><th>관리</th></tr></thead>
                 <tbody>
                   {listAdminSessions().map((session) => (
                     <tr key={session.sessionKey}>
+                      <td><strong>{session.djNickname || "미확인"}</strong></td>
                       <td><code>{session.sessionKey.slice(0, 12)}</code></td>
                       <td>{session.blocked ? "차단됨" : session.botEnabled ? "참여 중" : "대기"}</td>
                       <td>{formatter.format(session.updatedAt)}</td>

@@ -61,7 +61,9 @@ While participating, the bot also:
 
 Spoon only sends presence events after the DJ makes the bot a manager and the bot reconnects. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
 
-The dashboard stores an editable NAGU BOT greeting, automation toggles, and chat commands per OAuth connection. Saving the greeting also attempts to announce it in the current broadcast; later presence events use the new value without reconnecting. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+The **봇 운영** tab stores an editable DJ nickname, NAGU BOT greeting, automation toggles, and chat commands per OAuth connection. The default greeting is `안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!`; `{name}` uses the saved DJ nickname and `{nickname}` uses the entering listener. Because Spoon does not expose a profile endpoint or nickname in the OAuth token, the nickname can be entered directly and is also learned when the connected DJ sends a chat event.
+
+Each automation switch is saved independently and affects the next event without reconnecting. Saving the greeting also attempts to announce it in the current broadcast. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
 ## Administration
 

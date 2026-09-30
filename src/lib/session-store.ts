@@ -20,6 +20,7 @@ type SessionRow = {
 };
 
 type BotSettingsRow = {
+  dj_nickname: string;
   greeting_message: string;
   commands_enabled: number;
   welcome_enabled: number;
@@ -29,6 +30,7 @@ type BotSettingsRow = {
 };
 
 export type BotSettings = {
+  djNickname: string;
   greetingMessage: string;
   commandsEnabled: boolean;
   welcomeEnabled: boolean;
@@ -43,6 +45,7 @@ export type BotCommand = {
 
 export type AdminSession = {
   sessionKey: string;
+  djNickname: string;
   botEnabled: boolean;
   blocked: boolean;
   createdAt: number;
@@ -83,7 +86,8 @@ function migrateDatabase(database: DatabaseSync) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS bot_settings (
       session_key TEXT PRIMARY KEY,
-      greeting_message TEXT NOT NULL DEFAULT '{nickname}님, 어서 오세요!',
+      dj_nickname TEXT NOT NULL DEFAULT '',
+      greeting_message TEXT NOT NULL DEFAULT '안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!',
       commands_enabled INTEGER NOT NULL DEFAULT 1,
       welcome_enabled INTEGER NOT NULL DEFAULT 1,
       donation_enabled INTEGER NOT NULL DEFAULT 1,
@@ -97,6 +101,19 @@ function migrateDatabase(database: DatabaseSync) {
       PRIMARY KEY (session_key, command)
     );
   `);
+
+  const settingsColumns = database.prepare("PRAGMA table_info(bot_settings)").all() as Array<{
+    name: string;
+  }>;
+  if (!settingsColumns.some((column) => column.name === "dj_nickname")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN dj_nickname TEXT NOT NULL DEFAULT ''");
+    database.prepare(`
+      UPDATE bot_settings SET greeting_message = ? WHERE greeting_message = ?
+    `).run(
+      "안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!",
+      "{nickname}님, 어서 오세요!",
+    );
+  }
 }
 
 function getDatabase() {
@@ -239,6 +256,7 @@ function ensureBotSettings(sessionKey: string) {
 export function getBotSettingsByKey(sessionKey: string): BotSettings {
   const row = ensureBotSettings(sessionKey);
   return {
+    djNickname: row.dj_nickname,
     greetingMessage: row.greeting_message,
     commandsEnabled: row.commands_enabled === 1,
     welcomeEnabled: row.welcome_enabled === 1,
@@ -255,9 +273,10 @@ export function updateBotSettings(sessionId: string, settings: BotSettings) {
   ensureBotSettings(getSessionKey(sessionId));
   getDatabase().prepare(`
     UPDATE bot_settings
-    SET greeting_message = ?, commands_enabled = ?, welcome_enabled = ?, donation_enabled = ?, heart_enabled = ?
+    SET dj_nickname = ?, greeting_message = ?, commands_enabled = ?, welcome_enabled = ?, donation_enabled = ?, heart_enabled = ?
     WHERE session_key = ?
   `).run(
+    settings.djNickname,
     settings.greetingMessage,
     settings.commandsEnabled ? 1 : 0,
     settings.welcomeEnabled ? 1 : 0,
@@ -265,6 +284,14 @@ export function updateBotSettings(sessionId: string, settings: BotSettings) {
     settings.heartEnabled ? 1 : 0,
     getSessionKey(sessionId),
   );
+}
+
+export function updateDjNicknameByKey(sessionKey: string, nickname: string) {
+  const normalized = nickname.trim().slice(0, 50);
+  if (!normalized) return;
+  ensureBotSettings(sessionKey);
+  getDatabase().prepare("UPDATE bot_settings SET dj_nickname = ? WHERE session_key = ?")
+    .run(normalized, sessionKey);
 }
 
 export function listBotCommandsByKey(sessionKey: string): BotCommand[] {
@@ -325,10 +352,14 @@ export function setSessionBlockedByKey(sessionKey: string, blocked: boolean) {
 
 export function listAdminSessions(): AdminSession[] {
   const rows = getDatabase().prepare(`
-    SELECT id_hash, bot_enabled, blocked, created_at, updated_at
-    FROM oauth_sessions ORDER BY updated_at DESC
+    SELECT o.id_hash, o.bot_enabled, o.blocked, o.created_at, o.updated_at,
+           COALESCE(s.dj_nickname, '') AS dj_nickname
+    FROM oauth_sessions o
+    LEFT JOIN bot_settings s ON s.session_key = o.id_hash
+    ORDER BY o.updated_at DESC
   `).all() as Array<{
     id_hash: string;
+    dj_nickname: string;
     bot_enabled: number;
     blocked: number;
     created_at: number;
@@ -336,6 +367,7 @@ export function listAdminSessions(): AdminSession[] {
   }>;
   return rows.map((row) => ({
     sessionKey: row.id_hash,
+    djNickname: row.dj_nickname,
     botEnabled: row.bot_enabled === 1,
     blocked: row.blocked === 1,
     createdAt: row.created_at,

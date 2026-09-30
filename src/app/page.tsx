@@ -18,6 +18,7 @@ type HomeProps = {
     bot?: string;
     chat?: string;
     settings?: string;
+    tab?: string;
   }>;
 };
 
@@ -87,10 +88,11 @@ const chatNotices: Record<string, { tone: "success" | "error"; title: string; de
 
 const settingsNotices: Record<string, { tone: "success" | "error"; text: string }> = {
   greeting_sent: { tone: "success", text: "인사말을 저장하고 현재 방송 채팅에 바로 보냈습니다." },
-  automation_saved: { tone: "success", text: "자동화 설정을 저장했습니다. 다음 이벤트부터 적용됩니다." },
+  automation_toggled: { tone: "success", text: "자동화 설정을 변경했습니다. 다음 이벤트부터 적용됩니다." },
   command_saved: { tone: "success", text: "명령어를 저장했습니다. 같은 명령어는 새 응답으로 교체됩니다." },
   command_deleted: { tone: "success", text: "명령어를 삭제했습니다." },
   invalid_greeting: { tone: "error", text: "인사말은 1자 이상 200자 이하로 입력해 주세요." },
+  invalid_nickname: { tone: "error", text: "DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요." },
   invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
 };
 
@@ -111,6 +113,7 @@ function summarizeEvent(event: BotEvent) {
 
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
+  const isBotTab = params.tab === "bot";
   const cookieStore = await cookies();
   const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
   const connectionBlocked = isSessionBlocked(sessionId);
@@ -138,8 +141,8 @@ export default async function Home({ searchParams }: HomeProps) {
       ? { tone: "error" as const, text: "인사말은 저장했지만 현재 방송 채팅에는 보내지 못했습니다." }
       : null)
     : null;
-  const botSettings = connected && sessionId ? getBotSettings(sessionId) : null;
-  const botCommands = connected && sessionId ? listBotCommands(sessionId) : [];
+  const botSettings = isBotTab && connected && sessionId ? getBotSettings(sessionId) : null;
+  const botCommands = isBotTab && connected && sessionId ? listBotCommands(sessionId) : [];
 
   return (
     <div className="site-shell">
@@ -154,6 +157,14 @@ export default async function Home({ searchParams }: HomeProps) {
           />
           <span>NAGU BOT</span>
         </Link>
+        <nav className="dashboard-tabs" aria-label="운영 메뉴">
+          <Link className={!isBotTab ? "is-active" : ""} href="/" aria-current={!isBotTab ? "page" : undefined}>
+            대시보드
+          </Link>
+          <Link className={isBotTab ? "is-active" : ""} href="/?tab=bot" aria-current={isBotTab ? "page" : undefined}>
+            봇 운영
+          </Link>
+        </nav>
         <span className={`header-status ${connected ? "is-connected" : ""}`}>
           <span className="status-dot" aria-hidden="true" />
           {connected ? "연결됨" : "연결 대기"}
@@ -161,7 +172,7 @@ export default async function Home({ searchParams }: HomeProps) {
       </header>
 
       <main>
-        <section className="hero" aria-labelledby="page-title">
+        {!isBotTab && <section className="hero" aria-labelledby="page-title">
           <div className="hero-inner">
             <div className="hero-copy">
               <p className="eyebrow">SPOON LIVE ASSISTANT</p>
@@ -177,7 +188,7 @@ export default async function Home({ searchParams }: HomeProps) {
               />
             </div>
           </div>
-        </section>
+        </section>}
 
         <section className="connection-section" aria-labelledby="connection-title">
           <div className="connection-card">
@@ -253,7 +264,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </p>
           </div>
 
-          {connected && liveStatus && (
+          {!isBotTab && connected && liveStatus && (
             <article className="live-card" aria-labelledby="live-title">
               <div className="live-heading">
                 <div>
@@ -341,7 +352,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
-          {connected && (
+          {!isBotTab && connected && (
             <article className="audience-card" aria-labelledby="audience-title">
               <div className="audience-heading">
                 <div>
@@ -418,7 +429,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
-          {connected && bot && (
+          {isBotTab && connected && bot && (
             <article className="bot-card" aria-labelledby="bot-title">
               <div className="bot-heading">
                 <div>
@@ -458,6 +469,15 @@ export default async function Home({ searchParams }: HomeProps) {
 
                   <form className="greeting-form" action="/bot/settings" method="post">
                     <input type="hidden" name="mode" value="greeting" />
+                    <label htmlFor="dj-nickname">DJ 닉네임</label>
+                    <input
+                      id="dj-nickname"
+                      name="djNickname"
+                      defaultValue={botSettings.djNickname}
+                      maxLength={50}
+                      placeholder="Spoon DJ 닉네임"
+                      required
+                    />
                     <label htmlFor="greeting-message">NAGU BOT 방송 인사말</label>
                     <textarea
                       id="greeting-message"
@@ -467,18 +487,36 @@ export default async function Home({ searchParams }: HomeProps) {
                       rows={3}
                       required
                     />
-                    <p><code>{"{nickname}"}</code>을 청취자 닉네임으로 바꿔 전송합니다.</p>
+                    <p>
+                      <code>{"{name}"}</code>은 DJ 닉네임, <code>{"{nickname}"}</code>은 청취자 닉네임으로 바뀝니다.
+                    </p>
                     <button type="submit" disabled={!hasChatScope}>저장하고 지금 알리기</button>
                   </form>
 
-                  <form className="automation-toggles" action="/bot/settings" method="post">
-                    <input type="hidden" name="mode" value="automation" />
-                    <label><input type="checkbox" name="welcomeEnabled" defaultChecked={botSettings.welcomeEnabled} /> 입장 환영</label>
-                    <label><input type="checkbox" name="donationEnabled" defaultChecked={botSettings.donationEnabled} /> 후원 감사</label>
-                    <label><input type="checkbox" name="heartEnabled" defaultChecked={botSettings.heartEnabled} /> 하트 달성</label>
-                    <label><input type="checkbox" name="commandsEnabled" defaultChecked={botSettings.commandsEnabled} /> 채팅 명령어</label>
-                    <button type="submit">자동화 저장</button>
-                  </form>
+                  <div className="automation-toggles">
+                    {[
+                      { key: "welcomeEnabled", label: "입장 환영", detail: "청취자가 들어오면 인사말을 보냅니다.", enabled: botSettings.welcomeEnabled },
+                      { key: "donationEnabled", label: "후원 감사", detail: "후원 금액과 함께 감사 인사를 보냅니다.", enabled: botSettings.donationEnabled },
+                      { key: "heartEnabled", label: "하트 달성", detail: "하트 100개 단위로 달성을 알립니다.", enabled: botSettings.heartEnabled },
+                      { key: "commandsEnabled", label: "채팅 명령어", detail: "등록한 명령어에 자동으로 답합니다.", enabled: botSettings.commandsEnabled },
+                    ].map((automation) => (
+                      <form action="/bot/settings" method="post" key={automation.key}>
+                        <input type="hidden" name="mode" value="automation_toggle" />
+                        <input type="hidden" name="setting" value={automation.key} />
+                        <input type="hidden" name="enabled" value={automation.enabled ? "false" : "true"} />
+                        <div><strong>{automation.label}</strong><span>{automation.detail}</span></div>
+                        <button
+                          className={`automation-switch ${automation.enabled ? "is-on" : ""}`}
+                          type="submit"
+                          role="switch"
+                          aria-checked={automation.enabled}
+                          aria-label={`${automation.label} ${automation.enabled ? "끄기" : "켜기"}`}
+                        >
+                          <span aria-hidden="true" />
+                        </button>
+                      </form>
+                    ))}
+                  </div>
 
                   <div className="command-editor">
                     <h4>명령어 관리</h4>
@@ -641,7 +679,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="event-feed">
                 <div className="event-feed-heading">
                   <h3>최근 이벤트</h3>
-                  <Link href="/">상태 새로고침</Link>
+                  <Link href="/?tab=bot">상태 새로고침</Link>
                 </div>
                 {bot.events.length > 0 ? (
                   <ol>

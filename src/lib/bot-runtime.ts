@@ -17,6 +17,7 @@ import {
   listEnabledBotSessions,
   setBotEnabled,
   setBotEnabledByKey,
+  updateDjNicknameByKey,
 } from "./session-store";
 import { getSpoonConfig } from "./spoon";
 import {
@@ -143,6 +144,10 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     receivedAt,
   } as BotEvent);
   runtime.events.splice(MAX_EVENTS);
+
+  if (event.event === "chat" && event.data.isDj && event.data.user.nickname) {
+    updateDjNicknameByKey(sessionKey, event.data.user.nickname);
+  }
 
   const settings = getBotSettingsByKey(sessionKey);
   const reply = event.event === "chat"

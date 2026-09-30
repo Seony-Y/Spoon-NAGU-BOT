@@ -62,6 +62,34 @@ body {
   object-fit: cover;
 }
 
+.dashboard-tabs {
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
+  gap: 28px;
+}
+
+.dashboard-tabs a {
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.dashboard-tabs a:hover,
+.dashboard-tabs a.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.dashboard-tabs a:focus-visible {
+  outline: 3px solid rgba(255, 91, 53, 0.28);
+  outline-offset: 3px;
+}
+
 .header-status {
   display: flex;
   align-items: center;
@@ -1081,6 +1109,7 @@ h1 {
   font-weight: 700;
 }
 
+.greeting-form input,
 .greeting-form textarea,
 .command-form input {
   width: 100%;
@@ -1089,6 +1118,11 @@ h1 {
   background: #fff;
   color: var(--text);
   font: inherit;
+}
+
+.greeting-form input {
+  min-height: 42px;
+  padding: 0 12px;
 }
 
 .greeting-form textarea {
@@ -1102,7 +1136,6 @@ h1 {
 }
 
 .greeting-form button,
-.automation-toggles button,
 .command-form button {
   justify-self: start;
   border: 0;
@@ -1120,23 +1153,72 @@ h1 {
 }
 
 .automation-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
+  display: grid;
   margin-top: 20px;
+  border-top: 1px solid var(--line);
 }
 
-.automation-toggles label {
-  display: inline-flex;
+.automation-toggles form {
+  min-height: 68px;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 700;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
 }
 
-.automation-toggles button {
-  margin-left: auto;
+.automation-toggles form > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.automation-toggles form strong {
+  font-size: 14px;
+}
+
+.automation-toggles form span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.automation-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 44px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0;
+  background: #c9c9ce;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.automation-switch > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: transform 140ms ease;
+}
+
+.automation-switch.is-on {
+  background: var(--green);
+}
+
+.automation-switch.is-on > span {
+  transform: translateX(20px);
+}
+
+.automation-switch:focus-visible {
+  outline: 3px solid rgba(24, 166, 106, 0.25);
+  outline-offset: 3px;
 }
 
 .command-editor {
@@ -1340,18 +1422,25 @@ h1 {
 }
 
 @media (max-width: 760px) {
+  .header:has(.dashboard-tabs) {
+    min-height: 108px;
+    flex-wrap: wrap;
+    align-content: center;
+    column-gap: 16px;
+  }
+
+  .dashboard-tabs {
+    order: 3;
+    width: 100%;
+    height: 42px;
+    justify-content: center;
+    gap: 40px;
+  }
+
   .automation-heading,
   .admin-heading {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .automation-toggles {
-    display: grid;
-  }
-
-  .automation-toggles button {
-    margin-left: 0;
   }
 
   .command-form {

@@ -19,7 +19,10 @@ const presence = {
   },
 };
 
-assert.equal(processBotAutomation(state, presence), "1위 팬 일등팬님, 어서 오세요!");
+assert.equal(
+  processBotAutomation(state, presence),
+  "1위 팬 안녕하세요. DJ DJ입니다. 일등팬님, 반가워요!",
+);
 assert.equal(processBotAutomation(state, presence), null);
 assert.equal(state.activity.welcomedListeners, 1);
 
@@ -59,14 +62,15 @@ assert.equal(state.announcedHeartMilestone, 0);
 
 const configuredState = createBotAutomationState();
 const configuredOptions = {
-  greetingMessage: "{nickname}님, 오늘 방송에 잘 오셨어요!",
+  djNickname: "나구",
+  greetingMessage: "DJ {name}의 방송입니다. {nickname}님, 잘 오셨어요!",
   welcomeEnabled: true,
   donationEnabled: false,
   heartEnabled: false,
 };
 assert.equal(
   processBotAutomation(configuredState, presence, configuredOptions),
-  "1위 팬 일등팬님, 오늘 방송에 잘 오셨어요!",
+  "1위 팬 DJ 나구의 방송입니다. 일등팬님, 잘 오셨어요!",
 );
 assert.equal(processBotAutomation(configuredState, like(100), configuredOptions), null);
 assert.equal(processBotAutomation(configuredState, {
