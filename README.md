@@ -1,6 +1,6 @@
-# NAGU BOT OAuth Server
+# NAGU BOT
 
-Minimal Spoon OAuth callback server for Vercel.
+Spoon OAuth and bot management server for Railway.
 
 ## Local setup
 
@@ -19,7 +19,17 @@ Configure every variable from `.env.example`. Use the production deployment URL 
 https://nagu-bot.vercel.app/oauth/callback
 ```
 
-Tokens are encrypted with AES-256-GCM and stored only in an HttpOnly, Secure, SameSite=Lax cookie. The application does not print tokens to the page or server logs.
+Tokens are encrypted with AES-256-GCM in SQLite. The browser only receives an opaque, HttpOnly, Secure, SameSite=Lax session ID. The application does not print tokens to the page or server logs.
+
+## Railway persistence
+
+Attach a Railway volume and mount it at `/data`, then set:
+
+```text
+SESSION_STORE_PATH=/data/nagu.db
+```
+
+The volume is required so OAuth sessions and rotated refresh tokens survive restarts. Run a single service replica because SQLite is local to that volume.
 
 ## Getting Started
 

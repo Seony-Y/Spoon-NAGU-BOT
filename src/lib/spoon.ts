@@ -23,6 +23,16 @@ type SpoonOAuthError = {
   error_description?: string;
 };
 
+export class SpoonOAuthErrorResponse extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+  ) {
+    super(code);
+    this.name = "SpoonOAuthErrorResponse";
+  }
+}
+
 export function getSpoonConfig() {
   const clientId = process.env.SPOON_CLIENT_ID;
   const clientSecret = process.env.SPOON_CLIENT_SECRET;
@@ -54,32 +64,70 @@ export function buildAuthorizationUrl(state: string) {
   return url;
 }
 
-export async function exchangeCode(code: string): Promise<SpoonToken> {
+function getClientAuthorization() {
   const config = getSpoonConfig();
 
   if (!config.clientSecret) {
     throw new Error("SPOON_CLIENT_SECRET is required");
   }
 
-  const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
+  return {
+    config,
+    basic: Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64"),
+  };
+}
+
+async function requestToken(body: URLSearchParams): Promise<SpoonToken> {
+  const { config, basic } = getClientAuthorization();
   const response = await fetch(`${config.baseUrl}/v1/oauth/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: config.redirectUri,
-    }),
+    body,
     cache: "no-store",
   });
 
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as SpoonOAuthError;
-    throw new Error(error.error || `Token exchange failed with ${response.status}`);
+    throw new SpoonOAuthErrorResponse(error.error || "token_request_failed", response.status);
   }
 
   return (await response.json()) as SpoonToken;
 }
+
+export function exchangeCode(code: string): Promise<SpoonToken> {
+  const { redirectUri } = getSpoonConfig();
+  return requestToken(new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+  }));
+}
+
+export function refreshAccessToken(refreshToken: string): Promise<SpoonToken> {
+  return requestToken(new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  }));
+}
+
+export async function revokeToken(token: string): Promise<void> {
+  const { config, basic } = getClientAuthorization();
+  const response = await fetch(`${config.baseUrl}/v1/oauth/revoke`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ token }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as SpoonOAuthError;
+    throw new SpoonOAuthErrorResponse(error.error || "token_revoke_failed", response.status);
+  }
+}
+

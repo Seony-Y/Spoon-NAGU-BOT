@@ -226,18 +226,31 @@ h1 {
   font-weight: 600;
 }
 
-.connect {
+.connection-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.connect,
+.disconnect {
   display: flex;
+  width: 100%;
   min-height: 52px;
   align-items: center;
   justify-content: center;
+  border: 0;
   border-radius: 8px;
-  color: white;
-  background: var(--accent);
+  font-family: inherit;
   font-size: 16px;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
   transition: background 140ms ease, transform 140ms ease;
+}
+
+.connect {
+  color: white;
+  background: var(--accent);
 }
 
 .connect:hover {
@@ -245,9 +258,20 @@ h1 {
   transform: translateY(-1px);
 }
 
-.connect:focus-visible {
+.connect:focus-visible,
+.disconnect:focus-visible {
   outline: 3px solid rgba(255, 91, 53, 0.28);
   outline-offset: 3px;
+}
+
+.disconnect {
+  color: #646469;
+  background: #f1f1f3;
+}
+
+.disconnect:hover {
+  background: #e7e7ea;
+  transform: translateY(-1px);
 }
 
 .privacy {

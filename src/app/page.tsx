@@ -1,13 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
+import { getAuthSession } from "@/lib/auth";
+import { SESSION_COOKIE } from "@/lib/session";
 
 type HomeProps = {
   searchParams: Promise<{
     status?: string;
     error?: string;
-    scope?: string;
   }>;
 };
 
@@ -17,6 +19,7 @@ const errorMessages: Record<string, string> = {
   missing_code: "인증 코드가 전달되지 않았습니다.",
   state_mismatch: "요청 검증에 실패했습니다. 다시 시작해 주세요.",
   token_exchange_failed: "토큰 발급에 실패했습니다. 설정을 확인해 주세요.",
+  disconnect_failed: "연결 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.",
   server_configuration: "서버 환경 변수가 아직 준비되지 않았습니다.",
 };
 
@@ -33,9 +36,12 @@ const scopeLabels: Record<string, string> = {
 
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
-  const connected = params.status === "connected";
+  const cookieStore = await cookies();
+  const session = await getAuthSession(cookieStore.get(SESSION_COOKIE)?.value);
+  const connected = session !== null;
   const error = params.error ? errorMessages[params.error] ?? "연동에 실패했습니다." : null;
-  const scopes = params.scope?.split(" ").filter(Boolean) ?? [];
+  const scopes = session?.scope.split(" ").filter(Boolean) ?? [];
+  const disconnected = params.status === "disconnected";
 
   return (
     <div className="site-shell">
@@ -109,6 +115,16 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
+            {disconnected && !connected && (
+              <div className="notice success" role="status">
+                <span className="notice-icon" aria-hidden="true">✓</span>
+                <div>
+                  <strong>연결 해제 완료</strong>
+                  <span>Spoon 토큰을 안전하게 폐기했습니다.</span>
+                </div>
+              </div>
+            )}
+
             {connected && scopes.length > 0 && (
               <div className="permissions" aria-label="승인된 권한">
                 {scopes.map((scope) => (
@@ -117,14 +133,22 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
-            <a className="connect" href="/oauth/connect">
-              {connected ? "계정 다시 연결하기" : "Spoon 계정 연결하기"}
-            </a>
+            <div className="connection-actions">
+              <a className="connect" href="/oauth/connect">
+                {connected ? "계정 다시 연결하기" : "Spoon 계정 연결하기"}
+              </a>
+              {connected && (
+                <form action="/oauth/disconnect" method="post">
+                  <button className="disconnect" type="submit">연결 해제</button>
+                </form>
+              )}
+            </div>
 
             <p className="privacy">
               인증 정보는 암호화되어 안전하게 보관되며 비밀번호는 저장하지 않습니다.
             </p>
           </div>
+
         </section>
       </main>
 

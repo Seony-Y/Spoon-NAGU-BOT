@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
-import { encryptSession, SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
+import { createAuthSession } from "@/lib/auth";
+import { SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
 import { exchangeCode } from "@/lib/spoon";
 
 export const runtime = "nodejs";
@@ -40,17 +41,17 @@ export async function GET(request: NextRequest) {
 
   try {
     const token = await exchangeCode(code);
-    const response = NextResponse.redirect(
-      new URL(`/?status=connected&scope=${encodeURIComponent(token.scope)}`, request.url),
-    );
+    const sessionId = createAuthSession(request.cookies.get(SESSION_COOKIE)?.value, token);
+    const response = NextResponse.redirect(new URL("/?status=connected", request.url));
 
     response.cookies.delete(STATE_COOKIE);
-    response.cookies.set(SESSION_COOKIE, encryptSession(token), {
+    response.cookies.set(SESSION_COOKIE, sessionId, {
       httpOnly: true,
       secure: request.nextUrl.protocol === "https:",
       sameSite: "lax",
       path: "/",
       maxAge: 30 * 24 * 60 * 60,
+      priority: "high",
     });
 
     return response;
