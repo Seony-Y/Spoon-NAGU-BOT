@@ -17,6 +17,8 @@ export type BotAutomationState = {
 export type BotAutomationOptions = {
   djNickname: string;
   greetingMessage: string;
+  donationMessage: string;
+  heartMessage: string;
   welcomeEnabled: boolean;
   donationEnabled: boolean;
   heartEnabled: boolean;
@@ -25,6 +27,8 @@ export type BotAutomationOptions = {
 const defaultOptions: BotAutomationOptions = {
   djNickname: "DJ",
   greetingMessage: "안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!",
+  donationMessage: "{nickname}님, {amount}스푼 후원 감사합니다!",
+  heartMessage: "하트 {milestone}개를 달성했어요! 감사합니다!",
   welcomeEnabled: true,
   donationEnabled: true,
   heartEnabled: true,
@@ -72,7 +76,10 @@ export function processBotAutomation(
     state.activity.spoons += event.data.amount;
     if (!options.donationEnabled) return null;
     const name = event.data.user.nickname ?? "청취자";
-    return `${name}님, ${event.data.amount.toLocaleString("ko-KR")}스푼 후원 감사합니다!`;
+    return options.donationMessage
+      .replaceAll("{name}", options.djNickname || "DJ")
+      .replaceAll("{nickname}", name)
+      .replaceAll("{amount}", event.data.amount.toLocaleString("ko-KR"));
   }
 
   if (event.event === "like") {
@@ -81,7 +88,9 @@ export function processBotAutomation(
     const milestone = Math.floor(state.activity.hearts / HEART_MILESTONE) * HEART_MILESTONE;
     if (milestone > state.announcedHeartMilestone) {
       state.announcedHeartMilestone = milestone;
-      return `하트 ${milestone.toLocaleString("ko-KR")}개를 달성했어요! 감사합니다!`;
+      return options.heartMessage
+        .replaceAll("{name}", options.djNickname || "DJ")
+        .replaceAll("{milestone}", milestone.toLocaleString("ko-KR"));
     }
   }
 

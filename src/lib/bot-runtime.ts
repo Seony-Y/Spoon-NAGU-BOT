@@ -19,7 +19,7 @@ import {
   setBotEnabledByKey,
   updateDjNicknameByKey,
 } from "./session-store";
-import { getSpoonConfig } from "./spoon";
+import { getCurrentLive, getSpoonConfig, SpoonApiErrorResponse } from "./spoon";
 import {
   extractSseFrames,
   parseSseFrame,
@@ -37,6 +37,8 @@ const EVENT_SCOPES = [
 const OFFLINE_RETRY_MS = 10_000;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_EVENTS = 50;
+const STREAM_PERMISSION_REFRESH_MS = 60_000;
+const HOURLY_ANNOUNCEMENT_MS = 60 * 60 * 1000;
 
 export type BotConnectionState =
   | "stopped"
@@ -68,6 +70,14 @@ export type BotSnapshot = {
   lastEventAt?: string;
   events: BotEvent[];
   activity: BotActivity;
+  favoriteRanking: FavoriteRankingEntry[];
+};
+
+export type FavoriteRankingEntry = {
+  id: string;
+  nickname: string;
+  favoriteTemperature: number;
+  fanRank: number | null;
 };
 
 type BotRuntime = BotSnapshot & {
@@ -75,6 +85,10 @@ type BotRuntime = BotSnapshot & {
   task?: Promise<void>;
   greetedUserIds: Set<string>;
   announcedHeartMilestone: number;
+  favoriteListeners: Map<string, FavoriteRankingEntry>;
+  currentLiveId?: number;
+  managerEventsConfirmed: boolean;
+  hourlyTimer?: ReturnType<typeof setTimeout>;
 };
 
 const globalForBots = globalThis as typeof globalThis & {
@@ -93,6 +107,35 @@ function hasEventScope(scope: string) {
 function setRuntimeState(sessionKey: string, state: BotConnectionState) {
   const runtime = runtimes.get(sessionKey);
   if (runtime) runtime.state = state;
+}
+
+function clearBroadcastState(runtime: BotRuntime) {
+  resetBotAutomationState(runtime);
+  runtime.favoriteListeners.clear();
+  runtime.currentLiveId = undefined;
+  runtime.managerEventsConfirmed = false;
+  if (runtime.hourlyTimer) clearTimeout(runtime.hourlyTimer);
+  runtime.hourlyTimer = undefined;
+}
+
+function scheduleHourlyAnnouncement(sessionKey: string, runtime: BotRuntime) {
+  if (runtime.hourlyTimer) clearTimeout(runtime.hourlyTimer);
+
+  const announce = () => {
+    if (runtime.currentLiveId === undefined) return;
+    if (runtime.state === "connected") {
+      const settings = getBotSettingsByKey(sessionKey);
+      if (settings.hourlyEnabled) {
+        const message = settings.hourlyMessage.replaceAll("{name}", settings.djNickname || "DJ");
+        if (message) void sendBotChat(sessionKey, message.slice(0, 200));
+      }
+    }
+    runtime.hourlyTimer = setTimeout(announce, HOURLY_ANNOUNCEMENT_MS);
+    runtime.hourlyTimer.unref();
+  };
+
+  runtime.hourlyTimer = setTimeout(announce, HOURLY_ANNOUNCEMENT_MS);
+  runtime.hourlyTimer.unref();
 }
 
 function abortableDelay(milliseconds: number, signal: AbortSignal) {
@@ -144,6 +187,17 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     receivedAt,
   } as BotEvent);
   runtime.events.splice(MAX_EVENTS);
+
+  if (event.event === "presence" && event.data.favoriteTemperature !== null) {
+    runtime.favoriteListeners ??= new Map();
+    runtime.favoriteListeners.set(event.data.user.id, {
+      id: event.data.user.id,
+      nickname: event.data.user.nickname ?? "청취자",
+      favoriteTemperature: event.data.favoriteTemperature,
+      fanRank: event.data.fanRank,
+    });
+  }
+  if (event.event === "presence") runtime.managerEventsConfirmed = true;
 
   if (event.event === "chat" && event.data.isDj && event.data.user.nickname) {
     updateDjNicknameByKey(sessionKey, event.data.user.nickname);
@@ -231,13 +285,32 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
     }
 
     try {
+      const live = await getCurrentLive(session.access_token);
+      const runtime = runtimes.get(sessionKey);
+      if (!live) {
+        if (runtime?.currentLiveId !== undefined) clearBroadcastState(runtime);
+        retriedUnauthorized = false;
+        retryAttempt = 0;
+        setRuntimeState(sessionKey, "waiting");
+        await abortableDelay(OFFLINE_RETRY_MS, signal);
+        continue;
+      }
+      if (runtime && runtime.currentLiveId !== live.liveId) {
+        clearBroadcastState(runtime);
+        runtime.currentLiveId = live.liveId;
+        scheduleHourlyAnnouncement(sessionKey, runtime);
+      }
+
+      const streamSignal = runtime?.managerEventsConfirmed
+        ? signal
+        : AbortSignal.any([signal, AbortSignal.timeout(STREAM_PERMISSION_REFRESH_MS)]);
       const response = await fetch(`${getSpoonConfig().baseUrl}/v1/live/events`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
           Accept: "text/event-stream",
         },
         cache: "no-store",
-        signal,
+        signal: streamSignal,
       });
 
       if (response.status === 401) {
@@ -272,17 +345,17 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       }
 
       retryAttempt = 0;
-      const runtime = runtimes.get(sessionKey);
       if (runtime) {
         runtime.state = "connected";
         runtime.connectedAt = new Date().toISOString();
       }
 
-      const reason = await consumeEventStream(response.body, signal, (event) => {
+      const reason = await consumeEventStream(response.body, streamSignal, (event) => {
         recordEvent(sessionKey, event);
       });
 
       if (signal.aborted) return;
+      if (streamSignal.aborted) continue;
       if (reason === "RECONNECT") continue;
       if (reason === "TOKEN_EXPIRED") {
         forceRefresh = true;
@@ -291,13 +364,31 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
 
       if (reason === "LIVE_ENDED") {
         const endedRuntime = runtimes.get(sessionKey);
-        if (endedRuntime) resetBotAutomationState(endedRuntime);
+        if (endedRuntime) clearBroadcastState(endedRuntime);
         setRuntimeState(sessionKey, "waiting");
         await abortableDelay(OFFLINE_RETRY_MS, signal);
         continue;
       }
     } catch (error) {
-      if (signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
+      if (signal.aborted) return;
+      if (error instanceof SpoonApiErrorResponse && error.status === 401) {
+        if (retriedUnauthorized) {
+          setRuntimeState(sessionKey, "authentication_required");
+          setBotEnabledByKey(sessionKey, false);
+          return;
+        }
+        retriedUnauthorized = true;
+        forceRefresh = true;
+        continue;
+      }
+      if (error instanceof SpoonApiErrorResponse && error.status === 403) {
+        setRuntimeState(sessionKey, error.detailCode === "OAPI_MNGR_0209" ? "blocked" : "permission_required");
+        setBotEnabledByKey(sessionKey, false);
+        return;
+      }
+      if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+        continue;
+      }
     }
 
     setRuntimeState(sessionKey, "reconnecting");
@@ -309,9 +400,10 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
 function startBotByKey(sessionKey: string) {
   const existing = runtimes.get(sessionKey);
   if (existing?.task && !existing.controller?.signal.aborted) return;
+  if (existing?.hourlyTimer) clearTimeout(existing.hourlyTimer);
 
   const controller = new AbortController();
-  const automation = existing ?? createBotAutomationState();
+  const automation = createBotAutomationState();
   const runtime: BotRuntime = {
     enabled: true,
     state: "starting",
@@ -319,11 +411,16 @@ function startBotByKey(sessionKey: string) {
     activity: automation.activity,
     greetedUserIds: automation.greetedUserIds,
     announcedHeartMilestone: automation.announcedHeartMilestone,
+    favoriteRanking: [],
+    favoriteListeners: new Map(),
+    managerEventsConfirmed: false,
     controller,
   };
   runtimes.set(sessionKey, runtime);
 
   runtime.task = runBot(sessionKey, controller.signal).finally(() => {
+    if (runtime.hourlyTimer) clearTimeout(runtime.hourlyTimer);
+    runtime.hourlyTimer = undefined;
     runtime.task = undefined;
     runtime.controller = undefined;
     if (controller.signal.aborted) runtime.state = "stopped";
@@ -341,6 +438,7 @@ export function stopBot(sessionId: string) {
   setBotEnabled(sessionId, false);
   const runtime = runtimes.get(getSessionKey(sessionId));
   runtime?.controller?.abort();
+  if (runtime?.hourlyTimer) clearTimeout(runtime.hourlyTimer);
   if (runtime) {
     runtime.enabled = false;
     runtime.state = "stopped";
@@ -357,6 +455,11 @@ export function getBotSnapshot(sessionId: string): BotSnapshot {
     lastEventAt: runtime?.lastEventAt,
     events: runtime?.events.slice(0, 10) ?? [],
     activity: runtime?.activity ?? { hearts: 0, spoons: 0, welcomedListeners: 0 },
+    favoriteRanking: runtime?.favoriteListeners
+      ? [...runtime.favoriteListeners.values()]
+        .sort((left, right) => right.favoriteTemperature - left.favoriteTemperature)
+        .slice(0, 10)
+      : [],
   };
 }
 
@@ -377,6 +480,7 @@ export function blockBotByKey(sessionKey: string) {
   setBotEnabledByKey(sessionKey, false);
   const runtime = runtimes.get(sessionKey);
   runtime?.controller?.abort();
+  if (runtime?.hourlyTimer) clearTimeout(runtime.hourlyTimer);
   if (runtime) {
     runtime.enabled = false;
     runtime.state = "blocked";

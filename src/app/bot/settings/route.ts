@@ -11,8 +11,12 @@ import {
 
 export const runtime = "nodejs";
 
-function redirect(request: NextRequest, status: string) {
-  return NextResponse.redirect(new URL(`/?tab=bot&settings=${status}`, request.url), 303);
+function redirect(request: NextRequest, status: string, automation?: string) {
+  const target = new URL("/", request.url);
+  target.searchParams.set("tab", "bot");
+  target.searchParams.set("settings", status);
+  if (automation) target.searchParams.set("automation", automation);
+  return NextResponse.redirect(target, 303);
 }
 
 export async function POST(request: NextRequest) {
@@ -24,33 +28,45 @@ export async function POST(request: NextRequest) {
   const mode = formData.get("mode");
 
   if (mode === "greeting") {
-    const djNickname = String(formData.get("djNickname") ?? "").trim();
     const greetingMessage = String(formData.get("greetingMessage") ?? "").trim();
-    if (!djNickname || djNickname.length > 50) return redirect(request, "invalid_nickname");
     if (!greetingMessage || greetingMessage.length > 200) return redirect(request, "invalid_greeting");
 
-    updateBotSettings(sessionId, { ...getBotSettings(sessionId), djNickname, greetingMessage });
+    const settings = getBotSettings(sessionId);
+    if (!settings.djNickname) return redirect(request, "invalid_nickname");
+    updateBotSettings(sessionId, { ...settings, greetingMessage });
     const announcement = greetingMessage
-      .replaceAll("{name}", djNickname)
+      .replaceAll("{name}", settings.djNickname)
       .replaceAll("{nickname}", "여러분");
     const result = await sendChat(sessionId, announcement);
     return redirect(request, result.kind === "sent" ? "greeting_sent" : `greeting_saved_${result.kind}`);
   }
 
-  if (mode === "automation_toggle") {
-    const setting = String(formData.get("setting") ?? "") as keyof Pick<
-      ReturnType<typeof getBotSettings>,
-      "welcomeEnabled" | "donationEnabled" | "heartEnabled" | "commandsEnabled"
-    >;
-    if (!["welcomeEnabled", "donationEnabled", "heartEnabled", "commandsEnabled"].includes(setting)) {
+  if (mode === "automation_feature") {
+    const feature = String(formData.get("feature") ?? "");
+    if (!["welcome", "donation", "heart", "hourly", "commands"].includes(feature)) {
       return redirect(request, "invalid_request");
     }
+
     const current = getBotSettings(sessionId);
-    updateBotSettings(sessionId, {
-      ...current,
-      [setting]: formData.get("enabled") === "true",
-    });
-    return redirect(request, "automation_toggled");
+    const enabled = formData.get("enabled") === "on";
+    const message = String(formData.get("message") ?? "").trim();
+    if (feature !== "commands" && (!message || message.length > 200)) {
+      return redirect(request, "invalid_message", feature);
+    }
+
+    if (feature === "welcome") {
+      updateBotSettings(sessionId, { ...current, welcomeEnabled: enabled, greetingMessage: message });
+    } else if (feature === "donation") {
+      updateBotSettings(sessionId, { ...current, donationEnabled: enabled, donationMessage: message });
+    } else if (feature === "heart") {
+      updateBotSettings(sessionId, { ...current, heartEnabled: enabled, heartMessage: message });
+    } else if (feature === "hourly") {
+      updateBotSettings(sessionId, { ...current, hourlyEnabled: enabled, hourlyMessage: message });
+    } else {
+      updateBotSettings(sessionId, { ...current, commandsEnabled: enabled });
+    }
+
+    return redirect(request, "feature_saved", feature);
   }
 
   if (mode === "upsert_command") {
@@ -60,13 +76,13 @@ export async function POST(request: NextRequest) {
       return redirect(request, "invalid_command");
     }
     upsertBotCommand(sessionId, command, response);
-    return redirect(request, "command_saved");
+    return redirect(request, "command_saved", "commands");
   }
 
   if (mode === "delete_command") {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
     if (command) deleteBotCommand(sessionId, command);
-    return redirect(request, "command_deleted");
+    return redirect(request, "command_deleted", "commands");
   }
 
   return redirect(request, "invalid_request");

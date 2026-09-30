@@ -59,11 +59,11 @@ While participating, the bot also:
 - thanks each donation and totals the received spoons (`events.donation`)
 - totals `like.totalAmount` and announces each new 100-heart milestone (`events.like`)
 
-Spoon only sends presence events after the DJ makes the bot a manager and the bot reconnects. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
+Spoon only sends presence events after the DJ makes the bot a manager. Until those events are confirmed, the worker refreshes its event stream every minute, so a manager promotion made during a broadcast is picked up automatically without a manual bot leave/join. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
 
-The **봇 운영** tab stores an editable DJ nickname, NAGU BOT greeting, automation toggles, and chat commands per OAuth connection. The default greeting is `안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!`; `{name}` uses the saved DJ nickname and `{nickname}` uses the entering listener. Because Spoon does not expose a profile endpoint or nickname in the OAuth token, the nickname can be entered directly and is also learned when the connected DJ sends a chat event.
+The account banner stores the DJ nickname immediately after OAuth connection. Because Spoon does not expose a profile endpoint or nickname in the OAuth token, the nickname is entered directly and can also be learned when the connected DJ sends a chat event.
 
-Each automation switch is saved independently and affects the next event without reconnecting. Saving the greeting also attempts to announce it in the current broadcast. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, hourly announcements, welcome messages, donation thanks, heart milestones, and chat commands. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
 ## Administration
 

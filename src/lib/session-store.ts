@@ -22,6 +22,10 @@ type SessionRow = {
 type BotSettingsRow = {
   dj_nickname: string;
   greeting_message: string;
+  donation_message: string;
+  heart_message: string;
+  hourly_enabled: number;
+  hourly_message: string;
   commands_enabled: number;
   welcome_enabled: number;
   donation_enabled: number;
@@ -32,6 +36,10 @@ type BotSettingsRow = {
 export type BotSettings = {
   djNickname: string;
   greetingMessage: string;
+  donationMessage: string;
+  heartMessage: string;
+  hourlyEnabled: boolean;
+  hourlyMessage: string;
   commandsEnabled: boolean;
   welcomeEnabled: boolean;
   donationEnabled: boolean;
@@ -88,6 +96,10 @@ function migrateDatabase(database: DatabaseSync) {
       session_key TEXT PRIMARY KEY,
       dj_nickname TEXT NOT NULL DEFAULT '',
       greeting_message TEXT NOT NULL DEFAULT '안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!',
+      donation_message TEXT NOT NULL DEFAULT '{nickname}님, {amount}스푼 후원 감사합니다!',
+      heart_message TEXT NOT NULL DEFAULT '하트 {milestone}개를 달성했어요! 감사합니다!',
+      hourly_enabled INTEGER NOT NULL DEFAULT 0,
+      hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!',
       commands_enabled INTEGER NOT NULL DEFAULT 1,
       welcome_enabled INTEGER NOT NULL DEFAULT 1,
       donation_enabled INTEGER NOT NULL DEFAULT 1,
@@ -113,6 +125,18 @@ function migrateDatabase(database: DatabaseSync) {
       "안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!",
       "{nickname}님, 어서 오세요!",
     );
+  }
+  if (!settingsColumns.some((column) => column.name === "donation_message")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN donation_message TEXT NOT NULL DEFAULT '{nickname}님, {amount}스푼 후원 감사합니다!'");
+  }
+  if (!settingsColumns.some((column) => column.name === "heart_message")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN heart_message TEXT NOT NULL DEFAULT '하트 {milestone}개를 달성했어요! 감사합니다!'");
+  }
+  if (!settingsColumns.some((column) => column.name === "hourly_enabled")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!settingsColumns.some((column) => column.name === "hourly_message")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!'");
   }
 }
 
@@ -258,6 +282,10 @@ export function getBotSettingsByKey(sessionKey: string): BotSettings {
   return {
     djNickname: row.dj_nickname,
     greetingMessage: row.greeting_message,
+    donationMessage: row.donation_message,
+    heartMessage: row.heart_message,
+    hourlyEnabled: row.hourly_enabled === 1,
+    hourlyMessage: row.hourly_message,
     commandsEnabled: row.commands_enabled === 1,
     welcomeEnabled: row.welcome_enabled === 1,
     donationEnabled: row.donation_enabled === 1,
@@ -273,11 +301,17 @@ export function updateBotSettings(sessionId: string, settings: BotSettings) {
   ensureBotSettings(getSessionKey(sessionId));
   getDatabase().prepare(`
     UPDATE bot_settings
-    SET dj_nickname = ?, greeting_message = ?, commands_enabled = ?, welcome_enabled = ?, donation_enabled = ?, heart_enabled = ?
+    SET dj_nickname = ?, greeting_message = ?, donation_message = ?, heart_message = ?,
+        hourly_enabled = ?, hourly_message = ?, commands_enabled = ?, welcome_enabled = ?,
+        donation_enabled = ?, heart_enabled = ?
     WHERE session_key = ?
   `).run(
     settings.djNickname,
     settings.greetingMessage,
+    settings.donationMessage,
+    settings.heartMessage,
+    settings.hourlyEnabled ? 1 : 0,
+    settings.hourlyMessage,
     settings.commandsEnabled ? 1 : 0,
     settings.welcomeEnabled ? 1 : 0,
     settings.donationEnabled ? 1 : 0,

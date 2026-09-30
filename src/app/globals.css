@@ -63,15 +63,20 @@ body {
 }
 
 .dashboard-tabs {
-  align-self: stretch;
+  min-height: 52px;
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  justify-content: center;
   gap: 28px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .dashboard-tabs a {
   display: flex;
   align-items: center;
+  align-self: stretch;
   border-bottom: 2px solid transparent;
   color: var(--muted);
   font-size: 14px;
@@ -1097,6 +1102,168 @@ h1 {
   font-size: 12px;
 }
 
+.settings-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 18px;
+  color: var(--green);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-notice.is-error {
+  color: var(--red);
+}
+
+.settings-notice > span {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.automation-tabs {
+  display: flex;
+  gap: 22px;
+  overflow-x: auto;
+  margin-top: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.automation-tabs a {
+  min-height: 42px;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.automation-tabs a:hover,
+.automation-tabs a.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.automation-feature-form {
+  display: grid;
+  gap: 9px;
+  margin-top: 22px;
+}
+
+.automation-feature-form > label:not(.feature-enabled) {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.feature-enabled,
+.command-enabled-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.automation-feature-form textarea {
+  width: 100%;
+  min-height: 86px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--text);
+  background: #fff;
+  font: inherit;
+  resize: vertical;
+}
+
+.automation-feature-form p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.automation-feature-form button,
+.command-enabled-form button {
+  justify-self: start;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ranking-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  margin-top: 22px;
+}
+
+.ranking-columns h4 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.ranking-columns ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranking-columns li {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.ranking-columns li > span {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.ranking-columns li strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-columns li em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.ranking-columns section > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.command-enabled-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.command-enabled-form label {
+  margin: 0;
+}
+
 .greeting-form {
   display: grid;
   margin-top: 20px;
@@ -1150,75 +1317,6 @@ h1 {
 .greeting-form button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.automation-toggles {
-  display: grid;
-  margin-top: 20px;
-  border-top: 1px solid var(--line);
-}
-
-.automation-toggles form {
-  min-height: 68px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.automation-toggles form > div {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.automation-toggles form strong {
-  font-size: 14px;
-}
-
-.automation-toggles form span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.automation-switch {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  flex: 0 0 44px;
-  border: 0;
-  border-radius: 12px;
-  padding: 0;
-  background: #c9c9ce;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-
-.automation-switch > span {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  transition: transform 140ms ease;
-}
-
-.automation-switch.is-on {
-  background: var(--green);
-}
-
-.automation-switch.is-on > span {
-  transform: translateX(20px);
-}
-
-.automation-switch:focus-visible {
-  outline: 3px solid rgba(24, 166, 106, 0.25);
-  outline-offset: 3px;
 }
 
 .command-editor {
@@ -1422,19 +1520,12 @@ h1 {
 }
 
 @media (max-width: 760px) {
-  .header:has(.dashboard-tabs) {
-    min-height: 108px;
-    flex-wrap: wrap;
-    align-content: center;
-    column-gap: 16px;
-  }
-
   .dashboard-tabs {
-    order: 3;
     width: 100%;
-    height: 42px;
-    justify-content: center;
-    gap: 40px;
+    min-height: 48px;
+    justify-content: flex-start;
+    gap: 28px;
+    overflow-x: auto;
   }
 
   .automation-heading,
@@ -1454,5 +1545,84 @@ h1 {
 
   .admin-main > h1 {
     font-size: 30px;
+  }
+}
+
+.profile-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.65fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.profile-form > div {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-form label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.profile-form span,
+.profile-result {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.profile-form input {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.profile-form button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 16px;
+  background: var(--text);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-result {
+  margin: 10px 0 0;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.profile-result.is-error {
+  color: var(--red);
+}
+
+@media (max-width: 760px) {
+  .profile-form,
+  .ranking-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-form {
+    align-items: stretch;
+  }
+
+  .profile-form button {
+    justify-self: start;
+  }
+
+  .automation-tabs {
+    gap: 18px;
+  }
+
+  .command-enabled-form {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

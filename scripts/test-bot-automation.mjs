@@ -85,4 +85,28 @@ assert.equal(processBotAutomation(configuredState, {
 assert.equal(configuredState.activity.hearts, 100);
 assert.equal(configuredState.activity.spoons, 100);
 
+const templateState = createBotAutomationState();
+const templateOptions = {
+  djNickname: "나구",
+  greetingMessage: "{nickname}님 환영합니다!",
+  donationMessage: "{nickname}님이 {amount}스푼을 보내셨어요!",
+  heartMessage: "누적 하트 {milestone}개 달성!",
+  welcomeEnabled: true,
+  donationEnabled: true,
+  heartEnabled: true,
+};
+assert.equal(processBotAutomation(templateState, {
+  event: "donation",
+  data: {
+    user: { id: "fan-3", nickname: "후원왕" },
+    amount: 1200,
+    message: null,
+    time: "2026-09-30T00:00:00Z",
+  },
+}, templateOptions), "후원왕님이 1,200스푼을 보내셨어요!");
+assert.equal(
+  processBotAutomation(templateState, like(100), templateOptions),
+  "누적 하트 100개 달성!",
+);
+
 console.log("Automation checks passed: settings, greetings, hearts, donations, and reset");

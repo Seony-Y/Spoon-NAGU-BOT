@@ -19,6 +19,7 @@ type HomeProps = {
     chat?: string;
     settings?: string;
     tab?: string;
+    automation?: string;
   }>;
 };
 
@@ -88,13 +89,23 @@ const chatNotices: Record<string, { tone: "success" | "error"; title: string; de
 
 const settingsNotices: Record<string, { tone: "success" | "error"; text: string }> = {
   greeting_sent: { tone: "success", text: "인사말을 저장하고 현재 방송 채팅에 바로 보냈습니다." },
-  automation_toggled: { tone: "success", text: "자동화 설정을 변경했습니다. 다음 이벤트부터 적용됩니다." },
+  feature_saved: { tone: "success", text: "자동화 설정을 저장했습니다. 다음 이벤트부터 적용됩니다." },
   command_saved: { tone: "success", text: "명령어를 저장했습니다. 같은 명령어는 새 응답으로 교체됩니다." },
   command_deleted: { tone: "success", text: "명령어를 삭제했습니다." },
   invalid_greeting: { tone: "error", text: "인사말은 1자 이상 200자 이하로 입력해 주세요." },
   invalid_nickname: { tone: "error", text: "DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요." },
   invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
+  invalid_message: { tone: "error", text: "메시지는 1자 이상 200자 이하로 입력해 주세요." },
 };
+
+const automationTabs = [
+  ["ranking", "실시간 랭킹"],
+  ["hourly", "시간 멘트"],
+  ["welcome", "입장 환영"],
+  ["donation", "후원 감사"],
+  ["heart", "하트 달성"],
+  ["commands", "채팅 명령어"],
+] as const;
 
 function summarizeEvent(event: BotEvent) {
   const name = event.data.user.nickname ?? "익명";
@@ -114,6 +125,9 @@ function summarizeEvent(event: BotEvent) {
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const isBotTab = params.tab === "bot";
+  const automationTab = automationTabs.some(([key]) => key === params.automation)
+    ? params.automation
+    : "ranking";
   const cookieStore = await cookies();
   const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
   const connectionBlocked = isSessionBlocked(sessionId);
@@ -141,7 +155,8 @@ export default async function Home({ searchParams }: HomeProps) {
       ? { tone: "error" as const, text: "인사말은 저장했지만 현재 방송 채팅에는 보내지 못했습니다." }
       : null)
     : null;
-  const botSettings = isBotTab && connected && sessionId ? getBotSettings(sessionId) : null;
+  const accountSettings = connected && sessionId ? getBotSettings(sessionId) : null;
+  const botSettings = isBotTab ? accountSettings : null;
   const botCommands = isBotTab && connected && sessionId ? listBotCommands(sessionId) : [];
 
   return (
@@ -157,14 +172,6 @@ export default async function Home({ searchParams }: HomeProps) {
           />
           <span>NAGU BOT</span>
         </Link>
-        <nav className="dashboard-tabs" aria-label="운영 메뉴">
-          <Link className={!isBotTab ? "is-active" : ""} href="/" aria-current={!isBotTab ? "page" : undefined}>
-            대시보드
-          </Link>
-          <Link className={isBotTab ? "is-active" : ""} href="/?tab=bot" aria-current={isBotTab ? "page" : undefined}>
-            봇 운영
-          </Link>
-        </nav>
         <span className={`header-status ${connected ? "is-connected" : ""}`}>
           <span className="status-dot" aria-hidden="true" />
           {connected ? "연결됨" : "연결 대기"}
@@ -248,6 +255,32 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
+            {connected && accountSettings && (
+              <form className="profile-form" action="/account/profile" method="post">
+                <div>
+                  <label htmlFor="account-dj-nickname">DJ 닉네임</label>
+                  <span>{accountSettings.djNickname ? "연결 관리에 표시되는 이름입니다." : "계속하려면 DJ 닉네임을 등록해 주세요."}</span>
+                </div>
+                <input
+                  id="account-dj-nickname"
+                  name="djNickname"
+                  defaultValue={accountSettings.djNickname}
+                  maxLength={50}
+                  placeholder="Spoon DJ 닉네임"
+                  required
+                />
+                <button type="submit">{accountSettings.djNickname ? "수정" : "등록"}</button>
+              </form>
+            )}
+
+            {params.status === "nickname_saved" && (
+              <p className="profile-result" role="status">DJ 닉네임을 저장했습니다.</p>
+            )}
+
+            {params.status === "invalid_nickname" && (
+              <p className="profile-result is-error" role="alert">DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요.</p>
+            )}
+
             {!connectionBlocked && <div className="connection-actions">
               <a className="connect" href="/oauth/connect">
                 {connected ? "계정 다시 연결하기" : "Spoon 계정 연결하기"}
@@ -263,6 +296,15 @@ export default async function Home({ searchParams }: HomeProps) {
               인증 정보는 암호화되어 안전하게 보관되며 비밀번호는 저장하지 않습니다.
             </p>
           </div>
+
+          <nav className="dashboard-tabs" aria-label="운영 메뉴">
+            <Link className={!isBotTab ? "is-active" : ""} href="/" aria-current={!isBotTab ? "page" : undefined}>
+              대시보드
+            </Link>
+            <Link className={isBotTab ? "is-active" : ""} href="/?tab=bot" aria-current={isBotTab ? "page" : undefined}>
+              봇 운영
+            </Link>
+          </nav>
 
           {!isBotTab && connected && liveStatus && (
             <article className="live-card" aria-labelledby="live-title">
@@ -455,70 +497,93 @@ export default async function Home({ searchParams }: HomeProps) {
                   <div className="automation-heading">
                     <div>
                       <p className="section-label">운영 설정</p>
-                      <h3 id="automation-title">인사말과 자동 응답</h3>
+                      <h3 id="automation-title">자동화와 실시간 랭킹</h3>
                     </div>
                     <span>수정 즉시 적용</span>
                   </div>
 
                   {settingsNotice && (
-                    <div className={`notice ${settingsNotice.tone}`} role={settingsNotice.tone === "error" ? "alert" : "status"}>
-                      <span className="notice-icon" aria-hidden="true">{settingsNotice.tone === "success" ? "✓" : "!"}</span>
-                      <div><strong>{settingsNotice.text}</strong></div>
+                    <div className={`settings-notice is-${settingsNotice.tone}`} role={settingsNotice.tone === "error" ? "alert" : "status"}>
+                      <span aria-hidden="true">{settingsNotice.tone === "success" ? "✓" : "!"}</span>
+                      <strong>{settingsNotice.text}</strong>
                     </div>
                   )}
 
-                  <form className="greeting-form" action="/bot/settings" method="post">
-                    <input type="hidden" name="mode" value="greeting" />
-                    <label htmlFor="dj-nickname">DJ 닉네임</label>
-                    <input
-                      id="dj-nickname"
-                      name="djNickname"
-                      defaultValue={botSettings.djNickname}
-                      maxLength={50}
-                      placeholder="Spoon DJ 닉네임"
-                      required
-                    />
-                    <label htmlFor="greeting-message">NAGU BOT 방송 인사말</label>
-                    <textarea
-                      id="greeting-message"
-                      name="greetingMessage"
-                      defaultValue={botSettings.greetingMessage}
-                      maxLength={200}
-                      rows={3}
-                      required
-                    />
-                    <p>
-                      <code>{"{name}"}</code>은 DJ 닉네임, <code>{"{nickname}"}</code>은 청취자 닉네임으로 바뀝니다.
-                    </p>
-                    <button type="submit" disabled={!hasChatScope}>저장하고 지금 알리기</button>
-                  </form>
-
-                  <div className="automation-toggles">
-                    {[
-                      { key: "welcomeEnabled", label: "입장 환영", detail: "청취자가 들어오면 인사말을 보냅니다.", enabled: botSettings.welcomeEnabled },
-                      { key: "donationEnabled", label: "후원 감사", detail: "후원 금액과 함께 감사 인사를 보냅니다.", enabled: botSettings.donationEnabled },
-                      { key: "heartEnabled", label: "하트 달성", detail: "하트 100개 단위로 달성을 알립니다.", enabled: botSettings.heartEnabled },
-                      { key: "commandsEnabled", label: "채팅 명령어", detail: "등록한 명령어에 자동으로 답합니다.", enabled: botSettings.commandsEnabled },
-                    ].map((automation) => (
-                      <form action="/bot/settings" method="post" key={automation.key}>
-                        <input type="hidden" name="mode" value="automation_toggle" />
-                        <input type="hidden" name="setting" value={automation.key} />
-                        <input type="hidden" name="enabled" value={automation.enabled ? "false" : "true"} />
-                        <div><strong>{automation.label}</strong><span>{automation.detail}</span></div>
-                        <button
-                          className={`automation-switch ${automation.enabled ? "is-on" : ""}`}
-                          type="submit"
-                          role="switch"
-                          aria-checked={automation.enabled}
-                          aria-label={`${automation.label} ${automation.enabled ? "끄기" : "켜기"}`}
-                        >
-                          <span aria-hidden="true" />
-                        </button>
-                      </form>
+                  <nav className="automation-tabs" aria-label="자동화 설정">
+                    {automationTabs.map(([key, label]) => (
+                      <Link key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}`}>
+                        {label}
+                      </Link>
                     ))}
-                  </div>
+                  </nav>
 
-                  <div className="command-editor">
+                  {automationTab === "ranking" && (
+                    <div className="ranking-columns">
+                      <section>
+                        <h4>애청온도 랭킹</h4>
+                        {bot.favoriteRanking.length > 0 ? (
+                          <ol>{bot.favoriteRanking.map((listener, index) => (
+                            <li key={listener.id}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.favoriteTemperature.toFixed(1)}°</em></li>
+                          ))}</ol>
+                        ) : <p>이번 방송에서 수신한 입장 정보가 없습니다.</p>}
+                      </section>
+                      <section>
+                        <h4>스푼 랭킹</h4>
+                        {audienceResult.fans.kind === "ready" && audienceResult.fans.items.length > 0 ? (
+                          <ol>{audienceResult.fans.items.slice(0, 10).map((fan) => (
+                            <li key={fan.id}><span>{fan.rank}</span><strong>{fan.nickname}</strong><em>{(fan.spoonCount ?? 0).toLocaleString("ko-KR")}스푼</em></li>
+                          ))}</ol>
+                        ) : <p>현재 표시할 스푼 랭킹이 없습니다.</p>}
+                      </section>
+                    </div>
+                  )}
+
+                  {automationTab === "hourly" && (
+                    <form className="automation-feature-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="hourly" />
+                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.hourlyEnabled} /> 한 시간마다 자동 멘트 사용</label>
+                      <label htmlFor="hourly-message">자동 멘트</label>
+                      <textarea id="hourly-message" name="message" defaultValue={botSettings.hourlyMessage} maxLength={200} rows={3} required />
+                      <p><code>{"{name}"}</code>을 DJ 닉네임으로 바꿉니다.</p><button type="submit">시간 멘트 저장</button>
+                    </form>
+                  )}
+
+                  {automationTab === "welcome" && (
+                    <form className="automation-feature-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="welcome" />
+                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.welcomeEnabled} /> 입장 환영 사용</label>
+                      <label htmlFor="welcome-message">입장 인사말</label>
+                      <textarea id="welcome-message" name="message" defaultValue={botSettings.greetingMessage} maxLength={200} rows={3} required />
+                      <p><code>{"{name}"}</code>은 DJ, <code>{"{nickname}"}</code>은 청취자 닉네임입니다.</p><button type="submit">입장 환영 저장</button>
+                    </form>
+                  )}
+
+                  {automationTab === "donation" && (
+                    <form className="automation-feature-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="donation" />
+                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.donationEnabled} /> 후원 감사 사용</label>
+                      <label htmlFor="donation-message">후원 감사말</label>
+                      <textarea id="donation-message" name="message" defaultValue={botSettings.donationMessage} maxLength={200} rows={3} required />
+                      <p><code>{"{nickname}"}</code>은 후원자, <code>{"{amount}"}</code>는 스푼 수입니다.</p><button type="submit">후원 감사 저장</button>
+                    </form>
+                  )}
+
+                  {automationTab === "heart" && (
+                    <form className="automation-feature-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="heart" />
+                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.heartEnabled} /> 하트 100개 달성 멘트 사용</label>
+                      <label htmlFor="heart-message">달성 멘트</label>
+                      <textarea id="heart-message" name="message" defaultValue={botSettings.heartMessage} maxLength={200} rows={3} required />
+                      <p><code>{"{milestone}"}</code>을 달성한 누적 하트 수로 바꿉니다.</p><button type="submit">하트 달성 저장</button>
+                    </form>
+                  )}
+
+                  {automationTab === "commands" && <div className="command-editor">
+                    <form className="command-enabled-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="commands" />
+                      <label><input type="checkbox" name="enabled" defaultChecked={botSettings.commandsEnabled} /> 채팅 명령어 사용</label>
+                      <button type="submit">사용 설정 저장</button>
+                    </form>
                     <h4>명령어 관리</h4>
                     {botCommands.length > 0 && (
                       <ul>
@@ -542,7 +607,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <input id="command-response" name="response" placeholder="응답 메시지" maxLength={200} required />
                       <button type="submit">추가 또는 수정</button>
                     </form>
-                  </div>
+                  </div>}
                 </section>
               )}
 
@@ -563,7 +628,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
               {scopes.includes("events.presence") && (
                 <p className="manager-help">
-                  입장 환영은 Spoon에서 봇을 매니저로 지정한 뒤 봇을 퇴장·재참여해야 동작합니다.
+                  Spoon에서 봇을 매니저로 지정하면 최대 1분 이내 자동으로 반영됩니다.
                 </p>
               )}
 
