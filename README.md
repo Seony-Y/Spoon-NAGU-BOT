@@ -1,4 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NAGU BOT OAuth Server
+
+Minimal Spoon OAuth callback server for Vercel.
+
+## Local setup
+
+1. Copy `.env.example` to `.env.local`.
+2. Add the Spoon Client Secret after the app is approved.
+3. Generate a session secret with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+4. Run `npm run dev`.
+
+The registered redirect URI must exactly match `SPOON_REDIRECT_URI`.
+
+## Vercel environment variables
+
+Configure every variable from `.env.example`. Use the production deployment URL for `SPOON_REDIRECT_URI`, for example:
+
+```text
+https://nagu-bot.vercel.app/oauth/callback
+```
+
+Tokens are encrypted with AES-256-GCM and stored only in an HttpOnly, Secure, SameSite=Lax cookie. The application does not print tokens to the page or server logs.
 
 ## Getting Started
 
