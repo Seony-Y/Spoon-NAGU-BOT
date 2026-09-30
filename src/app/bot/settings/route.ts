@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
   if (mode === "upsert_command") {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
     const response = String(formData.get("response") ?? "").trim();
+    if (command === "!실드") return redirect(request, "reserved_command", "commands");
     if (!/^![^\s]{1,19}$/.test(command) || !response || response.length > 200) {
       return redirect(request, "invalid_command");
     }

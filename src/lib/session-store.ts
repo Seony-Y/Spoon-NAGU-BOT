@@ -4,7 +4,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { formatCounterAdjustment, parseCounterAdjustment } from "./counter-command";
+import {
+  formatCounterAdjustment,
+  parseCounterAdjustment,
+  parseCounterQuery,
+} from "./counter-command";
 import type { SpoonToken } from "./spoon";
 import {
   decryptToken,
@@ -110,7 +114,7 @@ function migrateDatabase(database: DatabaseSync) {
       heart_message TEXT NOT NULL DEFAULT '{nickname}님, 하트 {milestone}개 감사합니다!',
       hourly_enabled INTEGER NOT NULL DEFAULT 0,
       hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!',
-      repeat_interval_minutes INTEGER NOT NULL DEFAULT 60,
+      repeat_interval_minutes INTEGER NOT NULL DEFAULT 10,
       commands_enabled INTEGER NOT NULL DEFAULT 1,
       welcome_enabled INTEGER NOT NULL DEFAULT 1,
       donation_enabled INTEGER NOT NULL DEFAULT 1,
@@ -130,6 +134,10 @@ function migrateDatabase(database: DatabaseSync) {
       initial_value INTEGER NOT NULL DEFAULT 0,
       value INTEGER NOT NULL DEFAULT 0,
       UNIQUE (session_key, name)
+    );
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      key TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL
     );
   `);
 
@@ -158,7 +166,13 @@ function migrateDatabase(database: DatabaseSync) {
     database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!'");
   }
   if (!settingsColumns.some((column) => column.name === "repeat_interval_minutes")) {
-    database.exec("ALTER TABLE bot_settings ADD COLUMN repeat_interval_minutes INTEGER NOT NULL DEFAULT 60");
+    database.exec("ALTER TABLE bot_settings ADD COLUMN repeat_interval_minutes INTEGER NOT NULL DEFAULT 10");
+  }
+  const repeatDefaultMigration = database.prepare(
+    "INSERT OR IGNORE INTO app_migrations (key, applied_at) VALUES (?, ?)",
+  ).run("repeat_default_10", Date.now());
+  if (repeatDefaultMigration.changes > 0) {
+    database.exec("UPDATE bot_settings SET repeat_interval_minutes = 10 WHERE repeat_interval_minutes = 60");
   }
   database.prepare("UPDATE bot_settings SET heart_message = ? WHERE heart_message = ?").run(
     "{nickname}님, 하트 {milestone}개 감사합니다!",
@@ -289,7 +303,9 @@ export function listEnabledBotSessions(): EnabledBotSession[] {
 
 function ensureBotSettings(sessionKey: string) {
   const database = getDatabase();
-  database.prepare("INSERT OR IGNORE INTO bot_settings (session_key) VALUES (?)").run(sessionKey);
+  database.prepare(`
+    INSERT OR IGNORE INTO bot_settings (session_key, repeat_interval_minutes) VALUES (?, 10)
+  `).run(sessionKey);
   const settings = database.prepare("SELECT * FROM bot_settings WHERE session_key = ?")
     .get(sessionKey) as BotSettingsRow;
 
@@ -302,6 +318,10 @@ function ensureBotSettings(sessionKey: string) {
     database.prepare("UPDATE bot_settings SET commands_initialized = 1 WHERE session_key = ?")
       .run(sessionKey);
   }
+  database.prepare(`
+    INSERT OR IGNORE INTO bot_counters (session_key, name, initial_value, value)
+    VALUES (?, '실드', 0, 0)
+  `).run(sessionKey);
 
   return settings;
 }
@@ -438,11 +458,16 @@ export function saveBotCounter(
       return true;
     }
 
+    const existing = database.prepare(
+      "SELECT name FROM bot_counters WHERE id = ? AND session_key = ?",
+    ).get(id, sessionKey) as Pick<BotCounter, "name"> | undefined;
+    if (!existing) return false;
+    const savedName = existing.name.toLocaleLowerCase("ko-KR") === "실드" ? "실드" : name;
     const result = database.prepare(`
       UPDATE bot_counters
       SET name = ?, initial_value = ?, value = ?
       WHERE id = ? AND session_key = ?
-    `).run(name, initialValue, value, id, sessionKey);
+    `).run(savedName, initialValue, value, id, sessionKey);
     return result.changes > 0;
   } catch {
     return false;
@@ -458,13 +483,23 @@ export function resetBotCounter(sessionId: string, id: number) {
 
 export function deleteBotCounter(sessionId: string, id: number) {
   const result = getDatabase().prepare(
-    "DELETE FROM bot_counters WHERE id = ? AND session_key = ?",
+    "DELETE FROM bot_counters WHERE id = ? AND session_key = ? AND name != '실드' COLLATE NOCASE",
   ).run(id, getSessionKey(sessionId));
   return result.changes > 0;
 }
 
 export function applyBotCounterCommand(sessionKey: string, message: string) {
   const adjustment = parseCounterAdjustment(message);
+  const queryName = adjustment ? null : parseCounterQuery(message);
+  if (!adjustment && !queryName) return null;
+
+  if (queryName) {
+    const row = getDatabase().prepare(`
+      SELECT name, value FROM bot_counters
+      WHERE session_key = ? AND name = ? COLLATE NOCASE
+    `).get(sessionKey, queryName) as Pick<BotCounter, "name" | "value"> | undefined;
+    return row ? formatCounterAdjustment(row.name, row.value) : null;
+  }
   if (!adjustment) return null;
 
   const row = getDatabase().prepare(`

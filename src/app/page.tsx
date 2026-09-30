@@ -95,6 +95,7 @@ const settingsNotices: Record<string, { tone: "success" | "error"; text: string 
   invalid_greeting: { tone: "error", text: "인사말은 1자 이상 200자 이하로 입력해 주세요." },
   invalid_nickname: { tone: "error", text: "DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요." },
   invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
+  reserved_command: { tone: "error", text: "!실드는 기본 실드 개수 명령어로 항상 유지됩니다." },
   invalid_message: { tone: "error", text: "메시지는 1자 이상 200자 이하로 입력해 주세요." },
   invalid_interval: { tone: "error", text: "반복 간격은 1분 이상 1440분 이하로 입력해 주세요." },
   counter_saved: { tone: "success", text: "실드 설정을 저장했습니다." },
@@ -597,14 +598,14 @@ export default async function Home({ searchParams }: HomeProps) {
                       {botCounters.map((counter) => <section key={counter.id} className="counter-item">
                         <form action="/bot/settings" method="post">
                           <input type="hidden" name="mode" value="save_counter" /><input type="hidden" name="id" value={counter.id} />
-                          <label>이름<input name="name" defaultValue={counter.name} maxLength={20} required /></label>
+                          <label>이름<input name="name" defaultValue={counter.name} maxLength={20} readOnly={counter.name === "실드"} required /></label>
                           <label>초기 개수<input type="number" name="initialValue" min={0} max={1000000} defaultValue={counter.initialValue} required /></label>
                           <label>현재 개수<input type="number" name="value" min={0} max={1000000} defaultValue={counter.value} required /></label>
                           <button type="submit">수정</button>
                         </form>
                         <div className="counter-actions">
                           <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="reset_counter" /><input type="hidden" name="id" value={counter.id} /><button type="submit">초기화</button></form>
-                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><button className="is-danger" type="submit">삭제</button></form>
+                          {counter.name !== "실드" && <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><button className="is-danger" type="submit">삭제</button></form>}
                         </div>
                       </section>)}
                     </div>}
@@ -623,6 +624,18 @@ export default async function Home({ searchParams }: HomeProps) {
                       <button type="submit">사용 설정 저장</button>
                     </form>
                     <h4>명령어 관리</h4>
+                    {botCounters.length > 0 && (
+                      <ul>
+                        {botCounters.map((counter) => (
+                          <li key={`counter-${counter.id}`}>
+                            <div>
+                              <strong>!{counter.name}</strong>
+                              <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 · +N/-N으로 변경</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {botCommands.length > 0 && (
                       <ul>
                         {botCommands.map((item) => (
@@ -811,7 +824,6 @@ export default async function Home({ searchParams }: HomeProps) {
 
       <footer className="footer">
         <span>NAGU BOT v1.0.0</span>
-        <Link href="/admin">관리자</Link>
         <span>2026 © NAGU BOT</span>
       </footer>
     </div>

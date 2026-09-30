@@ -10,7 +10,7 @@ Spoon OAuth and bot management server for Railway.
 4. Set a strong `ADMIN_PASSWORD` for the `/admin` operations page.
 5. Run `npm run dev`.
 
-The registered redirect URI must exactly match `SPOON_REDIRECT_URI`.
+The registered redirect URI must exactly match `SPOON_REDIRECT_URI`. The application must also be approved and show an `active` status in Spoon Developers before OAuth consent works. If every scope shows "이 앱과 연결할 수 없습니다", confirm that the configured Client ID belongs to the active app rather than a pending, rejected, deleted, or different application.
 
 ## Vercel environment variables
 
@@ -65,15 +65,15 @@ Before manager-only presence events are confirmed, a chat command receives a man
 
 The account banner stores the DJ nickname immediately after OAuth connection. Because Spoon does not expose a profile endpoint or nickname in the OAuth token, the nickname is entered directly and can also be learned when the connected DJ sends a chat event.
 
-The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, welcome messages, donation thanks, heart donations, repeat announcements, named counters, and chat commands. Repeat announcements accept a 1-1440 minute interval and pick up changes within one minute. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, welcome messages, donation thanks, heart donations, repeat announcements, named counters, and chat commands. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
-Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. In chat, `!실드 +2` adds two and `!실드 -1` subtracts one without allowing a negative result. Names, initial values, current values, resets, and deletions are managed in the counter tab.
+Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. In chat, `!실드` displays the current value, `!실드 +2` adds two, and `!실드 -1` subtracts one without allowing a negative result. Names, initial values, current values, resets, and deletions are managed in the counter tab.
 
 Disconnecting revokes and removes OAuth credentials but retains bot settings under the long-lived browser session key. Reconnecting the same DJ from that browser restores messages, commands, and counters automatically. Spoon does not expose a stable account identifier, so clearing the browser cookie starts a new settings workspace.
 
 ## Administration
 
-Open `/admin` and sign in with `ADMIN_PASSWORD` to block or unblock an OAuth connection. Blocking immediately stops its running event worker, disables restart restoration, and rejects authentication, bot participation, chat, settings changes, and OAuth reconnection for that same connection.
+Open `/admin` and enter `ADMIN_PASSWORD` to block or unblock an OAuth connection. The code is held only in page memory: no admin cookie or session is created, and refreshing or reopening `/admin` requires the code again. Blocking immediately stops its running event worker, disables restart restoration, and rejects authentication, bot participation, chat, settings changes, and OAuth reconnection for that same connection.
 
 The Spoon Open API does not expose a stable DJ account identifier. Blocking therefore applies to the stored OAuth connection, and a DJ who clears the session cookie and grants a completely new OAuth connection can appear as a new record.
 

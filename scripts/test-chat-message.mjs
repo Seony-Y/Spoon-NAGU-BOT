@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 
 import { getCommandReply, validateChatMessage } from "../src/lib/chat-message.ts";
-import { formatCounterAdjustment, parseCounterAdjustment } from "../src/lib/counter-command.ts";
+import {
+	formatCounterAdjustment,
+	parseCounterAdjustment,
+	parseCounterQuery,
+} from "../src/lib/counter-command.ts";
 
 assert.equal(validateChatMessage("   "), "invalid_message");
 assert.equal(validateChatMessage("가".repeat(200)), null);
@@ -20,6 +24,8 @@ assert.deepEqual(parseCounterAdjustment("!펀딩 +1000"), { name: "펀딩", delt
 assert.equal(parseCounterAdjustment("!실드 2"), null);
 assert.equal(parseCounterAdjustment("!실드 +0"), null);
 assert.equal(parseCounterAdjustment("!실드 +1000001"), null);
+assert.equal(parseCounterQuery(" !실드 "), "실드");
+assert.equal(parseCounterQuery("!실드 +1"), null);
 assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았습니다.");
 
 console.log("Chat checks passed: validation, replies, and counter adjustments");
