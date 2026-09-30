@@ -143,16 +143,150 @@ h1 {
 
 .connection-section {
   width: min(100% - 48px, 760px);
+  display: grid;
+  gap: 20px;
   margin: 0 auto;
   padding: 56px 0 72px;
 }
 
-.connection-card {
+.connection-card,
+.live-card {
   padding: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 10px 30px rgba(29, 29, 33, 0.05);
+}
+
+.live-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.live-heading h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.4;
+}
+
+.live-badge {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: #f1f1f3;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.live-badge.is-live {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.live-badge.is-live .status-dot {
+  background: var(--red);
+}
+
+.live-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 28px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.live-metrics div {
+  min-width: 0;
+  padding: 18px;
+  background: var(--surface);
+}
+
+.live-metrics dt,
+.live-message span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.live-metrics dd {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.live-metrics dd.is-frozen {
+  color: var(--red);
+}
+
+.live-message {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.live-message p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.live-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.live-tags span {
+  color: #646469;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.live-empty {
+  margin: 28px 0;
+  padding: 28px 20px;
+  border: 1px dashed #d9d9de;
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fafafa;
+  font-size: 14px;
+  text-align: center;
+}
+
+.live-card > .notice {
+  margin: 24px 0;
+}
+
+.refresh-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 22px;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.refresh-live img {
+  width: 16px;
+  height: 16px;
+}
+
+.refresh-live:hover {
+  text-decoration: underline;
 }
 
 .connection-copy h2 {
@@ -334,6 +468,22 @@ h1 {
 
   .connection-card {
     padding: 24px 20px;
+  }
+
+  .live-card {
+    padding: 24px 20px;
+  }
+
+  .live-heading {
+    align-items: center;
+  }
+
+  .live-heading h2 {
+    font-size: 20px;
+  }
+
+  .live-metrics {
+    grid-template-columns: 1fr;
   }
 
   .footer {

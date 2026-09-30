@@ -3,7 +3,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
+import refreshIcon from "@/asset/icon-refresh.svg";
 import { getAuthSession } from "@/lib/auth";
+import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
 
 type HomeProps = {
@@ -34,14 +36,35 @@ const scopeLabels: Record<string, string> = {
   "fans.read": "팬 랭킹",
 };
 
+const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+  month: "long",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "Asia/Seoul",
+});
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : dateTimeFormatter.format(date);
+}
+
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const cookieStore = await cookies();
-  const session = await getAuthSession(cookieStore.get(SESSION_COOKIE)?.value);
+  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
+  let session = await getAuthSession(sessionId);
+  const liveResult = await loadLiveStatus(sessionId, session);
+  session = liveResult.session;
   const connected = session !== null;
-  const error = params.error ? errorMessages[params.error] ?? "연동에 실패했습니다." : null;
+  const error = params.error
+    ? errorMessages[params.error] ?? "연동에 실패했습니다."
+    : liveResult.authenticationExpired
+      ? "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요."
+      : null;
   const scopes = session?.scope.split(" ").filter(Boolean) ?? [];
   const disconnected = params.status === "disconnected";
+  const liveStatus = liveResult.status;
 
   return (
     <div className="site-shell">
@@ -149,6 +172,94 @@ export default async function Home({ searchParams }: HomeProps) {
             </p>
           </div>
 
+          {connected && liveStatus && (
+            <article className="live-card" aria-labelledby="live-title">
+              <div className="live-heading">
+                <div>
+                  <p className="section-label">방송 상태</p>
+                  <h2 id="live-title">
+                    {liveStatus.kind === "live" ? liveStatus.live.title : "현재 방송 정보"}
+                  </h2>
+                </div>
+                <span className={`live-badge ${liveStatus.kind === "live" ? "is-live" : ""}`}>
+                  <span className="status-dot" aria-hidden="true" />
+                  {liveStatus.kind === "live" ? "ON AIR" : "OFF AIR"}
+                </span>
+              </div>
+
+              {liveStatus.kind === "live" && (
+                <>
+                  <dl className="live-metrics">
+                    <div>
+                      <dt>현재 청취자</dt>
+                      <dd>{liveStatus.live.listenerCount.toLocaleString("ko-KR")}명</dd>
+                    </div>
+                    <div>
+                      <dt>누적 청취자</dt>
+                      <dd>{liveStatus.live.totalListenerCount.toLocaleString("ko-KR")}명</dd>
+                    </div>
+                    <div>
+                      <dt>방송 시작</dt>
+                      <dd>{formatDateTime(liveStatus.live.startedAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>채팅 상태</dt>
+                      <dd className={liveStatus.live.isChatFrozen ? "is-frozen" : ""}>
+                        {liveStatus.live.isChatFrozen ? "채팅 동결" : "채팅 가능"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {liveStatus.live.welcomeMessage && (
+                    <div className="live-message">
+                      <span>방송 인사말</span>
+                      <p>{liveStatus.live.welcomeMessage}</p>
+                    </div>
+                  )}
+
+                  {(liveStatus.live.categories.length > 0 || liveStatus.live.tags.length > 0) && (
+                    <div className="live-tags" aria-label="방송 카테고리와 태그">
+                      {liveStatus.live.categories.map((category) => (
+                        <span key={`category-${category}`}>{category}</span>
+                      ))}
+                      {liveStatus.live.tags.map((tag) => (
+                        <span key={`tag-${tag}`}>#{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {liveStatus.kind === "offline" && (
+                <p className="live-empty">현재 진행 중인 방송이 없습니다.</p>
+              )}
+
+              {liveStatus.kind === "missing_scope" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>방송 정보 권한 필요</strong>
+                    <span>계정을 다시 연결해 live.read 권한을 승인해 주세요.</span>
+                  </div>
+                </div>
+              )}
+
+              {liveStatus.kind === "unavailable" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>방송 정보를 불러오지 못했습니다</strong>
+                    <span>잠시 후 새로고침해 주세요.</span>
+                  </div>
+                </div>
+              )}
+
+              <Link className="refresh-live" href="/">
+                <Image src={refreshIcon} alt="" aria-hidden="true" />
+                방송 정보 새로고침
+              </Link>
+            </article>
+          )}
         </section>
       </main>
 

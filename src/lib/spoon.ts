@@ -18,6 +18,19 @@ export type SpoonToken = {
   scope: string;
 };
 
+export type SpoonLive = {
+  liveId: number;
+  title: string;
+  startedAt: string;
+  closeAirTime: string;
+  listenerCount: number;
+  totalListenerCount: number;
+  welcomeMessage: string;
+  isChatFrozen: boolean;
+  categories: string[];
+  tags: string[];
+};
+
 type SpoonOAuthError = {
   error?: string;
   error_description?: string;
@@ -30,6 +43,16 @@ export class SpoonOAuthErrorResponse extends Error {
   ) {
     super(code);
     this.name = "SpoonOAuthErrorResponse";
+  }
+}
+
+export class SpoonApiErrorResponse extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detailCode?: string,
+  ) {
+    super(`Spoon API request failed with ${status}`);
+    this.name = "SpoonApiErrorResponse";
   }
 }
 
@@ -131,3 +154,21 @@ export async function revokeToken(token: string): Promise<void> {
   }
 }
 
+export async function getCurrentLive(accessToken: string): Promise<SpoonLive | null> {
+  const { baseUrl } = getSpoonConfig();
+  const response = await fetch(`${baseUrl}/v1/live`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (response.status === 404) return null;
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { detailCode?: string };
+    throw new SpoonApiErrorResponse(response.status, error.detailCode);
+  }
+
+  return (await response.json()) as SpoonLive;
+}
