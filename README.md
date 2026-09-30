@@ -31,6 +31,22 @@ SESSION_STORE_PATH=/data/nagu.db
 
 The volume is required so OAuth sessions and rotated refresh tokens survive restarts. Run a single service replica because SQLite is local to that volume.
 
+## Bot participation
+
+The dashboard's **봇 참여** button persists the desired participation state and opens Spoon's live event stream. If the DJ is offline, the worker waits and joins automatically when a broadcast starts. Temporary network failures reconnect with exponential backoff, and expired access tokens are refreshed once before reconnecting.
+
+**봇 퇴장** closes the event stream and disables restart restoration. Spoon may keep the listener presence visible for a short time after the stream closes.
+
+Enabled bots reconnect when the Railway process restarts. The enabled state and tokens are stored in SQLite; the recent event list is held in process memory and starts empty after a restart.
+
+## Validation
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
 ## Getting Started
 
 First, run the development server:

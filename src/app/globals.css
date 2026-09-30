@@ -150,7 +150,8 @@ h1 {
 }
 
 .connection-card,
-.live-card {
+.live-card,
+.bot-card {
   padding: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -169,6 +170,210 @@ h1 {
   margin: 0;
   font-size: 24px;
   line-height: 1.4;
+}
+
+.bot-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.bot-heading h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.4;
+}
+
+.bot-badge {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: #f1f1f3;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.bot-badge.is-connected,
+.bot-badge.is-waiting,
+.bot-badge.is-connecting,
+.bot-badge.is-reconnecting,
+.bot-badge.is-starting {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.bot-badge.is-connected .status-dot,
+.bot-badge.is-waiting .status-dot,
+.bot-badge.is-connecting .status-dot,
+.bot-badge.is-reconnecting .status-dot,
+.bot-badge.is-starting .status-dot {
+  background: var(--green);
+}
+
+.bot-badge.is-authentication_required,
+.bot-badge.is-permission_required,
+.bot-badge.is-blocked,
+.bot-badge.is-error {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.bot-badge.is-authentication_required .status-dot,
+.bot-badge.is-permission_required .status-dot,
+.bot-badge.is-blocked .status-dot,
+.bot-badge.is-error .status-dot {
+  background: var(--red);
+}
+
+.bot-description {
+  margin: 10px 0 24px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.bot-card > .notice {
+  margin: 0 0 20px;
+}
+
+.bot-join,
+.bot-leave {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bot-join {
+  color: white;
+  background: var(--green);
+}
+
+.bot-join:hover:not(:disabled) {
+  background: #12875a;
+}
+
+.bot-join:disabled {
+  color: #96969b;
+  background: #ececef;
+  cursor: not-allowed;
+}
+
+.bot-leave {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.bot-leave:hover {
+  background: #ffe2df;
+}
+
+.bot-join:focus-visible,
+.bot-leave:focus-visible {
+  outline: 3px solid rgba(255, 91, 53, 0.28);
+  outline-offset: 3px;
+}
+
+.bot-help,
+.bot-footnote {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.bot-help {
+  margin: 10px 0 0;
+  text-align: center;
+}
+
+.bot-footnote {
+  margin: 18px 0 0;
+}
+
+.event-feed {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.event-feed-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.event-feed-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.event-feed-heading a {
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.event-feed ol {
+  display: grid;
+  gap: 0;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-feed li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-feed li p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-feed time {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.event-type {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.event-type.is-chat { color: #2878c8; }
+.event-type.is-presence { color: var(--green); }
+.event-type.is-like { color: #dd3f66; }
+.event-type.is-donation { color: #9a6500; }
+
+.event-empty {
+  margin: 14px 0 0;
+  padding: 24px 16px;
+  border: 1px dashed #d9d9de;
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fafafa;
+  font-size: 13px;
+  text-align: center;
 }
 
 .live-badge {
@@ -474,6 +679,10 @@ h1 {
     padding: 24px 20px;
   }
 
+  .bot-card {
+    padding: 24px 20px;
+  }
+
   .live-heading {
     align-items: center;
   }
@@ -482,8 +691,24 @@ h1 {
     font-size: 20px;
   }
 
+  .bot-heading {
+    align-items: center;
+  }
+
+  .bot-heading h2 {
+    font-size: 20px;
+  }
+
   .live-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .event-feed li {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .event-feed time {
+    grid-column: 2;
   }
 
   .footer {

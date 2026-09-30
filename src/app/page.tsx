@@ -5,6 +5,7 @@ import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
 import refreshIcon from "@/asset/icon-refresh.svg";
 import { getAuthSession } from "@/lib/auth";
+import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
 
@@ -12,6 +13,7 @@ type HomeProps = {
   searchParams: Promise<{
     status?: string;
     error?: string;
+    bot?: string;
   }>;
 };
 
@@ -22,6 +24,9 @@ const errorMessages: Record<string, string> = {
   state_mismatch: "요청 검증에 실패했습니다. 다시 시작해 주세요.",
   token_exchange_failed: "토큰 발급에 실패했습니다. 설정을 확인해 주세요.",
   disconnect_failed: "연결 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+  authentication_required: "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요.",
+  events_scope_required: "실시간 이벤트 권한을 먼저 승인해 주세요.",
+  bot_start_failed: "봇 참여를 시작하지 못했습니다. 다시 시도해 주세요.",
   server_configuration: "서버 환경 변수가 아직 준비되지 않았습니다.",
 };
 
@@ -49,6 +54,34 @@ function formatDateTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : dateTimeFormatter.format(date);
 }
 
+const botStateLabels: Record<BotConnectionState, string> = {
+  stopped: "퇴장",
+  starting: "시작 중",
+  waiting: "방송 대기",
+  connecting: "연결 중",
+  connected: "참여 중",
+  reconnecting: "재연결 중",
+  authentication_required: "재연결 필요",
+  permission_required: "권한 필요",
+  blocked: "입장 차단",
+  error: "연결 오류",
+};
+
+function summarizeEvent(event: BotEvent) {
+  const name = event.data.user.nickname ?? "익명";
+
+  switch (event.type) {
+    case "chat":
+      return `${name}: ${event.data.message}`;
+    case "presence":
+      return `${name}님이 입장했습니다.`;
+    case "like":
+      return `${name}님이 하트 ${event.data.totalAmount.toLocaleString("ko-KR")}개를 보냈습니다.`;
+    case "donation":
+      return `${name}님이 ${event.data.amount.toLocaleString("ko-KR")}스푼을 후원했습니다.`;
+  }
+}
+
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const cookieStore = await cookies();
@@ -65,6 +98,8 @@ export default async function Home({ searchParams }: HomeProps) {
   const scopes = session?.scope.split(" ").filter(Boolean) ?? [];
   const disconnected = params.status === "disconnected";
   const liveStatus = liveResult.status;
+  const bot = connected && sessionId ? getBotSnapshot(sessionId) : null;
+  const hasEventScope = scopes.some((scope) => scope.startsWith("events."));
 
   return (
     <div className="site-shell">
@@ -258,6 +293,119 @@ export default async function Home({ searchParams }: HomeProps) {
                 <Image src={refreshIcon} alt="" aria-hidden="true" />
                 방송 정보 새로고침
               </Link>
+            </article>
+          )}
+
+          {connected && bot && (
+            <article className="bot-card" aria-labelledby="bot-title">
+              <div className="bot-heading">
+                <div>
+                  <p className="section-label">봇 운영</p>
+                  <h2 id="bot-title">방송 참여 제어</h2>
+                </div>
+                <span className={`bot-badge is-${bot.state}`}>
+                  <span className="status-dot" aria-hidden="true" />
+                  {botStateLabels[bot.state]}
+                </span>
+              </div>
+
+              <p className="bot-description">
+                {bot.enabled
+                  ? bot.state === "waiting"
+                    ? "방송이 시작되면 NAGU BOT이 자동으로 참여합니다."
+                    : "NAGU BOT이 실시간 이벤트 스트림을 유지하고 있습니다."
+                  : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
+              </p>
+
+              {params.bot === "started" && bot.enabled && (
+                <div className="notice success" role="status">
+                  <span className="notice-icon" aria-hidden="true">✓</span>
+                  <div>
+                    <strong>참여 요청 완료</strong>
+                    <span>방송 전이면 참여 대기 상태로 자동 연결합니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {params.bot === "stopped" && !bot.enabled && (
+                <div className="notice success" role="status">
+                  <span className="notice-icon" aria-hidden="true">✓</span>
+                  <div>
+                    <strong>봇 퇴장 완료</strong>
+                    <span>이벤트 연결을 종료했습니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {bot.state === "authentication_required" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>계정 재연결 필요</strong>
+                    <span>Spoon 인증이 만료되어 봇을 중지했습니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {bot.state === "permission_required" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>이벤트 권한 필요</strong>
+                    <span>계정을 다시 연결해 events 권한을 승인해 주세요.</span>
+                  </div>
+                </div>
+              )}
+
+              {bot.state === "blocked" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>방송 입장 차단</strong>
+                    <span>Spoon 방송 설정에서 봇 차단 상태를 확인해 주세요.</span>
+                  </div>
+                </div>
+              )}
+
+              <form action={bot.enabled ? "/bot/leave" : "/bot/join"} method="post">
+                <button
+                  className={bot.enabled ? "bot-leave" : "bot-join"}
+                  type="submit"
+                  disabled={!bot.enabled && !hasEventScope}
+                >
+                  {bot.enabled ? "봇 퇴장" : "봇 참여"}
+                </button>
+              </form>
+
+              {!hasEventScope && (
+                <p className="bot-help">실시간 이벤트 권한을 승인한 뒤 참여할 수 있습니다.</p>
+              )}
+
+              <div className="event-feed">
+                <div className="event-feed-heading">
+                  <h3>최근 이벤트</h3>
+                  <Link href="/">상태 새로고침</Link>
+                </div>
+                {bot.events.length > 0 ? (
+                  <ol>
+                    {bot.events.map((event, index) => (
+                      <li key={event.id ?? `${event.receivedAt}-${index}`}>
+                        <span className={`event-type is-${event.type}`}>
+                          {scopeLabels[`events.${event.type}`]}
+                        </span>
+                        <p>{summarizeEvent(event)}</p>
+                        <time dateTime={event.receivedAt}>{formatDateTime(event.receivedAt)}</time>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="event-empty">수신한 이벤트가 아직 없습니다.</p>
+                )}
+              </div>
+
+              <p className="bot-footnote">
+                네트워크 연결을 끊어도 Spoon의 입장 기록은 일정 시간 남을 수 있습니다.
+              </p>
             </article>
           )}
         </section>
