@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { formatCounterAdjustment, parseCounterAdjustment } from "./counter-command";
 import type { SpoonToken } from "./spoon";
 import {
   decryptToken,
@@ -26,6 +27,7 @@ type BotSettingsRow = {
   heart_message: string;
   hourly_enabled: number;
   hourly_message: string;
+  repeat_interval_minutes: number;
   commands_enabled: number;
   welcome_enabled: number;
   donation_enabled: number;
@@ -38,8 +40,9 @@ export type BotSettings = {
   greetingMessage: string;
   donationMessage: string;
   heartMessage: string;
-  hourlyEnabled: boolean;
-  hourlyMessage: string;
+  repeatEnabled: boolean;
+  repeatMessage: string;
+  repeatIntervalMinutes: number;
   commandsEnabled: boolean;
   welcomeEnabled: boolean;
   donationEnabled: boolean;
@@ -49,6 +52,13 @@ export type BotSettings = {
 export type BotCommand = {
   command: string;
   response: string;
+};
+
+export type BotCounter = {
+  id: number;
+  name: string;
+  initialValue: number;
+  value: number;
 };
 
 export type AdminSession = {
@@ -97,9 +107,10 @@ function migrateDatabase(database: DatabaseSync) {
       dj_nickname TEXT NOT NULL DEFAULT '',
       greeting_message TEXT NOT NULL DEFAULT '안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!',
       donation_message TEXT NOT NULL DEFAULT '{nickname}님, {amount}스푼 후원 감사합니다!',
-      heart_message TEXT NOT NULL DEFAULT '하트 {milestone}개를 달성했어요! 감사합니다!',
+      heart_message TEXT NOT NULL DEFAULT '{nickname}님, 하트 {milestone}개 감사합니다!',
       hourly_enabled INTEGER NOT NULL DEFAULT 0,
       hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!',
+      repeat_interval_minutes INTEGER NOT NULL DEFAULT 60,
       commands_enabled INTEGER NOT NULL DEFAULT 1,
       welcome_enabled INTEGER NOT NULL DEFAULT 1,
       donation_enabled INTEGER NOT NULL DEFAULT 1,
@@ -111,6 +122,14 @@ function migrateDatabase(database: DatabaseSync) {
       command TEXT NOT NULL,
       response TEXT NOT NULL,
       PRIMARY KEY (session_key, command)
+    );
+    CREATE TABLE IF NOT EXISTS bot_counters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL,
+      name TEXT NOT NULL COLLATE NOCASE,
+      initial_value INTEGER NOT NULL DEFAULT 0,
+      value INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (session_key, name)
     );
   `);
 
@@ -130,7 +149,7 @@ function migrateDatabase(database: DatabaseSync) {
     database.exec("ALTER TABLE bot_settings ADD COLUMN donation_message TEXT NOT NULL DEFAULT '{nickname}님, {amount}스푼 후원 감사합니다!'");
   }
   if (!settingsColumns.some((column) => column.name === "heart_message")) {
-    database.exec("ALTER TABLE bot_settings ADD COLUMN heart_message TEXT NOT NULL DEFAULT '하트 {milestone}개를 달성했어요! 감사합니다!'");
+    database.exec("ALTER TABLE bot_settings ADD COLUMN heart_message TEXT NOT NULL DEFAULT '{nickname}님, 하트 {milestone}개 감사합니다!'");
   }
   if (!settingsColumns.some((column) => column.name === "hourly_enabled")) {
     database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_enabled INTEGER NOT NULL DEFAULT 0");
@@ -138,6 +157,13 @@ function migrateDatabase(database: DatabaseSync) {
   if (!settingsColumns.some((column) => column.name === "hourly_message")) {
     database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!'");
   }
+  if (!settingsColumns.some((column) => column.name === "repeat_interval_minutes")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN repeat_interval_minutes INTEGER NOT NULL DEFAULT 60");
+  }
+  database.prepare("UPDATE bot_settings SET heart_message = ? WHERE heart_message = ?").run(
+    "{nickname}님, 하트 {milestone}개 감사합니다!",
+    "하트 {milestone}개를 달성했어요! 감사합니다!",
+  );
 }
 
 function getDatabase() {
@@ -168,7 +194,7 @@ function decryptStoredToken(sessionKey: string, payload: string): StoredSpoonTok
     return decryptToken(payload);
   } catch (error) {
     if (error instanceof SessionConfigurationError) throw error;
-    deleteSessionByKey(sessionKey);
+    deleteAuthSessionByKey(sessionKey);
     return null;
   }
 }
@@ -185,10 +211,12 @@ export function getSessionByKey(sessionKey: string): StoredSpoonToken | null {
 export function saveSession(currentSessionId: string | undefined, token: SpoonToken) {
   const now = Date.now();
 
-  if (currentSessionId && getSession(currentSessionId)) {
-    getDatabase()
-      .prepare("UPDATE oauth_sessions SET token_payload = ?, updated_at = ? WHERE id_hash = ?")
-      .run(encryptToken(token), now, getSessionKey(currentSessionId));
+  if (currentSessionId) {
+    getDatabase().prepare(`
+      INSERT INTO oauth_sessions (id_hash, token_payload, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id_hash) DO UPDATE SET token_payload = excluded.token_payload, updated_at = excluded.updated_at
+    `).run(getSessionKey(currentSessionId), encryptToken(token), now, now);
     return currentSessionId;
   }
 
@@ -216,6 +244,7 @@ export function updateSession(sessionId: string, token: SpoonToken) {
 
 export function deleteSessionByKey(sessionKey: string) {
   const database = getDatabase();
+  database.prepare("DELETE FROM bot_counters WHERE session_key = ?").run(sessionKey);
   database.prepare("DELETE FROM bot_commands WHERE session_key = ?").run(sessionKey);
   database.prepare("DELETE FROM bot_settings WHERE session_key = ?").run(sessionKey);
   database
@@ -284,8 +313,9 @@ export function getBotSettingsByKey(sessionKey: string): BotSettings {
     greetingMessage: row.greeting_message,
     donationMessage: row.donation_message,
     heartMessage: row.heart_message,
-    hourlyEnabled: row.hourly_enabled === 1,
-    hourlyMessage: row.hourly_message,
+    repeatEnabled: row.hourly_enabled === 1,
+    repeatMessage: row.hourly_message,
+    repeatIntervalMinutes: row.repeat_interval_minutes,
     commandsEnabled: row.commands_enabled === 1,
     welcomeEnabled: row.welcome_enabled === 1,
     donationEnabled: row.donation_enabled === 1,
@@ -302,7 +332,8 @@ export function updateBotSettings(sessionId: string, settings: BotSettings) {
   getDatabase().prepare(`
     UPDATE bot_settings
     SET dj_nickname = ?, greeting_message = ?, donation_message = ?, heart_message = ?,
-        hourly_enabled = ?, hourly_message = ?, commands_enabled = ?, welcome_enabled = ?,
+        hourly_enabled = ?, hourly_message = ?, repeat_interval_minutes = ?,
+        commands_enabled = ?, welcome_enabled = ?,
         donation_enabled = ?, heart_enabled = ?
     WHERE session_key = ?
   `).run(
@@ -310,8 +341,9 @@ export function updateBotSettings(sessionId: string, settings: BotSettings) {
     settings.greetingMessage,
     settings.donationMessage,
     settings.heartMessage,
-    settings.hourlyEnabled ? 1 : 0,
-    settings.hourlyMessage,
+    settings.repeatEnabled ? 1 : 0,
+    settings.repeatMessage,
+    settings.repeatIntervalMinutes,
     settings.commandsEnabled ? 1 : 0,
     settings.welcomeEnabled ? 1 : 0,
     settings.donationEnabled ? 1 : 0,
@@ -365,6 +397,85 @@ export function findBotCommandResponse(sessionKey: string, message: string, nick
   return response.length <= 200 ? response : response.slice(0, 200);
 }
 
+export function listBotCountersByKey(sessionKey: string): BotCounter[] {
+  return (getDatabase().prepare(`
+    SELECT id, name, initial_value, value
+    FROM bot_counters
+    WHERE session_key = ?
+    ORDER BY id
+  `).all(sessionKey) as Array<{
+    id: number;
+    name: string;
+    initial_value: number;
+    value: number;
+  }>).map((row) => ({
+    id: row.id,
+    name: row.name,
+    initialValue: row.initial_value,
+    value: row.value,
+  }));
+}
+
+export function listBotCounters(sessionId: string) {
+  return listBotCountersByKey(getSessionKey(sessionId));
+}
+
+export function saveBotCounter(
+  sessionId: string,
+  id: number | null,
+  name: string,
+  initialValue: number,
+  value: number,
+) {
+  const database = getDatabase();
+  const sessionKey = getSessionKey(sessionId);
+  try {
+    if (id === null) {
+      database.prepare(`
+        INSERT INTO bot_counters (session_key, name, initial_value, value)
+        VALUES (?, ?, ?, ?)
+      `).run(sessionKey, name, initialValue, value);
+      return true;
+    }
+
+    const result = database.prepare(`
+      UPDATE bot_counters
+      SET name = ?, initial_value = ?, value = ?
+      WHERE id = ? AND session_key = ?
+    `).run(name, initialValue, value, id, sessionKey);
+    return result.changes > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function resetBotCounter(sessionId: string, id: number) {
+  const result = getDatabase().prepare(`
+    UPDATE bot_counters SET value = initial_value WHERE id = ? AND session_key = ?
+  `).run(id, getSessionKey(sessionId));
+  return result.changes > 0;
+}
+
+export function deleteBotCounter(sessionId: string, id: number) {
+  const result = getDatabase().prepare(
+    "DELETE FROM bot_counters WHERE id = ? AND session_key = ?",
+  ).run(id, getSessionKey(sessionId));
+  return result.changes > 0;
+}
+
+export function applyBotCounterCommand(sessionKey: string, message: string) {
+  const adjustment = parseCounterAdjustment(message);
+  if (!adjustment) return null;
+
+  const row = getDatabase().prepare(`
+    UPDATE bot_counters
+    SET value = MIN(1000000, MAX(0, value + ?))
+    WHERE session_key = ? AND name = ? COLLATE NOCASE
+    RETURNING name, value
+  `).get(adjustment.delta, sessionKey, adjustment.name) as Pick<BotCounter, "name" | "value"> | undefined;
+  return row ? formatCounterAdjustment(row.name, row.value) : null;
+}
+
 export function isSessionBlockedByKey(sessionKey: string) {
   const row = getDatabase().prepare("SELECT blocked FROM oauth_sessions WHERE id_hash = ?")
     .get(sessionKey) as Pick<SessionRow, "blocked"> | undefined;
@@ -407,4 +518,12 @@ export function listAdminSessions(): AdminSession[] {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
+}
+
+export function deleteAuthSessionByKey(sessionKey: string) {
+  getDatabase().prepare("DELETE FROM oauth_sessions WHERE id_hash = ?").run(sessionKey);
+}
+
+export function deleteAuthSession(sessionId: string) {
+  deleteAuthSessionByKey(getSessionKey(sessionId));
 }

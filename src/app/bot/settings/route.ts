@@ -3,8 +3,11 @@ import { getAuthSession } from "@/lib/auth";
 import { sendChat } from "@/lib/chat";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
+  deleteBotCounter,
   deleteBotCommand,
   getBotSettings,
+  resetBotCounter,
+  saveBotCounter,
   updateBotSettings,
   upsertBotCommand,
 } from "@/lib/session-store";
@@ -43,7 +46,7 @@ export async function POST(request: NextRequest) {
 
   if (mode === "automation_feature") {
     const feature = String(formData.get("feature") ?? "");
-    if (!["welcome", "donation", "heart", "hourly", "commands"].includes(feature)) {
+    if (!["welcome", "donation", "heart", "repeat", "commands"].includes(feature)) {
       return redirect(request, "invalid_request");
     }
 
@@ -60,13 +63,57 @@ export async function POST(request: NextRequest) {
       updateBotSettings(sessionId, { ...current, donationEnabled: enabled, donationMessage: message });
     } else if (feature === "heart") {
       updateBotSettings(sessionId, { ...current, heartEnabled: enabled, heartMessage: message });
-    } else if (feature === "hourly") {
-      updateBotSettings(sessionId, { ...current, hourlyEnabled: enabled, hourlyMessage: message });
+    } else if (feature === "repeat") {
+      const intervalMinutes = Number(formData.get("intervalMinutes"));
+      if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 1440) {
+        return redirect(request, "invalid_interval", feature);
+      }
+      updateBotSettings(sessionId, {
+        ...current,
+        repeatEnabled: enabled,
+        repeatMessage: message,
+        repeatIntervalMinutes: intervalMinutes,
+      });
     } else {
       updateBotSettings(sessionId, { ...current, commandsEnabled: enabled });
     }
 
     return redirect(request, "feature_saved", feature);
+  }
+
+  if (mode === "save_counter") {
+    const rawId = String(formData.get("id") ?? "");
+    const id = rawId ? Number(rawId) : null;
+    const name = String(formData.get("name") ?? "").trim();
+    const initialValue = Number(formData.get("initialValue"));
+    const value = id === null ? initialValue : Number(formData.get("value"));
+    if (
+      (id !== null && (!Number.isInteger(id) || id < 1))
+      || !/^[^\s!]{1,20}$/u.test(name)
+      || !Number.isInteger(initialValue)
+      || initialValue < 0
+      || initialValue > 1_000_000
+      || !Number.isInteger(value)
+      || value < 0
+      || value > 1_000_000
+    ) {
+      return redirect(request, "invalid_counter", "counters");
+    }
+    const saved = saveBotCounter(sessionId, id, name, initialValue, value);
+    return redirect(request, saved ? "counter_saved" : "counter_conflict", "counters");
+  }
+
+  if (mode === "reset_counter" || mode === "delete_counter") {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id) || id < 1) return redirect(request, "invalid_counter", "counters");
+    const changed = mode === "reset_counter"
+      ? resetBotCounter(sessionId, id)
+      : deleteBotCounter(sessionId, id);
+    return redirect(
+      request,
+      changed ? (mode === "reset_counter" ? "counter_reset" : "counter_deleted") : "invalid_counter",
+      "counters",
+    );
   }
 
   if (mode === "upsert_command") {

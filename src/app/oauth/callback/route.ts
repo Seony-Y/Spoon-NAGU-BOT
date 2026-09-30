@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
       secure: request.nextUrl.protocol === "https:",
       sameSite: "lax",
       path: "/",
-      maxAge: 30 * 24 * 60 * 60,
+      maxAge: 365 * 24 * 60 * 60,
       priority: "high",
     });
 

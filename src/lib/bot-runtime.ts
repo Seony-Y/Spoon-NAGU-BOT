@@ -9,6 +9,7 @@ import {
 } from "./bot-automation";
 import { sendBotChat } from "./chat";
 import {
+  applyBotCounterCommand,
   findBotCommandResponse,
   getBotSettingsByKey,
   getSessionKey,
@@ -38,7 +39,8 @@ const OFFLINE_RETRY_MS = 10_000;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_EVENTS = 50;
 const STREAM_PERMISSION_REFRESH_MS = 60_000;
-const HOURLY_ANNOUNCEMENT_MS = 60 * 60 * 1000;
+const REPEAT_CHECK_MS = 60 * 1000;
+const MANAGER_REQUIRED_MESSAGE = "봇에게 권한이 없습니다. Spoon 방송에서 봇을 매니저로 설정해 주세요.";
 
 export type BotConnectionState =
   | "stopped"
@@ -88,7 +90,8 @@ type BotRuntime = BotSnapshot & {
   favoriteListeners: Map<string, FavoriteRankingEntry>;
   currentLiveId?: number;
   managerEventsConfirmed: boolean;
-  hourlyTimer?: ReturnType<typeof setTimeout>;
+  repeatTimer?: ReturnType<typeof setTimeout>;
+  lastRepeatAt?: number;
 };
 
 const globalForBots = globalThis as typeof globalThis & {
@@ -114,28 +117,32 @@ function clearBroadcastState(runtime: BotRuntime) {
   runtime.favoriteListeners.clear();
   runtime.currentLiveId = undefined;
   runtime.managerEventsConfirmed = false;
-  if (runtime.hourlyTimer) clearTimeout(runtime.hourlyTimer);
-  runtime.hourlyTimer = undefined;
+  if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
+  runtime.repeatTimer = undefined;
+  runtime.lastRepeatAt = undefined;
 }
 
-function scheduleHourlyAnnouncement(sessionKey: string, runtime: BotRuntime) {
-  if (runtime.hourlyTimer) clearTimeout(runtime.hourlyTimer);
+function scheduleRepeatAnnouncements(sessionKey: string, runtime: BotRuntime) {
+  if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
+  runtime.lastRepeatAt = Date.now();
 
   const announce = () => {
     if (runtime.currentLiveId === undefined) return;
     if (runtime.state === "connected") {
       const settings = getBotSettingsByKey(sessionKey);
-      if (settings.hourlyEnabled) {
-        const message = settings.hourlyMessage.replaceAll("{name}", settings.djNickname || "DJ");
+      const interval = settings.repeatIntervalMinutes * 60 * 1000;
+      if (settings.repeatEnabled && Date.now() - (runtime.lastRepeatAt ?? 0) >= interval) {
+        const message = settings.repeatMessage.replaceAll("{name}", settings.djNickname || "DJ");
         if (message) void sendBotChat(sessionKey, message.slice(0, 200));
+        runtime.lastRepeatAt = Date.now();
       }
     }
-    runtime.hourlyTimer = setTimeout(announce, HOURLY_ANNOUNCEMENT_MS);
-    runtime.hourlyTimer.unref();
+    runtime.repeatTimer = setTimeout(announce, REPEAT_CHECK_MS);
+    runtime.repeatTimer.unref();
   };
 
-  runtime.hourlyTimer = setTimeout(announce, HOURLY_ANNOUNCEMENT_MS);
-  runtime.hourlyTimer.unref();
+  runtime.repeatTimer = setTimeout(announce, REPEAT_CHECK_MS);
+  runtime.repeatTimer.unref();
 }
 
 function abortableDelay(milliseconds: number, signal: AbortSignal) {
@@ -206,7 +213,10 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   const settings = getBotSettingsByKey(sessionKey);
   const reply = event.event === "chat"
     ? settings.commandsEnabled
-      ? findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
+      ? event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
+        ? MANAGER_REQUIRED_MESSAGE
+        : applyBotCounterCommand(sessionKey, event.data.message)
+          ?? findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
       : null
     : processBotAutomation(runtime, event, settings);
   if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
@@ -298,7 +308,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (runtime && runtime.currentLiveId !== live.liveId) {
         clearBroadcastState(runtime);
         runtime.currentLiveId = live.liveId;
-        scheduleHourlyAnnouncement(sessionKey, runtime);
+        scheduleRepeatAnnouncements(sessionKey, runtime);
       }
 
       const streamSignal = runtime?.managerEventsConfirmed
@@ -400,7 +410,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
 function startBotByKey(sessionKey: string) {
   const existing = runtimes.get(sessionKey);
   if (existing?.task && !existing.controller?.signal.aborted) return;
-  if (existing?.hourlyTimer) clearTimeout(existing.hourlyTimer);
+  if (existing?.repeatTimer) clearTimeout(existing.repeatTimer);
 
   const controller = new AbortController();
   const automation = createBotAutomationState();
@@ -419,8 +429,8 @@ function startBotByKey(sessionKey: string) {
   runtimes.set(sessionKey, runtime);
 
   runtime.task = runBot(sessionKey, controller.signal).finally(() => {
-    if (runtime.hourlyTimer) clearTimeout(runtime.hourlyTimer);
-    runtime.hourlyTimer = undefined;
+    if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
+    runtime.repeatTimer = undefined;
     runtime.task = undefined;
     runtime.controller = undefined;
     if (controller.signal.aborted) runtime.state = "stopped";
@@ -438,7 +448,7 @@ export function stopBot(sessionId: string) {
   setBotEnabled(sessionId, false);
   const runtime = runtimes.get(getSessionKey(sessionId));
   runtime?.controller?.abort();
-  if (runtime?.hourlyTimer) clearTimeout(runtime.hourlyTimer);
+  if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
   if (runtime) {
     runtime.enabled = false;
     runtime.state = "stopped";
@@ -480,7 +490,7 @@ export function blockBotByKey(sessionKey: string) {
   setBotEnabledByKey(sessionKey, false);
   const runtime = runtimes.get(sessionKey);
   runtime?.controller?.abort();
-  if (runtime?.hourlyTimer) clearTimeout(runtime.hourlyTimer);
+  if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
   if (runtime) {
     runtime.enabled = false;
     runtime.state = "blocked";

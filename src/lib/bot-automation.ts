@@ -28,7 +28,7 @@ const defaultOptions: BotAutomationOptions = {
   djNickname: "DJ",
   greetingMessage: "안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!",
   donationMessage: "{nickname}님, {amount}스푼 후원 감사합니다!",
-  heartMessage: "하트 {milestone}개를 달성했어요! 감사합니다!",
+  heartMessage: "{nickname}님, 하트 {milestone}개 감사합니다!",
   welcomeEnabled: true,
   donationEnabled: true,
   heartEnabled: true,
@@ -90,6 +90,7 @@ export function processBotAutomation(
       state.announcedHeartMilestone = milestone;
       return options.heartMessage
         .replaceAll("{name}", options.djNickname || "DJ")
+        .replaceAll("{nickname}", event.data.user.nickname ?? "청취자")
         .replaceAll("{milestone}", milestone.toLocaleString("ko-KR"));
     }
   }

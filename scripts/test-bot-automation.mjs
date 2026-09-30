@@ -40,8 +40,8 @@ const like = (totalAmount) => ({
 });
 
 assert.equal(processBotAutomation(state, like(99)), null);
-assert.equal(processBotAutomation(state, like(1)), "하트 100개를 달성했어요! 감사합니다!");
-assert.equal(processBotAutomation(state, like(250)), "하트 300개를 달성했어요! 감사합니다!");
+assert.equal(processBotAutomation(state, like(1)), "일등팬님, 하트 100개 감사합니다!");
+assert.equal(processBotAutomation(state, like(250)), "일등팬님, 하트 300개 감사합니다!");
 assert.equal(state.activity.hearts, 350);
 
 assert.equal(processBotAutomation(state, {

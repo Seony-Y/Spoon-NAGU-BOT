@@ -61,9 +61,15 @@ While participating, the bot also:
 
 Spoon only sends presence events after the DJ makes the bot a manager. Until those events are confirmed, the worker refreshes its event stream every minute, so a manager promotion made during a broadcast is picked up automatically without a manual bot leave/join. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
 
+Before manager-only presence events are confirmed, a chat command receives a manager setup notice instead of running. This makes missing manager permission visible directly in the broadcast chat.
+
 The account banner stores the DJ nickname immediately after OAuth connection. Because Spoon does not expose a profile endpoint or nickname in the OAuth token, the nickname is entered directly and can also be learned when the connected DJ sends a chat event.
 
-The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, hourly announcements, welcome messages, donation thanks, heart milestones, and chat commands. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, welcome messages, donation thanks, heart donations, repeat announcements, named counters, and chat commands. Repeat announcements accept a 1-1440 minute interval and pick up changes within one minute. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+
+Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. In chat, `!실드 +2` adds two and `!실드 -1` subtracts one without allowing a negative result. Names, initial values, current values, resets, and deletions are managed in the counter tab.
+
+Disconnecting revokes and removes OAuth credentials but retains bot settings under the long-lived browser session key. Reconnecting the same DJ from that browser restores messages, commands, and counters automatically. Spoon does not expose a stable account identifier, so clearing the browser cookie starts a new settings workspace.
 
 ## Administration
 

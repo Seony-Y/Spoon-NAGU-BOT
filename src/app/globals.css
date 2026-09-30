@@ -1181,6 +1181,26 @@ h1 {
   resize: vertical;
 }
 
+.interval-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interval-field input {
+  width: 110px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.interval-field span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .automation-feature-form p {
   margin: 0;
   color: var(--muted);
@@ -1369,6 +1389,98 @@ h1 {
 
 .command-form input {
   padding: 9px 10px;
+}
+
+.counter-editor {
+  margin-top: 24px;
+}
+
+.counter-guide h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.counter-guide p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.counter-list {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.counter-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.counter-item > form,
+.counter-create-form {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 120px 120px auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.counter-item label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.counter-item input,
+.counter-create-form input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.counter-item button,
+.counter-create-form button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--text);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.counter-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.counter-actions button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.counter-actions button.is-danger {
+  color: var(--red);
+}
+
+.counter-create-form {
+  grid-template-columns: 64px minmax(120px, 1fr) 64px 120px auto;
+  margin-top: 20px;
+}
+
+.counter-create-form label {
+  align-self: center;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .admin-main {
@@ -1624,5 +1736,18 @@ h1 {
   .command-enabled-form {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .counter-item {
+    grid-template-columns: 1fr;
+  }
+
+  .counter-item > form,
+  .counter-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .counter-actions {
+    justify-content: flex-end;
   }
 }

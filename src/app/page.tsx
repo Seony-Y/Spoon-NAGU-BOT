@@ -8,7 +8,7 @@ import { loadAudienceStatus } from "@/lib/audience";
 import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
-import { getBotSettings, isSessionBlocked, listBotCommands } from "@/lib/session-store";
+import { getBotSettings, isSessionBlocked, listBotCommands, listBotCounters } from "@/lib/session-store";
 import { RefreshLiveButton } from "./refresh-live-button";
 
 type HomeProps = {
@@ -96,14 +96,21 @@ const settingsNotices: Record<string, { tone: "success" | "error"; text: string 
   invalid_nickname: { tone: "error", text: "DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요." },
   invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
   invalid_message: { tone: "error", text: "메시지는 1자 이상 200자 이하로 입력해 주세요." },
+  invalid_interval: { tone: "error", text: "반복 간격은 1분 이상 1440분 이하로 입력해 주세요." },
+  counter_saved: { tone: "success", text: "실드 설정을 저장했습니다." },
+  counter_reset: { tone: "success", text: "현재 개수를 초기 개수로 되돌렸습니다." },
+  counter_deleted: { tone: "success", text: "실드 설정을 삭제했습니다." },
+  counter_conflict: { tone: "error", text: "같은 이름의 실드 설정이 이미 있습니다." },
+  invalid_counter: { tone: "error", text: "이름은 공백 없이 20자 이하, 개수는 0~1,000,000으로 입력해 주세요." },
 };
 
 const automationTabs = [
   ["ranking", "실시간 랭킹"],
-  ["hourly", "시간 멘트"],
   ["welcome", "입장 환영"],
   ["donation", "후원 감사"],
-  ["heart", "하트 달성"],
+  ["heart", "하트 후원"],
+  ["repeat", "반복 멘트"],
+  ["counters", "실드 설정"],
   ["commands", "채팅 명령어"],
 ] as const;
 
@@ -158,6 +165,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const accountSettings = connected && sessionId ? getBotSettings(sessionId) : null;
   const botSettings = isBotTab ? accountSettings : null;
   const botCommands = isBotTab && connected && sessionId ? listBotCommands(sessionId) : [];
+  const botCounters = isBotTab && connected && sessionId ? listBotCounters(sessionId) : [];
 
   return (
     <div className="site-shell">
@@ -297,14 +305,14 @@ export default async function Home({ searchParams }: HomeProps) {
             </p>
           </div>
 
-          <nav className="dashboard-tabs" aria-label="운영 메뉴">
-            <Link className={!isBotTab ? "is-active" : ""} href="/" aria-current={!isBotTab ? "page" : undefined}>
+          {connected && <nav className="dashboard-tabs" aria-label="운영 메뉴">
+            <Link scroll={false} className={!isBotTab ? "is-active" : ""} href="/" aria-current={!isBotTab ? "page" : undefined}>
               대시보드
             </Link>
-            <Link className={isBotTab ? "is-active" : ""} href="/?tab=bot" aria-current={isBotTab ? "page" : undefined}>
+            <Link scroll={false} className={isBotTab ? "is-active" : ""} href="/?tab=bot" aria-current={isBotTab ? "page" : undefined}>
               봇 운영
             </Link>
-          </nav>
+          </nav>}
 
           {!isBotTab && connected && liveStatus && (
             <article className="live-card" aria-labelledby="live-title">
@@ -511,7 +519,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
                   <nav className="automation-tabs" aria-label="자동화 설정">
                     {automationTabs.map(([key, label]) => (
-                      <Link key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}`}>
+                      <Link scroll={false} key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}`}>
                         {label}
                       </Link>
                     ))}
@@ -538,16 +546,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     </div>
                   )}
 
-                  {automationTab === "hourly" && (
-                    <form className="automation-feature-form" action="/bot/settings" method="post">
-                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="hourly" />
-                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.hourlyEnabled} /> 한 시간마다 자동 멘트 사용</label>
-                      <label htmlFor="hourly-message">자동 멘트</label>
-                      <textarea id="hourly-message" name="message" defaultValue={botSettings.hourlyMessage} maxLength={200} rows={3} required />
-                      <p><code>{"{name}"}</code>을 DJ 닉네임으로 바꿉니다.</p><button type="submit">시간 멘트 저장</button>
-                    </form>
-                  )}
-
                   {automationTab === "welcome" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="welcome" />
@@ -571,12 +569,52 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "heart" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="heart" />
-                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.heartEnabled} /> 하트 100개 달성 멘트 사용</label>
-                      <label htmlFor="heart-message">달성 멘트</label>
+                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.heartEnabled} /> 하트 후원 감사 사용</label>
+                      <label htmlFor="heart-message">하트 감사말</label>
                       <textarea id="heart-message" name="message" defaultValue={botSettings.heartMessage} maxLength={200} rows={3} required />
-                      <p><code>{"{milestone}"}</code>을 달성한 누적 하트 수로 바꿉니다.</p><button type="submit">하트 달성 저장</button>
+                      <p><code>{"{nickname}"}</code>은 후원자, <code>{"{milestone}"}</code>은 누적 하트 수입니다.</p><button type="submit">하트 후원 저장</button>
                     </form>
                   )}
+
+                  {automationTab === "repeat" && (
+                    <form className="automation-feature-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="repeat" />
+                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.repeatEnabled} /> 반복 멘트 사용</label>
+                      <label htmlFor="repeat-interval">반복 간격</label>
+                      <div className="interval-field"><input id="repeat-interval" type="number" name="intervalMinutes" min={1} max={1440} defaultValue={botSettings.repeatIntervalMinutes} required /><span>분마다</span></div>
+                      <label htmlFor="repeat-message">반복 멘트</label>
+                      <textarea id="repeat-message" name="message" defaultValue={botSettings.repeatMessage} maxLength={200} rows={3} required />
+                      <p><code>{"{name}"}</code>을 DJ 닉네임으로 바꿉니다. 설정 변경은 1분 이내 반영됩니다.</p><button type="submit">반복 멘트 저장</button>
+                    </form>
+                  )}
+
+                  {automationTab === "counters" && <div className="counter-editor">
+                    <div className="counter-guide">
+                      <h4>실드 개수 관리</h4>
+                      <p><code>!실드 +2</code> 또는 <code>!실드 -1</code>처럼 입력하면 현재 개수가 자동 변경됩니다.</p>
+                    </div>
+                    {botCounters.length > 0 && <div className="counter-list">
+                      {botCounters.map((counter) => <section key={counter.id} className="counter-item">
+                        <form action="/bot/settings" method="post">
+                          <input type="hidden" name="mode" value="save_counter" /><input type="hidden" name="id" value={counter.id} />
+                          <label>이름<input name="name" defaultValue={counter.name} maxLength={20} required /></label>
+                          <label>초기 개수<input type="number" name="initialValue" min={0} max={1000000} defaultValue={counter.initialValue} required /></label>
+                          <label>현재 개수<input type="number" name="value" min={0} max={1000000} defaultValue={counter.value} required /></label>
+                          <button type="submit">수정</button>
+                        </form>
+                        <div className="counter-actions">
+                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="reset_counter" /><input type="hidden" name="id" value={counter.id} /><button type="submit">초기화</button></form>
+                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><button className="is-danger" type="submit">삭제</button></form>
+                        </div>
+                      </section>)}
+                    </div>}
+                    <form className="counter-create-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="save_counter" />
+                      <label htmlFor="counter-name">새 이름</label><input id="counter-name" name="name" placeholder="실드" maxLength={20} required />
+                      <label htmlFor="counter-initial">초기 개수</label><input id="counter-initial" type="number" name="initialValue" min={0} max={1000000} defaultValue={0} required />
+                      <button type="submit">설정 추가</button>
+                    </form>
+                  </div>}
 
                   {automationTab === "commands" && <div className="command-editor">
                     <form className="command-enabled-form" action="/bot/settings" method="post">
@@ -772,7 +810,7 @@ export default async function Home({ searchParams }: HomeProps) {
       </main>
 
       <footer className="footer">
-        <span>NAGU BOT</span>
+        <span>NAGU BOT v1.0.0</span>
         <Link href="/admin">관리자</Link>
         <span>2026 © NAGU BOT</span>
       </footer>

@@ -1,0 +1,23 @@
+const COUNTER_COMMAND_PATTERN = /^!([^\s!]{1,20})\s+([+-]\d{1,7})$/u;
+const MAX_ADJUSTMENT = 1_000_000;
+
+export type CounterAdjustment = {
+  name: string;
+  delta: number;
+};
+
+export function parseCounterAdjustment(message: string): CounterAdjustment | null {
+  const match = COUNTER_COMMAND_PATTERN.exec(message.trim());
+  if (!match) return null;
+
+  const delta = Number(match[2]);
+  if (!Number.isSafeInteger(delta) || delta === 0 || Math.abs(delta) > MAX_ADJUSTMENT) {
+    return null;
+  }
+
+  return { name: match[1], delta };
+}
+
+export function formatCounterAdjustment(name: string, value: number) {
+  return `${name} ${value.toLocaleString("ko-KR")}개 남았습니다.`;
+}
