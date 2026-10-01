@@ -1,5 +1,5 @@
 const DEFAULT_BASE_URL = "https://kr-openapi.spooncast.net";
-const DEFAULT_SCOPES = [
+export const REQUIRED_SCOPES = [
   "live.read",
   "events.chat",
   "events.presence",
@@ -8,7 +8,13 @@ const DEFAULT_SCOPES = [
   "chat.send",
   "listeners.read",
   "fans.read",
-].join(" ");
+] as const;
+const DEFAULT_SCOPES = REQUIRED_SCOPES.join(" ");
+
+export function getMissingRequiredScopes(scope: string) {
+  const grantedScopes = new Set(scope.split(/\s+/).filter(Boolean));
+  return REQUIRED_SCOPES.filter((requiredScope) => !grantedScopes.has(requiredScope));
+}
 
 export type SpoonToken = {
   access_token: string;
@@ -85,11 +91,13 @@ export function getSpoonConfig() {
     throw new Error("SPOON_CLIENT_ID and SPOON_REDIRECT_URI are required");
   }
 
+  const configuredScopes = (process.env.SPOON_SCOPES || DEFAULT_SCOPES).split(/\s+/).filter(Boolean);
+
   return {
     clientId,
     clientSecret,
     redirectUri,
-    scopes: process.env.SPOON_SCOPES || DEFAULT_SCOPES,
+    scopes: [...new Set([...REQUIRED_SCOPES, ...configuredScopes])].join(" "),
     baseUrl: process.env.SPOON_BASE_URL || DEFAULT_BASE_URL,
   };
 }

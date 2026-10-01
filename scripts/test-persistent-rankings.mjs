@@ -48,6 +48,70 @@ migratedDatabase.close();
 const firstSessionKey = store.getSessionKey(firstSessionId);
 store.linkDjWorkspaceByKey(firstSessionKey, "dj-user-id", "DJ 나구");
 
+store.updateRouletteSettings(firstSessionId, { enabled: true, cost: 20, missWeight: 1 });
+assert.equal(store.saveRouletteItem(firstSessionId, null, "커피 쿠폰", 1), true);
+assert.equal(store.saveRouletteItem(firstSessionId, null, "노래 신청권", 3), true);
+assert.equal(store.saveRouletteItem(firstSessionId, null, "커피 쿠폰", 5), false);
+const rouletteItems = store.listRouletteItems(firstSessionId);
+const rouletteEvent = (id, amount = 20) => ({
+	id,
+	event: "donation",
+	data: {
+		user: { id: "roulette-user", nickname: "룰렛팬" },
+		amount,
+		message: null,
+		time: now,
+	},
+});
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-under", 19), () => 0), null);
+assert.deepEqual(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-1"), () => 0), {
+	nickname: "룰렛팬",
+	itemLabel: "커피 쿠폰",
+	isMiss: false,
+	keepCount: 1,
+});
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-1"), () => 0), null);
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-2"), () => 0).keepCount, 2);
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-3"), () => 0.79).itemLabel, "노래 신청권");
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-4"), () => 0.99).isMiss, true);
+assert.deepEqual(
+	store.listRouletteKeeps(firstSessionId).map((keep) => [keep.itemLabel, keep.count]),
+	[["노래 신청권", 1], ["커피 쿠폰", 2]],
+);
+assert.match(store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!룰렛팬 킵").join(" "), /커피 쿠폰 2개/);
+assert.equal(store.listRouletteResults(firstSessionId).length, 4);
+assert.equal(store.listRouletteResults(firstSessionId)[0].isMiss, true);
+assert.equal(store.saveRouletteItem(firstSessionId, rouletteItems[1].id, "노래 신청권 플러스", 4), true);
+assert.equal(store.deleteRouletteItem(firstSessionId, rouletteItems[0].id), true);
+assert.equal(store.updateRouletteDistribution(firstSessionId, 2500, [
+	{ label: "커피 쿠폰", percentage: 2500 },
+	{ label: "노래 신청권", percentage: 5000 },
+]), true);
+assert.deepEqual(
+	store.listRouletteItems(firstSessionId).map((item) => [item.label, item.weight]),
+	[["커피 쿠폰", 2500], ["노래 신청권", 5000]],
+);
+assert.equal(store.updateRouletteDistribution(firstSessionId, 2499, [
+	{ label: "바뀌면 안 됨", percentage: 7500 },
+]), false);
+assert.equal(store.updateRouletteDistribution(firstSessionId, 5000, [
+	{ label: "중복 경품", percentage: 2500 },
+	{ label: "중복 경품", percentage: 2500 },
+]), false);
+assert.deepEqual(
+	store.listRouletteItems(firstSessionId).map((item) => item.label),
+	["커피 쿠폰", "노래 신청권"],
+);
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-percent-win"), () => 0.7499).itemLabel, "노래 신청권");
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-percent-miss"), () => 0.75).isMiss, true);
+const deletedDistributionItem = store.listRouletteItems(firstSessionId).find((item) => item.label === "커피 쿠폰");
+assert.equal(store.deleteRouletteDistributionItem(firstSessionId, deletedDistributionItem.id), true);
+assert.equal(store.getRouletteSettings(firstSessionId).missWeight, 5000);
+assert.deepEqual(
+	store.listRouletteItems(firstSessionId).map((item) => [item.label, item.weight]),
+	[["노래 신청권", 5000]],
+);
+
 assert.equal(store.startRpsRound(firstSessionId, "바위"), true);
 assert.equal(store.startRpsRound(firstSessionId, "가위"), false);
 assert.match(
@@ -69,7 +133,7 @@ assert.equal(store.finishRpsRound(firstSessionId), null);
 assert.deepEqual(store.listRpsRounds(firstSessionId).map((round) => round.roundId), [1]);
 
 const settings = store.getBotSettings(firstSessionId);
-const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey, settings.commandsEnabled);
+const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey);
 assert.match(commandReplies.join(" "), /전체 사용 명령어:/);
 assert.match(commandReplies.join(" "), /DJ 전용 명령어:.*!실드 \+N\/-N.*!신청곡 삭제 번호/);
 store.updateBotSettings(firstSessionId, {
@@ -88,6 +152,11 @@ const populatedCommandReplies = store.getAvailableCommandRepliesByKey(firstSessi
 assert.match(populatedCommandReplies, /!테스트/);
 assert.match(populatedCommandReplies, /DJ 전용 명령어:/);
 assert.doesNotMatch(populatedCommandReplies, /영구 명령어|수정된 응답|실드 0개/);
+store.updateBotSettings(firstSessionId, {
+	...store.getBotSettings(firstSessionId),
+	commandsEnabled: false,
+});
+assert.match(store.getAvailableCommandRepliesByKey(firstSessionKey).join(" "), /!테스트/);
 const shield = store.listBotCounters(firstSessionId).find((counter) => counter.name === "실드");
 assert.equal(store.saveBotCounter(firstSessionId, shield.id, shield.name, 5), true);
 assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드 +2", true), "실드 7개 남았습니다.");

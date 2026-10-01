@@ -7,18 +7,27 @@ import { loadAudienceStatus } from "@/lib/audience";
 import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
+import { getMissingRequiredScopes } from "@/lib/spoon";
 import {
   getBotSettings,
+  getRouletteSettings,
   isSessionBlocked,
   listAudienceRankings,
   listBotCommands,
   listBotCounters,
   listSongRequests,
   listRpsRounds,
+  listRouletteItems,
+  listRouletteKeeps,
+  listRouletteResults,
   type AudienceRankingEntry,
   type AudienceRankingPeriod,
+  type RouletteKeep,
 } from "@/lib/session-store";
 import { AutoRefresh, RefreshButton, RefreshLiveButton } from "./refresh-live-button";
+import { AutomationToggle } from "./bot/automation-toggle";
+import { RouletteDistributionEditor } from "./game/roulette/roulette-distribution-editor";
+import { OAuthLoginGate } from "./oauth-login-gate";
 import { SiteFooter, SiteHeader } from "./site-chrome";
 
 type HomeProps = {
@@ -27,12 +36,15 @@ type HomeProps = {
     error?: string;
     bot?: string;
     chat?: string;
+    chatMessage?: string;
     settings?: string;
     tab?: string;
     automation?: string;
     ranking?: string;
     game?: string;
     rps?: string;
+    roulette?: string;
+    rouletteEdit?: string;
     preview?: string;
   }>;
 };
@@ -40,6 +52,8 @@ type HomeProps = {
 const errorMessages: Record<string, string> = {
   access_denied: "연동 요청이 취소되었습니다.",
   invalid_scope: "등록되지 않은 권한이 요청되었습니다.",
+  all_scopes_required: "NAGU BOT에 필요한 모든 권한을 승인해야 연결할 수 있습니다.",
+  access_code_required: "입장코드를 확인한 뒤 Spoon DJ 계정으로 로그인해 주세요.",
   missing_code: "인증 코드가 전달되지 않았습니다.",
   state_mismatch: "요청 검증에 실패했습니다. 다시 시작해 주세요.",
   token_exchange_failed: "토큰 발급에 실패했습니다. 설정을 확인해 주세요.",
@@ -61,6 +75,9 @@ const scopeLabels: Record<string, string> = {
   "listeners.read": "청취자 목록",
   "fans.read": "팬 랭킹",
 };
+
+const PREVIEW_FUTURE_TIMESTAMP = 4_102_444_800_000;
+const PREVIEW_EVENT_TIMESTAMP = 1_735_689_600_000;
 
 const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   month: "long",
@@ -149,6 +166,47 @@ function topRanking(
     .slice(0, 10);
 }
 
+function groupRouletteKeeps(keeps: RouletteKeep[]) {
+  const users = new Map<string, {
+    userId: string;
+    nickname: string;
+    items: Array<{ label: string; count: number }>;
+  }>();
+  for (const keep of keeps) {
+    const user = users.get(keep.userId) ?? {
+      userId: keep.userId,
+      nickname: keep.nickname,
+      items: [],
+    };
+    user.nickname = keep.nickname;
+    user.items.push({ label: keep.itemLabel, count: keep.count });
+    users.set(keep.userId, user);
+  }
+  return [...users.values()];
+}
+
+function normalizeRoulettePercentages(
+  items: Array<{ id: number; weight: number }>,
+  missWeight: number,
+) {
+  const entries = [
+    { key: "miss", weight: Math.max(0, missWeight) },
+    ...items.map((item) => ({ key: String(item.id), weight: Math.max(0, item.weight) })),
+  ];
+  const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  if (total === 0) entries[0].weight = 1;
+  const divisor = total || 1;
+  const shares = entries.map((entry) => {
+    const exact = (entry.weight / divisor) * 10_000;
+    return { ...entry, basisPoints: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  const remaining = 10_000 - shares.reduce((sum, share) => sum + share.basisPoints, 0);
+  const order = [...shares].sort((left, right) => right.remainder - left.remainder);
+  for (let index = 0; index < remaining; index += 1) order[index % order.length].basisPoints += 1;
+  const format = (basisPoints: number) => (basisPoints / 100).toFixed(2).replace(/\.00$/u, "");
+  return new Map(shares.map((share) => [share.key, format(share.basisPoints)]));
+}
+
 function summarizeEvent(event: BotEvent) {
   const name = event.data.user.nickname ?? "익명";
 
@@ -186,7 +244,7 @@ export default async function Home({ searchParams }: HomeProps) {
     expires_in: 3600,
     refresh_token: "preview",
     scope: Object.keys(scopeLabels).join(" "),
-    expires_at: Date.now() + 3600_000,
+    expires_at: PREVIEW_FUTURE_TIMESTAMP,
   } : await getAuthSession(sessionId);
   const liveResult = previewConnected ? {
     session,
@@ -231,6 +289,8 @@ export default async function Home({ searchParams }: HomeProps) {
       : null;
   const connectionError = connectionBlocked ? errorMessages.account_blocked : error;
   const scopes = session?.scope.split(" ").filter(Boolean) ?? [];
+  const missingRequiredScopes = session ? getMissingRequiredScopes(session.scope) : [];
+  const allScopesRequired = params.error === "all_scopes_required";
   const disconnected = params.status === "disconnected";
   const liveStatus = liveResult.status;
   const bot = connected && sessionId ? getBotSnapshot(sessionId) : null;
@@ -266,6 +326,44 @@ export default async function Home({ searchParams }: HomeProps) {
     : [];
   const rpsRound = rpsRounds.find((round) => round.active) ?? rpsRounds[0] ?? null;
   const rpsHistory = rpsRounds.filter((round) => !round.active);
+  const isRoulettePage = isGameTab && gameTab === "roulette" && connected && sessionId;
+  const rouletteSettings = isRoulettePage
+    ? previewConnected
+      ? { enabled: false, cost: 20, missWeight: 2 }
+      : getRouletteSettings(sessionId)
+    : null;
+  const rouletteItems = isRoulettePage
+    ? previewConnected
+      ? [
+          { id: 1, label: "커피 쿠폰", weight: 5 },
+          { id: 2, label: "노래 신청권", weight: 3 },
+          { id: 3, label: "DJ 애칭권", weight: 1 },
+        ]
+      : listRouletteItems(sessionId)
+    : [];
+  const rouletteResults = isRoulettePage
+    ? previewConnected
+      ? [
+          { id: 3, userId: "fan-1", nickname: "단골 청취자", itemLabel: "커피 쿠폰", isMiss: false, spoons: 20, createdAt: PREVIEW_EVENT_TIMESTAMP - 60_000 },
+          { id: 2, userId: "fan-2", nickname: "응원단장", itemLabel: null, isMiss: true, spoons: 20, createdAt: PREVIEW_EVENT_TIMESTAMP - 180_000 },
+          { id: 1, userId: "fan-1", nickname: "단골 청취자", itemLabel: "커피 쿠폰", isMiss: false, spoons: 20, createdAt: PREVIEW_EVENT_TIMESTAMP - 300_000 },
+        ]
+      : listRouletteResults(sessionId)
+    : [];
+  const rouletteKeeps = isRoulettePage
+    ? previewConnected
+      ? [
+          { userId: "fan-1", nickname: "단골 청취자", itemLabel: "커피 쿠폰", count: 2, updatedAt: PREVIEW_EVENT_TIMESTAMP },
+          { userId: "fan-1", nickname: "단골 청취자", itemLabel: "노래 신청권", count: 1, updatedAt: PREVIEW_EVENT_TIMESTAMP },
+          { userId: "fan-2", nickname: "응원단장", itemLabel: "DJ 애칭권", count: 1, updatedAt: PREVIEW_EVENT_TIMESTAMP },
+        ]
+      : listRouletteKeeps(sessionId)
+    : [];
+  const rouletteKeepUsers = groupRouletteKeeps(rouletteKeeps);
+  const roulettePercentages = normalizeRoulettePercentages(
+    rouletteItems,
+    rouletteSettings?.missWeight ?? 0,
+  );
   const spoonRanking = topRanking(audienceRankings, (entry) => entry.spoons);
   const heartRanking = topRanking(audienceRankings, (entry) => entry.hearts);
   const favoriteRanking = topRanking(audienceRankings, (entry) => entry.favoriteTemperature);
@@ -313,7 +411,7 @@ export default async function Home({ searchParams }: HomeProps) {
               </p>
             </div>
 
-            {connected && (
+            {connected && missingRequiredScopes.length === 0 && (
               <div className="notice success" role="status">
                 <span className="notice-icon" aria-hidden="true">✓</span>
                 <div>
@@ -323,11 +421,21 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
+            {connected && missingRequiredScopes.length > 0 && (
+              <div className="notice info" role="status">
+                <span className="notice-icon" aria-hidden="true">i</span>
+                <div>
+                  <strong>일부 권한이 승인되지 않았습니다</strong>
+                  <span>{missingRequiredScopes.map((scope) => scopeLabels[scope]).join(", ")} 권한이 없어 관련 데이터가 표시되지 않습니다. 서비스 오류가 아닙니다.</span>
+                </div>
+              </div>
+            )}
+
             {connectionError && (
               <div className="notice error" role="alert">
                 <span className="notice-icon" aria-hidden="true">!</span>
                 <div>
-                  <strong>연결 실패</strong>
+                  <strong>{allScopesRequired ? "모든 권한을 선택해 주세요" : "연결 실패"}</strong>
                   <span>{connectionError}</span>
                 </div>
               </div>
@@ -353,11 +461,14 @@ export default async function Home({ searchParams }: HomeProps) {
 
             {!connectionBlocked && <div className="connection-actions">
               {connected ? (
-                <form action="/oauth/disconnect" method="post">
-                  <button className="disconnect" type="submit">연결 해제</button>
-                </form>
+                <>
+                  {missingRequiredScopes.length > 0 && <OAuthLoginGate label="권한 다시 승인하기" />}
+                  <form action="/oauth/disconnect" method="post">
+                    <button className="disconnect" type="submit">연결 해제</button>
+                  </form>
+                </>
               ) : (
-                <a className="connect" href="/oauth/connect">Spoon DJ 계정으로 로그인</a>
+                <OAuthLoginGate label={allScopesRequired ? "권한 다시 승인하기" : "Spoon DJ 계정으로 로그인"} />
               )}
             </div>}
 
@@ -444,11 +555,11 @@ export default async function Home({ searchParams }: HomeProps) {
               )}
 
               {liveStatus.kind === "missing_scope" && (
-                <div className="notice error" role="alert">
-                  <span className="notice-icon" aria-hidden="true">!</span>
+                <div className="notice info" role="status">
+                  <span className="notice-icon" aria-hidden="true">i</span>
                   <div>
-                    <strong>방송 정보 권한 필요</strong>
-                    <span>계정을 다시 연결해 live.read 권한을 승인해 주세요.</span>
+                    <strong>방송 정보가 표시되지 않습니다</strong>
+                    <span>live.read 권한이 승인되지 않았기 때문이며 서비스 오류가 아닙니다. 권한을 다시 승인해 주세요.</span>
                   </div>
                 </div>
               )}
@@ -575,7 +686,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   )}
                   {audienceResult.listeners.kind === "offline" && <p className="audience-empty">방송 전입니다.</p>}
                   {audienceResult.listeners.kind === "missing_scope" && (
-                    <p className="audience-empty">listeners.read 권한이 필요합니다.</p>
+                    <p className="audience-empty">listeners.read 권한이 승인되지 않아 청취자 목록이 표시되지 않습니다. 서비스 오류가 아닙니다.</p>
                   )}
                   {(audienceResult.listeners.kind === "unavailable" || audienceResult.listeners.kind === "unauthorized") && (
                     <p className="audience-empty">청취자 목록을 불러오지 못했습니다.</p>
@@ -605,7 +716,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   )}
                   {audienceResult.fans.kind === "offline" && <p className="audience-empty">방송 전입니다.</p>}
                   {audienceResult.fans.kind === "missing_scope" && (
-                    <p className="audience-empty">fans.read 권한이 필요합니다.</p>
+                    <p className="audience-empty">fans.read 권한이 승인되지 않아 팬 랭킹이 표시되지 않습니다. 서비스 오류가 아닙니다.</p>
                   )}
                   {(audienceResult.fans.kind === "unavailable" || audienceResult.fans.kind === "unauthorized") && (
                     <p className="audience-empty">팬 랭킹을 불러오지 못했습니다.</p>
@@ -748,9 +859,76 @@ export default async function Home({ searchParams }: HomeProps) {
               )}
 
               {gameTab === "roulette" && (
-                <section className="game-panel game-coming-soon" aria-labelledby="roulette-title">
-                  <p className="section-label">룰렛</p>
-                  <h3 id="roulette-title">준비중입니다.</h3>
+                <section className="game-panel roulette-panel" aria-labelledby="roulette-title">
+                  <AutoRefresh intervalMs={2000} />
+                  <div className="game-panel-heading">
+                    <div>
+                      <h3 id="roulette-title">률렛</h3>
+                      <p>설정 비용 이상을 한 번에 후원하면 사용자당 해당 후원 건에서 룰렛을 한 번 자동 추첨합니다.</p>
+                    </div>
+                    <span className={`game-state ${rouletteSettings?.enabled ? "is-active" : ""}`}>
+                      {rouletteSettings?.enabled ? "자동 추첨 중" : "사용 안 함"}
+                    </span>
+                  </div>
+
+                  {params.roulette === "settings_saved" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>룰렛 설정을 저장했습니다.</strong></div>}
+                  {params.roulette === "distribution_saved" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>룰렛 확률표를 저장했습니다.</strong></div>}
+                  {params.roulette === "item_deleted" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>경품을 삭제하고 해당 확률을 꽝 확률에 반영했습니다.</strong></div>}
+                  {params.roulette === "invalid_distribution" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>경품 당첨 확률 합계는 100% 이하여야 하며 같은 경품명은 한 번만 사용할 수 있습니다.</strong></div>}
+                  {params.roulette === "invalid_settings" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>룰렛 입력값을 확인해 주세요.</strong></div>}
+
+                  {rouletteSettings && (
+                    <form className="roulette-settings-form" action="/game/roulette" method="post">
+                      <input type="hidden" name="action" value="settings" />
+                      <label className="feature-enabled roulette-enabled"><input type="checkbox" role="switch" name="enabled" defaultChecked={rouletteSettings.enabled} /> 후원 룰렛 시작</label>
+                      <label>1회 비용<input type="number" name="cost" min={1} max={1_000_000} defaultValue={rouletteSettings.cost} required /><span>스푼</span></label>
+                      <button type="submit">설정</button>
+                    </form>
+                  )}
+
+                  {params.rouletteEdit === "1" ? (
+                    <RouletteDistributionEditor items={rouletteItems.map((item) => ({
+                      id: item.id,
+                      label: item.label,
+                      percentage: roulettePercentages.get(String(item.id)) ?? "0",
+                    }))} />
+                  ) : (
+                    <section className="roulette-distribution-view" aria-labelledby="roulette-items-title">
+                      <div className="roulette-section-heading">
+                        <div><h4 id="roulette-items-title">룰렛 설정</h4><p>꽝 확률은 당첨 확률을 제외한 남은 비율로 자동 설정됩니다.</p></div>
+                        <Link className="roulette-edit-button" href="/?tab=game&game=roulette&rouletteEdit=1">수정</Link>
+                      </div>
+                      <div className="roulette-percentage-list is-readonly">
+                        {rouletteItems.map((item) => <div className="roulette-percentage-row" key={item.id}>
+                          <strong>{item.label}</strong><span><b>{roulettePercentages.get(String(item.id))}%</b></span>
+                        </div>)}
+                        <div className="roulette-percentage-row is-miss"><strong>꽝</strong><span><b>{roulettePercentages.get("miss")}%</b><small>(자동 설정)</small></span></div>
+                      </div>
+                    </section>
+                  )}
+
+                  <div className="roulette-records">
+                    <section aria-labelledby="roulette-history-title">
+                      <div className="roulette-section-heading"><div><h4 id="roulette-history-title">당첨 이력</h4><p>최근 {rouletteResults.length}건</p></div></div>
+                      {rouletteResults.length > 0 ? <ol className="roulette-history-list">
+                        {rouletteResults.map((result) => <li key={result.id}>
+                          <div><strong>{result.nickname}</strong><time dateTime={new Date(result.createdAt).toISOString()}>{formatDateTime(result.createdAt)}</time></div>
+                          <span className={result.isMiss ? "is-miss" : "is-win"}>{result.isMiss ? "꽝" : result.itemLabel}</span>
+                          <small>{result.spoons.toLocaleString("ko-KR")}스푼</small>
+                        </li>)}
+                      </ol> : <p className="roulette-empty">아직 추첨 이력이 없습니다.</p>}
+                    </section>
+
+                    <section aria-labelledby="roulette-keeps-title">
+                      <div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">사용자별 킵</h4><p><code>!닉네임 킵</code>으로 조회</p></div></div>
+                      {rouletteKeepUsers.length > 0 ? <div className="roulette-keep-list">
+                        {rouletteKeepUsers.map((user) => <section key={user.userId}>
+                          <strong>{user.nickname}</strong>
+                          <ul>{user.items.map((item) => <li key={item.label}><span>{item.label}</span><em>{item.count.toLocaleString("ko-KR")}개</em></li>)}</ul>
+                        </section>)}
+                      </div> : <p className="roulette-empty">저장된 킵이 없습니다.</p>}
+                    </section>
+                  </div>
                 </section>
               )}
             </article>
@@ -888,7 +1066,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "welcome" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="welcome" />
-                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.welcomeEnabled} /> 입장 환영 사용</label>
+                      <AutomationToggle feature="welcome" initialEnabled={botSettings.welcomeEnabled} label="입장 환영" />
                       <label htmlFor="welcome-message">입장 인사말</label>
                       <textarea id="welcome-message" name="message" defaultValue={botSettings.greetingMessage} maxLength={200} rows={3} required />
                       <p><code>{"{name}"}</code>은 DJ, <code>{"{nickname}"}</code>은 청취자 닉네임입니다.</p><button type="submit">입장 환영 저장</button>
@@ -898,7 +1076,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "donation" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="donation" />
-                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.donationEnabled} /> 후원 감사 사용</label>
+                      <AutomationToggle feature="donation" initialEnabled={botSettings.donationEnabled} label="후원 감사" />
                       <label htmlFor="donation-message">후원 감사말</label>
                       <textarea id="donation-message" name="message" defaultValue={botSettings.donationMessage} maxLength={200} rows={3} required />
                       <p><code>{"{nickname}"}</code>은 후원자, <code>{"{amount}"}</code>는 스푼 수입니다.</p><button type="submit">후원 감사 저장</button>
@@ -908,7 +1086,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "heart" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="heart" />
-                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.heartEnabled} /> 하트 후원 감사 사용</label>
+                      <AutomationToggle feature="heart" initialEnabled={botSettings.heartEnabled} label="하트 후원 감사" />
                       <label htmlFor="heart-message">하트 감사말</label>
                       <textarea id="heart-message" name="message" defaultValue={botSettings.heartMessage} maxLength={200} rows={3} required />
                       <p><code>{"{nickname}"}</code>은 후원자, <code>{"{milestone}"}</code>은 누적 하트 수입니다.</p><button type="submit">하트 후원 저장</button>
@@ -918,7 +1096,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "repeat" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="repeat" />
-                      <label className="feature-enabled"><input type="checkbox" name="enabled" defaultChecked={botSettings.repeatEnabled} /> 반복 멘트 사용</label>
+                      <AutomationToggle feature="repeat" initialEnabled={botSettings.repeatEnabled} label="반복 멘트" />
                       <label htmlFor="repeat-interval">반복 간격</label>
                       <div className="interval-field"><input id="repeat-interval" type="number" name="intervalMinutes" min={1} max={1440} defaultValue={botSettings.repeatIntervalMinutes} required /><span>분마다</span></div>
                       <label htmlFor="repeat-message">반복 멘트</label>
@@ -955,11 +1133,6 @@ export default async function Home({ searchParams }: HomeProps) {
                   </div>}
 
                   {automationTab === "commands" && <div className="command-editor">
-                    <form className="command-enabled-form" action="/bot/settings" method="post">
-                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="commands" />
-                      <label><input type="checkbox" name="enabled" defaultChecked={botSettings.commandsEnabled} /> 채팅 명령어 사용</label>
-                      <button type="submit">사용 설정 저장</button>
-                    </form>
                     <h4>명령어 관리</h4>
                     <h5 className="command-group-title">기본 명령어 · 전체 사용</h5>
                     <ul>
@@ -972,6 +1145,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
+                      <li><div><strong>!닉네임 킵</strong><span>해당 닉네임으로 저장된 룰렛 당첨 항목과 수량 조회</span></div></li>
                     </ul>
                     {botCounters.length > 0 && (
                       <>
@@ -988,6 +1162,15 @@ export default async function Home({ searchParams }: HomeProps) {
                         </ul>
                       </>
                     )}
+                    <h5 className="command-group-title is-dj-only">DJ 전용</h5>
+                    <ul>
+                      {botCounters.map((counter) => (
+                        <li key={`counter-dj-${counter.id}`}>
+                          <div><strong>!{counter.name} +N/-N</strong><span>개수 증가·감소 · DJ만 사용 가능</span></div>
+                        </li>
+                      ))}
+                      <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
+                    </ul>
                     <h5 className="command-group-title">사용자 정의 명령어 · 전체 사용</h5>
                     {botCommands.some((item) => !["!명령어", "!안녕"].includes(item.command)) && (
                       <ul>
@@ -1011,21 +1194,10 @@ export default async function Home({ searchParams }: HomeProps) {
                     )}
                     <form className="command-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="upsert_command" />
-                      <label htmlFor="command-name">명령어</label>
-                      <input id="command-name" name="command" placeholder="!공지" maxLength={20} required />
-                      <label htmlFor="command-response">응답 메시지</label>
-                      <input id="command-response" name="response" placeholder="추가할 응답 메시지" maxLength={200} required />
+                      <label htmlFor="command-name">명령어<input id="command-name" name="command" placeholder="!공지" maxLength={20} required /></label>
+                      <label htmlFor="command-response">응답 메시지<input id="command-response" name="response" placeholder="추가할 응답 메시지" maxLength={200} required /></label>
                       <button type="submit">추가</button>
                     </form>
-                    <h5 className="command-group-title is-dj-only">DJ 전용</h5>
-                    <ul>
-                      {botCounters.map((counter) => (
-                        <li key={`counter-dj-${counter.id}`}>
-                          <div><strong>!{counter.name} +N/-N</strong><span>개수 증가·감소 · DJ만 사용 가능</span></div>
-                        </li>
-                      ))}
-                      <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
-                    </ul>
                   </div>}
 
                   {automationTab === "requests" && <div className="song-request-editor">
@@ -1091,10 +1263,12 @@ export default async function Home({ searchParams }: HomeProps) {
                   <p className="bot-help">계정을 다시 연결해 chat.send 권한을 승인해 주세요.</p>
                 )}
 
-                <div className="command-list" aria-label="자동 응답 명령어">
-                  <span><strong>!안녕</strong> 닉네임으로 환영 인사</span>
-                  <span><strong>!명령어</strong> 사용 가능한 명령어 안내</span>
-                </div>
+                {params.chat === "sent" && params.chatMessage && (
+                  <div className="sent-chat-message" aria-label="보낸 메시지">
+                    <strong>보낸 메시지</strong>
+                    <p>{params.chatMessage.slice(0, 200)}</p>
+                  </div>
+                )}
               </div>
 
               <p className="bot-footnote">

@@ -10,7 +10,8 @@ DJs sign in with the Spoon account they use for broadcasting and approve the req
 2. Add the Spoon Client Secret after the app is approved.
 3. Generate a session secret with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
 4. Set a strong `ADMIN_PASSWORD` for the `/admin` operations page.
-5. Run `npm run dev`.
+5. Set a strong `ACCESS_CODE`. DJs must verify this code before the Spoon OAuth login button is enabled.
+6. Run `npm run dev`.
 
 The registered redirect URI must exactly match `SPOON_REDIRECT_URI`. The application must also be approved and show an `active` status in Spoon Developers before OAuth consent works. If every scope shows "이 앱과 연결할 수 없습니다", confirm that the configured Client ID belongs to the active app rather than a pending, rejected, deleted, or different application.
 
@@ -23,6 +24,8 @@ https://nagu-bot.vercel.app/oauth/callback
 ```
 
 Tokens are encrypted with AES-256-GCM in SQLite. The browser only receives an opaque, HttpOnly, Secure, SameSite=Lax session ID. The application does not print tokens to the page or server logs.
+
+The OAuth connect route also requires a short-lived, HttpOnly proof issued after the shared `ACCESS_CODE` is verified. Opening `/oauth/connect` directly without that proof returns to the login page and does not start Spoon authorization.
 
 ## Railway persistence
 

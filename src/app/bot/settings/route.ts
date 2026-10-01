@@ -40,12 +40,31 @@ function redirect(request: NextRequest, status: string, automation?: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = await getAuthSession(sessionId);
-  if (!sessionId || !session) return redirect(request, "authentication_required");
-
   const formData = await request.formData();
   const mode = formData.get("mode");
+  const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = await getAuthSession(sessionId);
+  if (!sessionId || !session) {
+    return mode === "automation_toggle"
+      ? NextResponse.json({ error: "authentication_required" }, { status: 401 })
+      : redirect(request, "authentication_required");
+  }
+
+  if (mode === "automation_toggle") {
+    const feature = String(formData.get("feature") ?? "");
+    const enabledValue = String(formData.get("enabled") ?? "");
+    if (!["welcome", "donation", "heart", "repeat"].includes(feature)
+      || !["true", "false"].includes(enabledValue)) {
+      return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+    }
+    const enabled = enabledValue === "true";
+    const current = getBotSettings(sessionId);
+    if (feature === "welcome") updateBotSettings(sessionId, { ...current, welcomeEnabled: enabled });
+    if (feature === "donation") updateBotSettings(sessionId, { ...current, donationEnabled: enabled });
+    if (feature === "heart") updateBotSettings(sessionId, { ...current, heartEnabled: enabled });
+    if (feature === "repeat") updateBotSettings(sessionId, { ...current, repeatEnabled: enabled });
+    return NextResponse.json({ enabled });
+  }
 
   if (mode === "dj_nickname") {
     const djNickname = String(formData.get("djNickname") ?? "").trim();
@@ -77,7 +96,17 @@ export async function POST(request: NextRequest) {
     }
 
     const current = getBotSettings(sessionId);
-    const enabled = formData.get("enabled") === "on";
+    const enabled = formData.has("enabled")
+      ? formData.get("enabled") === "on"
+      : feature === "welcome"
+        ? current.welcomeEnabled
+        : feature === "donation"
+          ? current.donationEnabled
+          : feature === "heart"
+            ? current.heartEnabled
+            : feature === "repeat"
+              ? current.repeatEnabled
+              : true;
     const message = String(formData.get("message") ?? "").trim();
     if (feature !== "commands" && (!message || message.length > 200)) {
       return redirect(request, "invalid_message", feature);

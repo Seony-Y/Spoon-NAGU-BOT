@@ -11,11 +11,13 @@ import { sendBotChat } from "./chat";
 import {
   applyBotCounterCommand,
   applyRpsCommand,
+  applyRouletteDonation,
   applySongRequestCommand,
   findBotCommandResponse,
   getAudienceRankingCommandRepliesByKey,
   getAvailableCommandRepliesByKey,
   getBotSettingsByKey,
+  getRouletteKeepCommandRepliesByKey,
   getSessionKey,
   isSessionBlockedByKey,
   isBotEnabled,
@@ -225,7 +227,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   if (event.event === "chat") {
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
     if (command === "!명령어") {
-      for (const message of getAvailableCommandRepliesByKey(sessionKey, settings.commandsEnabled)) {
+      for (const message of getAvailableCommandRepliesByKey(sessionKey)) {
         void sendBotChat(sessionKey, message);
       }
       return;
@@ -239,6 +241,11 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     );
     if (rankingReplies) {
       for (const message of rankingReplies) void sendBotChat(sessionKey, message);
+      return;
+    }
+    const keepReplies = getRouletteKeepCommandRepliesByKey(sessionKey, event.data.message);
+    if (keepReplies) {
+      for (const message of keepReplies) void sendBotChat(sessionKey, message);
       return;
     }
     const rpsReply = applyRpsCommand(
@@ -259,15 +266,24 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       return;
     }
     const counterReply = applyBotCounterCommand(sessionKey, event.data.message, event.data.isDj);
-    reply = rpsReply ?? songRequestReply ?? counterReply ?? (settings.commandsEnabled
-      ? event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
+    reply = rpsReply ?? songRequestReply ?? counterReply ?? (
+      event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
         ? MANAGER_REQUIRED_MESSAGE
         : findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
-      : null);
+    );
   } else {
     reply = processBotAutomation(runtime, event, settings);
   }
   if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
+  if (event.event === "donation" && runtime.currentLiveId !== undefined) {
+    const draw = applyRouletteDonation(sessionKey, runtime.currentLiveId, event);
+    if (draw) {
+      const result = draw.isMiss
+        ? `[룰렛] ${draw.nickname}님 결과: 꽝`
+        : `[룰렛] ${draw.nickname}님 당첨: ${draw.itemLabel}! (킵 ${draw.keepCount}개)`;
+      void sendBotChat(sessionKey, result.slice(0, 200));
+    }
+  }
 }
 
 export async function consumeEventStream(

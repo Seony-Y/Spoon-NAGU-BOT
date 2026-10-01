@@ -96,6 +96,36 @@ export type RpsRound = {
   entries: RpsEntry[];
 };
 
+export type RouletteSettings = {
+  enabled: boolean;
+  cost: number;
+  missWeight: number;
+};
+
+export type RouletteItem = {
+  id: number;
+  label: string;
+  weight: number;
+};
+
+export type RouletteResult = {
+  id: number;
+  userId: string;
+  nickname: string;
+  itemLabel: string | null;
+  isMiss: boolean;
+  spoons: number;
+  createdAt: number;
+};
+
+export type RouletteKeep = {
+  userId: string;
+  nickname: string;
+  itemLabel: string;
+  count: number;
+  updatedAt: number;
+};
+
 export type AudienceRankingPeriod = "current" | "daily" | "all";
 
 export type AudienceRankingEntry = {
@@ -240,6 +270,42 @@ function migrateDatabase(database: DatabaseSync) {
       result TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       PRIMARY KEY (workspace_key, round_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS roulette_settings (
+      workspace_key TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      cost INTEGER NOT NULL DEFAULT 20,
+      miss_weight INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS roulette_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_key TEXT NOT NULL,
+      label TEXT NOT NULL COLLATE NOCASE,
+      weight INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (workspace_key, label)
+    );
+    CREATE TABLE IF NOT EXISTS roulette_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_key TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      event_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      item_label TEXT,
+      is_miss INTEGER NOT NULL,
+      spoons INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (workspace_key, event_id)
+    );
+    CREATE TABLE IF NOT EXISTS roulette_keeps (
+      workspace_key TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      item_label TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, user_id, item_label)
     );
     CREATE INDEX IF NOT EXISTS audience_events_period_idx
       ON audience_events (workspace_key, stat_date, live_id, user_id);
@@ -587,6 +653,53 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
     `).run(targetKey, nextRoundId, sourceKey, sourceRpsRound.round_id);
   }
 
+  database.prepare(`
+    INSERT OR IGNORE INTO roulette_settings (workspace_key, enabled, cost, miss_weight)
+    SELECT ?, enabled, cost, miss_weight FROM roulette_settings WHERE workspace_key = ?
+  `).run(targetKey, sourceKey);
+  database.prepare(`
+    INSERT OR IGNORE INTO roulette_items (workspace_key, label, weight, created_at)
+    SELECT ?, label, weight, created_at FROM roulette_items WHERE workspace_key = ?
+  `).run(targetKey, sourceKey);
+  database.prepare(`
+    INSERT OR IGNORE INTO roulette_results (
+      workspace_key, live_id, event_id, user_id, nickname,
+      item_label, is_miss, spoons, created_at
+    )
+    SELECT ?, live_id, event_id, user_id, nickname,
+           item_label, is_miss, spoons, created_at
+    FROM roulette_results WHERE workspace_key = ?
+  `).run(targetKey, sourceKey);
+  const sourceRouletteKeeps = database.prepare(`
+    SELECT user_id, nickname, item_label, count, updated_at
+    FROM roulette_keeps WHERE workspace_key = ?
+  `).all(sourceKey) as Array<{
+    user_id: string;
+    nickname: string;
+    item_label: string;
+    count: number;
+    updated_at: number;
+  }>;
+  const mergeRouletteKeep = database.prepare(`
+    INSERT INTO roulette_keeps (
+      workspace_key, user_id, nickname, item_label, count, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_key, user_id, item_label) DO UPDATE SET
+      nickname = excluded.nickname,
+      count = roulette_keeps.count + excluded.count,
+      updated_at = MAX(roulette_keeps.updated_at, excluded.updated_at)
+  `);
+  for (const keep of sourceRouletteKeeps) {
+    mergeRouletteKeep.run(
+      targetKey,
+      keep.user_id,
+      keep.nickname,
+      keep.item_label,
+      keep.count,
+      keep.updated_at,
+    );
+  }
+
   const profiles = database.prepare(`
     SELECT user_id, nickname, first_seen_at, last_seen_at
     FROM audience_profiles WHERE workspace_key = ?
@@ -625,6 +738,10 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM audience_profiles WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_entries WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_rounds WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM roulette_keeps WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM roulette_results WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM roulette_items WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM roulette_settings WHERE workspace_key = ?").run(sourceKey);
 }
 
 export function linkDjWorkspaceByKey(sessionKey: string, djUserId: string, nickname: string) {
@@ -904,18 +1021,13 @@ export function findBotCommandResponse(sessionKey: string, message: string, nick
   return response.length <= 200 ? response : response.slice(0, 200);
 }
 
-export function getAvailableCommandRepliesByKey(
-  sessionKey: string,
-  commandsEnabled: boolean,
-) {
+export function getAvailableCommandRepliesByKey(sessionKey: string) {
   const { workspaceKey } = ensureBotSettings(sessionKey);
-  const commands = commandsEnabled
-    ? (getDatabase().prepare(`
-        SELECT command FROM bot_commands
-        WHERE session_key = ? AND command != '!명령어'
-        ORDER BY command
-      `).all(workspaceKey) as Array<{ command: string }>).map((row) => row.command)
-    : [];
+  const commands = (getDatabase().prepare(`
+    SELECT command FROM bot_commands
+    WHERE session_key = ? AND command != '!명령어'
+    ORDER BY command
+  `).all(workspaceKey) as Array<{ command: string }>).map((row) => row.command);
   const counters = listBotCountersByKey(sessionKey);
   const publicLabels = [
     "!명령어",
@@ -925,6 +1037,7 @@ export function getAvailableCommandRepliesByKey(
     "!신청곡 곡명-가수",
     "!신청곡 목록",
     "!가위바위보 가위|바위|보",
+    "!닉네임 킵",
   ].filter((label, index, items) => items.indexOf(label) === index);
   const djLabels = [
     ...counters.map((counter) => `!${counter.name} +N/-N`),
@@ -1135,6 +1248,330 @@ export function applySongRequestCommand(
     Date.now(),
   ) as { id: number };
   return `신청곡 #${row.id} ${command.title} - ${command.artist} 접수 완료!`;
+}
+
+function getRouletteSettingsByKey(sessionKey: string): RouletteSettings {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  database.prepare(`
+    INSERT OR IGNORE INTO roulette_settings (workspace_key, enabled, cost, miss_weight)
+    VALUES (?, 0, 20, 0)
+  `).run(workspaceKey);
+  const row = database.prepare(`
+    SELECT enabled, cost, miss_weight FROM roulette_settings WHERE workspace_key = ?
+  `).get(workspaceKey) as { enabled: number; cost: number; miss_weight: number };
+  return {
+    enabled: row.enabled === 1,
+    cost: row.cost,
+    missWeight: row.miss_weight,
+  };
+}
+
+export function getRouletteSettings(sessionId: string) {
+  return getRouletteSettingsByKey(getSessionKey(sessionId));
+}
+
+export function updateRouletteSettings(sessionId: string, settings: RouletteSettings) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  getDatabase().prepare(`
+    INSERT INTO roulette_settings (workspace_key, enabled, cost, miss_weight)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(workspace_key) DO UPDATE SET
+      enabled = excluded.enabled,
+      cost = excluded.cost,
+      miss_weight = excluded.miss_weight
+  `).run(workspaceKey, settings.enabled ? 1 : 0, settings.cost, settings.missWeight);
+}
+
+export function listRouletteItems(sessionId: string): RouletteItem[] {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  return getDatabase().prepare(`
+    SELECT id, label, weight FROM roulette_items
+    WHERE workspace_key = ? ORDER BY created_at, id
+  `).all(workspaceKey).map((row) => {
+    const item = row as { id: number; label: string; weight: number };
+    return { id: item.id, label: item.label, weight: item.weight };
+  });
+}
+
+export function saveRouletteItem(
+  sessionId: string,
+  id: number | null,
+  label: string,
+  weight: number,
+) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const database = getDatabase();
+  try {
+    if (id === null) {
+      database.prepare(`
+        INSERT INTO roulette_items (workspace_key, label, weight, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(workspaceKey, label, weight, Date.now());
+      return true;
+    }
+    const result = database.prepare(`
+      UPDATE roulette_items SET label = ?, weight = ?
+      WHERE id = ? AND workspace_key = ?
+    `).run(label, weight, id, workspaceKey);
+    return result.changes > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function deleteRouletteItem(sessionId: string, id: number) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  return getDatabase().prepare(`
+    DELETE FROM roulette_items WHERE id = ? AND workspace_key = ?
+  `).run(id, workspaceKey).changes > 0;
+}
+
+export function deleteRouletteDistributionItem(sessionId: string, id: number) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const database = getDatabase();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const item = database.prepare(`
+      SELECT weight FROM roulette_items WHERE id = ? AND workspace_key = ?
+    `).get(id, workspaceKey) as { weight: number } | undefined;
+    if (!item) {
+      database.exec("ROLLBACK");
+      return false;
+    }
+    database.prepare("DELETE FROM roulette_items WHERE id = ? AND workspace_key = ?")
+      .run(id, workspaceKey);
+    database.prepare(`
+      INSERT INTO roulette_settings (workspace_key, enabled, cost, miss_weight)
+      VALUES (?, 0, 20, ?)
+      ON CONFLICT(workspace_key) DO UPDATE SET
+        miss_weight = roulette_settings.miss_weight + excluded.miss_weight
+    `).run(workspaceKey, item.weight);
+    database.exec("COMMIT");
+    return true;
+  } catch {
+    database.exec("ROLLBACK");
+    return false;
+  }
+}
+
+export function updateRouletteDistribution(
+  sessionId: string,
+  missPercentage: number,
+  items: Array<{ label: string; percentage: number }>,
+) {
+  if (
+    !Number.isSafeInteger(missPercentage)
+    || missPercentage < 0
+    || items.some((item) => (
+      item.label.length < 1
+      || item.label.length > 50
+      || /[\r\n]/u.test(item.label)
+      || !Number.isSafeInteger(item.percentage)
+      || item.percentage < 1
+    ))
+    || missPercentage + items.reduce((total, item) => total + item.percentage, 0) !== 10_000
+    || new Set(items.map((item) => item.label.toLocaleLowerCase("ko-KR"))).size !== items.length
+  ) {
+    return false;
+  }
+
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const database = getDatabase();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.prepare("DELETE FROM roulette_items WHERE workspace_key = ?").run(workspaceKey);
+    const insert = database.prepare(`
+      INSERT INTO roulette_items (workspace_key, label, weight, created_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    const now = Date.now();
+    items.forEach((item, index) => {
+      insert.run(workspaceKey, item.label, item.percentage, now + index);
+    });
+    database.prepare(`
+      INSERT INTO roulette_settings (workspace_key, enabled, cost, miss_weight)
+      VALUES (?, 0, 20, ?)
+      ON CONFLICT(workspace_key) DO UPDATE SET miss_weight = excluded.miss_weight
+    `).run(workspaceKey, missPercentage);
+    database.exec("COMMIT");
+    return true;
+  } catch {
+    database.exec("ROLLBACK");
+    return false;
+  }
+}
+
+export function listRouletteResults(sessionId: string, limit = 50): RouletteResult[] {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  return getDatabase().prepare(`
+    SELECT id, user_id, nickname, item_label, is_miss, spoons, created_at
+    FROM roulette_results WHERE workspace_key = ?
+    ORDER BY id DESC LIMIT ?
+  `).all(workspaceKey, Math.max(1, Math.min(limit, 200))).map((row) => {
+    const result = row as {
+      id: number;
+      user_id: string;
+      nickname: string;
+      item_label: string | null;
+      is_miss: number;
+      spoons: number;
+      created_at: number;
+    };
+    return {
+      id: result.id,
+      userId: result.user_id,
+      nickname: result.nickname,
+      itemLabel: result.item_label,
+      isMiss: result.is_miss === 1,
+      spoons: result.spoons,
+      createdAt: result.created_at,
+    };
+  });
+}
+
+export function listRouletteKeeps(sessionId: string): RouletteKeep[] {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  return getDatabase().prepare(`
+    SELECT user_id, nickname, item_label, count, updated_at
+    FROM roulette_keeps WHERE workspace_key = ?
+    ORDER BY nickname COLLATE NOCASE, updated_at DESC, item_label COLLATE NOCASE
+  `).all(workspaceKey).map((row) => {
+    const keep = row as {
+      user_id: string;
+      nickname: string;
+      item_label: string;
+      count: number;
+      updated_at: number;
+    };
+    return {
+      userId: keep.user_id,
+      nickname: keep.nickname,
+      itemLabel: keep.item_label,
+      count: keep.count,
+      updatedAt: keep.updated_at,
+    };
+  });
+}
+
+export type RouletteDraw = {
+  nickname: string;
+  itemLabel: string | null;
+  isMiss: boolean;
+  keepCount: number | null;
+};
+
+export function applyRouletteDonation(
+  sessionKey: string,
+  liveId: number,
+  event: Extract<ParsedSseEvent, { event: "donation" }>,
+  random: () => number = Math.random,
+): RouletteDraw | null {
+  const settings = getRouletteSettingsByKey(sessionKey);
+  if (!settings.enabled || event.data.amount < settings.cost) return null;
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const items = database.prepare(`
+    SELECT id, label, weight FROM roulette_items
+    WHERE workspace_key = ? ORDER BY created_at, id
+  `).all(workspaceKey) as Array<{ id: number; label: string; weight: number }>;
+  const itemWeight = items.reduce((total, item) => total + item.weight, 0);
+  const totalWeight = itemWeight + settings.missWeight;
+  if (totalWeight <= 0) return null;
+
+  let ticket = Math.min(Math.max(random(), 0), 0.9999999999999999) * totalWeight;
+  let selected: { id: number; label: string } | null = null;
+  for (const item of items) {
+    if (ticket < item.weight) {
+      selected = item;
+      break;
+    }
+    ticket -= item.weight;
+  }
+  const nickname = event.data.user.nickname?.trim().slice(0, 50) || "청취자";
+  const eventId = event.id || createHash("sha256")
+    .update(`roulette:${liveId}:${JSON.stringify(event.data)}`)
+    .digest("hex");
+  const now = Date.now();
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const inserted = database.prepare(`
+      INSERT OR IGNORE INTO roulette_results (
+        workspace_key, live_id, event_id, user_id, nickname,
+        item_label, is_miss, spoons, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      workspaceKey,
+      liveId,
+      eventId,
+      event.data.user.id,
+      nickname,
+      selected?.label ?? null,
+      selected ? 0 : 1,
+      event.data.amount,
+      now,
+    );
+    if (inserted.changes === 0) {
+      database.exec("ROLLBACK");
+      return null;
+    }
+
+    let keepCount: number | null = null;
+    if (selected) {
+      database.prepare(`
+        INSERT INTO roulette_keeps (
+          workspace_key, user_id, nickname, item_label, count, updated_at
+        ) VALUES (?, ?, ?, ?, 1, ?)
+        ON CONFLICT(workspace_key, user_id, item_label) DO UPDATE SET
+          nickname = excluded.nickname,
+          count = roulette_keeps.count + 1,
+          updated_at = excluded.updated_at
+      `).run(workspaceKey, event.data.user.id, nickname, selected.label, now);
+      keepCount = (database.prepare(`
+        SELECT count FROM roulette_keeps
+        WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+      `).get(workspaceKey, event.data.user.id, selected.label) as { count: number }).count;
+    }
+    database.exec("COMMIT");
+    return {
+      nickname,
+      itemLabel: selected?.label ?? null,
+      isMiss: selected === null,
+      keepCount,
+    };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function getRouletteKeepCommandRepliesByKey(sessionKey: string, message: string) {
+  const match = /^!(.{1,50})\s+킵$/u.exec(message.trim());
+  if (!match) return null;
+  const nickname = match[1].trim();
+  if (!nickname) return null;
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const keeps = getDatabase().prepare(`
+    SELECT item_label, SUM(count) AS count
+    FROM roulette_keeps
+    WHERE workspace_key = ? AND nickname = ? COLLATE NOCASE
+    GROUP BY item_label ORDER BY MAX(updated_at) DESC, item_label COLLATE NOCASE
+  `).all(workspaceKey, nickname) as Array<{ item_label: string; count: number }>;
+  if (keeps.length === 0) return [`${nickname}님의 킵 목록이 비어 있습니다.`];
+
+  const replies: string[] = [];
+  for (const keep of keeps) {
+    const label = `${keep.item_label} ${keep.count.toLocaleString("ko-KR")}개`;
+    const prefix = replies.length === 0 ? `${nickname}님의 킵: ` : "킵 계속: ";
+    const current = replies.at(-1);
+    if (!current || `${current}, ${label}`.length > 200) {
+      replies.push(`${prefix}${label}`);
+    } else {
+      replies[replies.length - 1] = `${current}, ${label}`;
+    }
+  }
+  return replies;
 }
 
 export function getRpsRoundByKey(sessionKey: string): RpsRound | null {

@@ -36,14 +36,14 @@ export async function POST(request: NextRequest) {
     const choice = String(formData.get("choice") ?? "");
     if (!isRpsChoice(choice)) return redirect(request, "invalid_choice");
     if (!startRpsRound(sessionId, choice)) return redirect(request, "already_active");
-    await sendChat(sessionId, "가위바위보가 시작됐습니다! !가위바위보 가위|바위|보로 한 번 참여해 주세요.");
+    await sendChat(sessionId, "가위바위보가 시작됐습니다! !가위바위보 가위|바위|보로 참여해 주세요. 계정당 한 번만 참여할 수 있습니다.");
     return redirect(request, "started");
   }
 
   if (action === "finish") {
     const round = finishRpsRound(sessionId);
     if (!round) return redirect(request, "not_active");
-    await sendChat(sessionId, `가위바위보 종료! DJ의 선택은 ${round.djChoice}입니다.`);
+    await sendChat(sessionId, ` 종료! DJ의 선택은 ${round.djChoice}입니다.`);
     for (const message of formatRpsResultMessages(round.entries)) await sendChat(sessionId, message);
     return redirect(request, "finished");
   }

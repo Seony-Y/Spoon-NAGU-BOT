@@ -13,6 +13,11 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData();
   const message = formData.get("message");
-  const result = await sendChat(sessionId, typeof message === "string" ? message : "");
-  return NextResponse.redirect(buildApplicationUrl(`/?tab=bot&chat=${result.kind}`, request.url), 303);
+  const chatMessage = typeof message === "string" ? message : "";
+  const result = await sendChat(sessionId, chatMessage);
+  const target = buildApplicationUrl("/", request.url);
+  target.searchParams.set("tab", "bot");
+  target.searchParams.set("chat", result.kind);
+  if (result.kind === "sent") target.searchParams.set("chatMessage", chatMessage.trim());
+  return NextResponse.redirect(target, 303);
 }
