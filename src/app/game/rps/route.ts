@@ -43,8 +43,10 @@ export async function POST(request: NextRequest) {
   if (action === "finish") {
     const round = finishRpsRound(sessionId);
     if (!round) return redirect(request, "not_active");
-    await sendChat(sessionId, ` 종료! DJ의 선택은 ${round.djChoice}입니다.`);
-    for (const message of formatRpsResultMessages(round.entries)) await sendChat(sessionId, message);
+    await sendChat(sessionId, `가위바위보 종료! DJ의 선택은 ${round.djChoice}입니다.`);
+    for (const message of formatRpsResultMessages(round.entries, round.djChoice)) {
+      await sendChat(sessionId, message);
+    }
     return redirect(request, "finished");
   }
 

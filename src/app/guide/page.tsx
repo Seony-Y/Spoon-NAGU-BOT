@@ -46,7 +46,7 @@ export default function GuidePage() {
             <summary><span className="guide-number">02</span><strong>대시보드</strong><span>방송 현황과 청취자 데이터 확인</span><i aria-hidden="true" /></summary>
             <div className="guide-accordion-content">
               <div className="guide-topic"><h3>방송 현황</h3><p>현재 방송 제목과 상태, 청취자 수, 좋아요와 후원 집계를 확인합니다. 새 정보가 필요하면 해당 영역의 새로고침 버튼을 누릅니다.</p></div>
-              <div className="guide-topic"><h3>청취자 및 랭킹</h3><p>하트·애청온도·스푼 랭킹을 확인하고 현재 방송·오늘·역대 기간을 전환할 수 있습니다. 스푼 수치는 공개 채팅 명령에서 노출되지 않습니다.</p></div>
+              <div className="guide-topic"><h3>청취자 및 랭킹</h3><p>하트·애청온도·스푼 랭킹을 확인하고 현재 방송·오늘·역대 기간을 전환할 수 있습니다. 채팅의 기본 랭킹 명령어는 누적 데이터를, <code>!오늘의 하트랭킹</code>처럼 <strong>오늘의</strong>가 붙은 명령어는 현재 방송 데이터를 한 명씩 나누어 보여줍니다. <code>!내정보</code>는 누적과 현재 방송 순위를 함께 보여주며, 스푼 수치는 공개 채팅 명령에서 노출되지 않습니다.</p></div>
               <div className="guide-topic"><h3>최근 이벤트</h3><p>입장, 채팅, 하트, 후원 등 BOT이 실시간으로 수신한 방송 이벤트를 최근 순서로 확인합니다.</p></div>
             </div>
           </details>
@@ -82,7 +82,7 @@ export default function GuidePage() {
               <div className="guide-topic">
                 <h3>자동 추첨과 킵</h3>
                 <p>청취자가 1회 비용 이상을 한 번에 후원하면 해당 후원 건에서 룰렛을 한 번 자동 추첨하고 BOT이 결과를 채팅으로 알립니다. 같은 후원 이벤트가 다시 전달되어도 중복 추첨하지 않습니다.</p>
-                <p>당첨 항목은 사용자 킵에 자동 저장되고 같은 항목에 다시 당첨되면 수량이 증가합니다. 꽝은 킵에 저장되지 않습니다. 새 당첨자는 사용자별 킵 목록에 자동 반영되며, 채팅에 <code>!닉네임 킵</code>을 입력하면 저장 직후부터 조회할 수 있습니다.</p>
+                <p>당첨 항목은 사용자 킵에 자동 저장되고 같은 항목에 다시 당첨되면 수량이 증가합니다. 꽝은 킵에 저장되지 않습니다. DJ 화면의 사용자별 킵에는 닉네임과 보유 항목이 계속 저장되어 재로그인 후에도 불러옵니다. 청취자는 채팅에 <code>!내 킵</code>을 입력하면 본인의 당첨 내역을 조회할 수 있습니다.</p>
               </div>
             </div>
           </details>

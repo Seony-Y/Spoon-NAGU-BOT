@@ -863,7 +863,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <AutoRefresh intervalMs={2000} />
                   <div className="game-panel-heading">
                     <div>
-                      <h3 id="roulette-title">률렛</h3>
+                      <h3 id="roulette-title">룰렛</h3>
                       <p>설정 비용 이상을 한 번에 후원하면 사용자당 해당 후원 건에서 룰렛을 한 번 자동 추첨합니다.</p>
                     </div>
                     <span className={`game-state ${rouletteSettings?.enabled ? "is-active" : ""}`}>
@@ -920,7 +920,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     </section>
 
                     <section aria-labelledby="roulette-keeps-title">
-                      <div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">사용자별 킵</h4><p><code>!닉네임 킵</code>으로 조회</p></div></div>
+                      <div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">사용자별 킵</h4><p><code>!내 킵</code>으로 조회</p></div></div>
                       {rouletteKeepUsers.length > 0 ? <div className="roulette-keep-list">
                         {rouletteKeepUsers.map((user) => <section key={user.userId}>
                           <strong>{user.nickname}</strong>
@@ -1138,14 +1138,17 @@ export default async function Home({ searchParams }: HomeProps) {
                     <ul>
                       <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
                       <li><div><strong>!안녕</strong><span>청취자 닉네임으로 인사 · 모두 사용 가능</span></div></li>
-                      <li><div><strong>!하트랭킹</strong><span>현재 방송 하트 상위 10명과 개수 조회</span></div></li>
-                      <li><div><strong>!애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
-                      <li><div><strong>!스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
-                      <li><div><strong>!내정보</strong><span>나의 현재 방송 하트·애청온도·스푼 순위 조회</span></div></li>
+                      <li><div><strong>!하트랭킹</strong><span>누적 하트 상위 10명과 개수 조회</span></div></li>
+                      <li><div><strong>!애청온도랭킹</strong><span>누적 애청온도 상위 10명 조회</span></div></li>
+                      <li><div><strong>!스푼랭킹</strong><span>누적 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
+                      <li><div><strong>!오늘의 하트랭킹</strong><span>현재 방송 하트 상위 10명과 개수 조회</span></div></li>
+                      <li><div><strong>!오늘의 애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
+                      <li><div><strong>!오늘의 스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
+                      <li><div><strong>!내정보</strong><span>나의 누적 및 현재 방송 하트·애청온도·스푼 순위를 구분해 조회</span></div></li>
                       <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
-                      <li><div><strong>!닉네임 킵</strong><span>해당 닉네임으로 저장된 룰렛 당첨 항목과 수량 조회</span></div></li>
+                      <li><div><strong>!내 킵</strong><span>내 룰렛 당첨 항목과 수량 조회</span></div></li>
                     </ul>
                     {botCounters.length > 0 && (
                       <>

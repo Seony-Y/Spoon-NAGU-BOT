@@ -29,19 +29,10 @@ export function formatRpsResultMessages(entries: Array<{
   nickname: string;
   choice: RpsChoice;
   result: RpsResult;
-}>) {
-  if (entries.length === 0) return ["이번 라운드에는 참가자가 없습니다."];
-  const messages: string[] = [];
-  for (const entry of entries) {
+}>, djChoice: RpsChoice) {
+  if (entries.length === 0) return [`DJ 선택: ${djChoice} / 이번 라운드에는 참가자가 없습니다.`];
+  return entries.map((entry) => {
     const result = entry.result === "win" ? "승" : entry.result === "draw" ? "무" : "패";
-    const label = `${entry.nickname} ${entry.choice}(${result})`;
-    const prefix = messages.length === 0 ? "가위바위보 결과: " : "결과 계속: ";
-    const current = messages.at(-1);
-    if (!current || `${current}, ${label}`.length > 200) {
-      messages.push(`${prefix}${label}`);
-    } else {
-      messages[messages.length - 1] = `${current}, ${label}`;
-    }
-  }
-  return messages;
+    return `DJ ${djChoice} / ${entry.nickname.slice(0, 50)} ${entry.choice} (${result})`;
+  });
 }

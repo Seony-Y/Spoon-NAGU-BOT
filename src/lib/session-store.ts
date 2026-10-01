@@ -140,6 +140,9 @@ export const AUDIENCE_RANKING_COMMANDS = [
   "!하트랭킹",
   "!애청온도랭킹",
   "!스푼랭킹",
+  "!오늘의 하트랭킹",
+  "!오늘의 애청온도랭킹",
+  "!오늘의 스푼랭킹",
   "!내정보",
 ] as const;
 
@@ -900,20 +903,9 @@ function rankAudienceEntries(
     ));
 }
 
-function formatRankingReplies(title: string, labels: string[]) {
-  if (labels.length === 0) return [`현재 방송 ${title} 데이터가 없습니다.`];
-
-  const replies: string[] = [];
-  for (const label of labels.slice(0, 10)) {
-    const prefix = replies.length === 0 ? `현재 방송 ${title}: ` : `${title} 계속: `;
-    const current = replies.at(-1);
-    if (!current || `${current}, ${label}`.length > 200) {
-      replies.push(`${prefix}${label}`);
-    } else {
-      replies[replies.length - 1] = `${current}, ${label}`;
-    }
-  }
-  return replies;
+function formatRankingReplies(scope: string, title: string, labels: string[]) {
+  if (labels.length === 0) return [`[${scope} ${title}] 집계 데이터가 없습니다.`];
+  return [`[${scope} ${title}]`, ...labels.slice(0, 10)];
 }
 
 export function getAudienceRankingCommandRepliesByKey(
@@ -927,43 +919,58 @@ export function getAudienceRankingCommandRepliesByKey(
   if (!AUDIENCE_RANKING_COMMANDS.includes(command as typeof AUDIENCE_RANKING_COMMANDS[number])) {
     return null;
   }
-  if (liveId === undefined) return ["현재 방송 랭킹을 조회할 수 없습니다."];
+  const isCurrentCommand = command.startsWith("!오늘의 ");
+  if (isCurrentCommand && liveId === undefined) return ["현재 방송 랭킹을 조회할 수 없습니다."];
 
-  const entries = listAudienceRankingsByKey(sessionKey, "current", liveId);
+  const period: AudienceRankingPeriod = isCurrentCommand ? "current" : "all";
+  const scope = isCurrentCommand ? "현재 방송" : "누적";
+  const entries = listAudienceRankingsByKey(sessionKey, period, liveId);
   const heartRanking = rankAudienceEntries(entries, (entry) => entry.hearts);
   const favoriteRanking = rankAudienceEntries(entries, (entry) => entry.favoriteTemperature);
   const spoonRanking = rankAudienceEntries(entries, (entry) => entry.spoons);
-  if (command === "!하트랭킹") {
-    return formatRankingReplies("하트 랭킹", heartRanking.map((entry, index) => (
+  if (command === "!하트랭킹" || command === "!오늘의 하트랭킹") {
+    return formatRankingReplies(scope, "하트 랭킹", heartRanking.map((entry, index) => (
       `${index + 1}위 ${entry.nickname.slice(0, 30)} ${entry.hearts.toLocaleString("ko-KR")}개`
     )));
   }
-  if (command === "!애청온도랭킹") {
-    return formatRankingReplies("애청온도 랭킹", favoriteRanking.map((entry, index) => (
+  if (command === "!애청온도랭킹" || command === "!오늘의 애청온도랭킹") {
+    return formatRankingReplies(scope, "애청온도 랭킹", favoriteRanking.map((entry, index) => (
       `${index + 1}위 ${entry.nickname.slice(0, 30)} ${entry.favoriteTemperature?.toLocaleString("ko-KR")}°C`
     )));
   }
-  if (command === "!스푼랭킹") {
-    return formatRankingReplies("스푼 랭킹", spoonRanking.map((entry, index) => (
+  if (command === "!스푼랭킹" || command === "!오늘의 스푼랭킹") {
+    return formatRankingReplies(scope, "스푼 랭킹", spoonRanking.map((entry, index) => (
       `${index + 1}위 ${entry.nickname.slice(0, 30)}`
     )));
   }
 
-  const rank = (ranking: AudienceRankingEntry[]) => {
-    const index = ranking.findIndex((entry) => entry.userId === userId);
+  const rank = (ranking: AudienceRankingEntry[], targetUserId: string) => {
+    const index = ranking.findIndex((entry) => entry.userId === targetUserId);
     return index < 0 ? null : { place: index + 1, entry: ranking[index] };
   };
-  const heart = rank(heartRanking);
-  const favorite = rank(favoriteRanking);
-  const spoon = rank(spoonRanking);
-  if (!heart && !favorite && !spoon) {
-    return [`${nickname?.trim() || "청취자"}님의 현재 방송 집계 정보가 없습니다.`];
-  }
+  const formatMyInfo = (label: string, rankingEntries: AudienceRankingEntry[]) => {
+    const heart = rank(rankAudienceEntries(rankingEntries, (entry) => entry.hearts), userId);
+    const favorite = rank(
+      rankAudienceEntries(rankingEntries, (entry) => entry.favoriteTemperature),
+      userId,
+    );
+    const spoon = rank(rankAudienceEntries(rankingEntries, (entry) => entry.spoons), userId);
+    return [
+      `[${label}] 하트 ${heart ? `${heart.place}위 (${heart.entry.hearts.toLocaleString("ko-KR")}개)` : "순위 없음"}`,
+      `[${label}] 애청온도 ${favorite ? `${favorite.place}위 (${favorite.entry.favoriteTemperature?.toLocaleString("ko-KR")}°C)` : "순위 없음"}`,
+      `[${label}] 스푼 ${spoon ? `${spoon.place}위` : "순위 없음"}`,
+    ];
+  };
+  const cumulativeEntries = listAudienceRankingsByKey(sessionKey, "all");
+  const currentEntries = liveId === undefined
+    ? []
+    : listAudienceRankingsByKey(sessionKey, "current", liveId);
   return [
-    `${nickname?.trim() || "청취자"}님의 현재 방송 정보: `
-    + `하트 ${heart ? `${heart.place}위 (${heart.entry.hearts.toLocaleString("ko-KR")}개)` : "순위 없음"} / `
-    + `애청온도 ${favorite ? `${favorite.place}위 (${favorite.entry.favoriteTemperature?.toLocaleString("ko-KR")}°C)` : "순위 없음"} / `
-    + `스푼 ${spoon ? `${spoon.place}위` : "순위 없음"}`,
+    `[${nickname?.trim() || "청취자"}님의 내정보]`,
+    ...formatMyInfo("누적", cumulativeEntries),
+    ...(liveId === undefined
+      ? ["[현재 방송] 방송 정보를 조회할 수 없습니다."]
+      : formatMyInfo("현재 방송", currentEntries)),
   ];
 }
 
@@ -1037,7 +1044,7 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
     "!신청곡 곡명-가수",
     "!신청곡 목록",
     "!가위바위보 가위|바위|보",
-    "!닉네임 킵",
+    "!내 킵",
   ].filter((label, index, items) => items.indexOf(label) === index);
   const djLabels = [
     ...counters.map((counter) => `!${counter.name} +N/-N`),
@@ -1546,24 +1553,27 @@ export function applyRouletteDonation(
   }
 }
 
-export function getRouletteKeepCommandRepliesByKey(sessionKey: string, message: string) {
-  const match = /^!(.{1,50})\s+킵$/u.exec(message.trim());
-  if (!match) return null;
-  const nickname = match[1].trim();
-  if (!nickname) return null;
+export function getRouletteKeepCommandRepliesByKey(
+  sessionKey: string,
+  message: string,
+  userId: string,
+  nickname: string | null,
+) {
+  if (message.trim() !== "!내 킵") return null;
+  const displayName = nickname?.trim() || "청취자";
   const workspaceKey = getWorkspaceKey(sessionKey);
   const keeps = getDatabase().prepare(`
     SELECT item_label, SUM(count) AS count
     FROM roulette_keeps
-    WHERE workspace_key = ? AND nickname = ? COLLATE NOCASE
+    WHERE workspace_key = ? AND user_id = ?
     GROUP BY item_label ORDER BY MAX(updated_at) DESC, item_label COLLATE NOCASE
-  `).all(workspaceKey, nickname) as Array<{ item_label: string; count: number }>;
-  if (keeps.length === 0) return [`${nickname}님의 킵 목록이 비어 있습니다.`];
+  `).all(workspaceKey, userId) as Array<{ item_label: string; count: number }>;
+  if (keeps.length === 0) return [`${displayName}님의 킵 목록이 비어 있습니다.`];
 
   const replies: string[] = [];
   for (const keep of keeps) {
     const label = `${keep.item_label} ${keep.count.toLocaleString("ko-KR")}개`;
-    const prefix = replies.length === 0 ? `${nickname}님의 킵: ` : "킵 계속: ";
+    const prefix = replies.length === 0 ? `${displayName}님의 킵: ` : "킵 계속: ";
     const current = replies.at(-1);
     if (!current || `${current}, ${label}`.length > 200) {
       replies.push(`${prefix}${label}`);

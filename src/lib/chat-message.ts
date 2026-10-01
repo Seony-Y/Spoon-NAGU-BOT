@@ -18,3 +18,15 @@ export function getCommandReply(message: string, nickname: string | null) {
       return null;
   }
 }
+
+export function resolveCommandFallback(
+  message: string,
+  nickname: string | null,
+  configuredReply: string | null,
+) {
+  return configuredReply
+    ?? getCommandReply(message, nickname)
+    ?? (message.trim().startsWith("!")
+      ? "등록되지 않은 명령어입니다. !명령어로 사용 가능한 명령어를 확인해 주세요."
+      : null);
+}

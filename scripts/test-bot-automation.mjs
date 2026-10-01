@@ -2,11 +2,21 @@ import assert from "node:assert/strict";
 
 import {
   createBotAutomationState,
+  diffListenerSnapshot,
   processBotAutomation,
   resetBotAutomationState,
 } from "../src/lib/bot-automation.ts";
 
 const state = createBotAutomationState();
+const initialListeners = diffListenerSnapshot(null, [
+  { id: "fan-1", nickname: "기존 청취자" },
+]);
+assert.deepEqual(initialListeners.joinedListeners, []);
+const nextListeners = diffListenerSnapshot(initialListeners.currentIds, [
+  { id: "fan-1", nickname: "기존 청취자" },
+  { id: "fan-2", nickname: "신규 청취자" },
+]);
+assert.deepEqual(nextListeners.joinedListeners, [{ id: "fan-2", nickname: "신규 청취자" }]);
 const presence = {
   event: "presence",
   data: {
@@ -84,6 +94,18 @@ assert.equal(processBotAutomation(configuredState, {
 }, configuredOptions), null);
 assert.equal(configuredState.activity.hearts, 100);
 assert.equal(configuredState.activity.spoons, 100);
+
+const toggledWelcomeState = createBotAutomationState();
+assert.equal(processBotAutomation(toggledWelcomeState, presence, {
+  ...configuredOptions,
+  welcomeEnabled: false,
+}), null);
+assert.equal(toggledWelcomeState.greetedUserIds.size, 0);
+assert.equal(toggledWelcomeState.activity.welcomedListeners, 0);
+assert.equal(
+  processBotAutomation(toggledWelcomeState, presence, configuredOptions),
+  "1위 팬 DJ 나구의 방송입니다. 일등팬님, 잘 오셨어요!",
+);
 
 const templateState = createBotAutomationState();
 const templateOptions = {

@@ -48,16 +48,29 @@ export function resetBotAutomationState(state: BotAutomationState) {
   state.announcedHeartMilestone = 0;
 }
 
+export function diffListenerSnapshot<T extends { id: string }>(
+  previousIds: Set<string> | null,
+  listeners: T[],
+) {
+  const currentIds = new Set(listeners.map((listener) => listener.id));
+  return {
+    currentIds,
+    joinedListeners: previousIds
+      ? listeners.filter((listener) => !previousIds.has(listener.id))
+      : [],
+  };
+}
+
 export function processBotAutomation(
   state: BotAutomationState,
   event: ParsedSseEvent,
   options: BotAutomationOptions = defaultOptions,
 ) {
   if (event.event === "presence") {
+    if (!options.welcomeEnabled) return null;
     if (state.greetedUserIds.has(event.data.user.id)) return null;
     state.greetedUserIds.add(event.data.user.id);
     state.activity.welcomedListeners += 1;
-    if (!options.welcomeEnabled) return null;
     const name = event.data.user.nickname ?? "청취자";
     const prefix = event.data.fanRank === 1
       ? "1위 팬"

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { getCommandReply, validateChatMessage } from "../src/lib/chat-message.ts";
+import {
+	getCommandReply,
+	resolveCommandFallback,
+	validateChatMessage,
+} from "../src/lib/chat-message.ts";
 import {
 	formatCounterAdjustment,
 	parseCounterCommand,
@@ -25,6 +29,13 @@ assert.equal(getCommandReply("!안녕", null), "청취자님, 반가워요!");
 assert.equal(getCommandReply("!명령어", "누구든"), "사용 가능한 명령어: !안녕, !명령어");
 assert.equal(getCommandReply("안녕하세요", "나구"), null);
 assert.equal(getCommandReply("!안녕", "긴".repeat(200)), "반가워요!");
+assert.equal(resolveCommandFallback("!안녕", "나구", null), "나구님, 반가워요!");
+assert.equal(resolveCommandFallback("!공지", "나구", "저장된 공지"), "저장된 공지");
+assert.equal(
+	resolveCommandFallback("!없는명령어", "나구", null),
+	"등록되지 않은 명령어입니다. !명령어로 사용 가능한 명령어를 확인해 주세요.",
+);
+assert.equal(resolveCommandFallback("일반 채팅", "나구", null), null);
 
 assert.deepEqual(parseCounterAdjustment(" !실드 -2 "), { name: "실드", delta: -2 });
 assert.deepEqual(parseCounterAdjustment("!펀딩 +1000"), { name: "펀딩", delta: 1000 });
@@ -73,6 +84,10 @@ assert.deepEqual(formatRpsResultMessages([
 	{ nickname: "승리 청취자", choice: "보", result: "win" },
 	{ nickname: "무승부 청취자", choice: "바위", result: "draw" },
 	{ nickname: "패배 청취자", choice: "가위", result: "lose" },
-]), ["가위바위보 결과: 승리 청취자 보(승), 무승부 청취자 바위(무), 패배 청취자 가위(패)"]);
+], "바위"), [
+	"DJ 바위 / 승리 청취자 보 (승)",
+	"DJ 바위 / 무승부 청취자 바위 (무)",
+	"DJ 바위 / 패배 청취자 가위 (패)",
+]);
 
 console.log("Chat checks passed: validation, replies, counters, and song requests");

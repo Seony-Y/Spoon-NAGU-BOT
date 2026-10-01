@@ -3,11 +3,13 @@ import "server-only";
 import { getBotAuthSession } from "./auth";
 import {
   createBotAutomationState,
+  diffListenerSnapshot,
   processBotAutomation,
   resetBotAutomationState,
   type BotActivity,
 } from "./bot-automation";
 import { sendBotChat } from "./chat";
+import { resolveCommandFallback } from "./chat-message";
 import {
   applyBotCounterCommand,
   applyRpsCommand,
@@ -27,7 +29,13 @@ import {
   linkDjWorkspaceByKey,
   recordAudienceEvent,
 } from "./session-store";
-import { getCurrentLive, getSpoonConfig, SpoonApiErrorResponse } from "./spoon";
+import {
+  getCurrentLive,
+  getLiveListenersPage,
+  getSpoonConfig,
+  SpoonApiErrorResponse,
+  type SpoonListener,
+} from "./spoon";
 import {
   extractSseFrames,
   parseSseFrame,
@@ -47,7 +55,7 @@ const MAX_BACKOFF_MS = 30_000;
 const MAX_EVENTS = 50;
 const STREAM_PERMISSION_REFRESH_MS = 60_000;
 const REPEAT_CHECK_MS = 60 * 1000;
-const MANAGER_REQUIRED_MESSAGE = "봇에게 권한이 없습니다. Spoon 방송에서 봇을 매니저로 설정해 주세요.";
+const LISTENER_POLL_MS = 10_000;
 
 export type BotConnectionState =
   | "stopped"
@@ -97,6 +105,7 @@ type BotRuntime = BotSnapshot & {
   favoriteListeners: Map<string, FavoriteRankingEntry>;
   currentLiveId?: number;
   managerEventsConfirmed: boolean;
+  listenerIds: Set<string> | null;
   repeatTimer?: ReturnType<typeof setTimeout>;
   lastRepeatAt?: number;
 };
@@ -126,6 +135,7 @@ function clearBroadcastState(runtime: BotRuntime) {
   runtime.favoriteListeners.clear();
   runtime.currentLiveId = undefined;
   runtime.managerEventsConfirmed = false;
+  runtime.listenerIds = null;
   if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
   runtime.repeatTimer = undefined;
   runtime.lastRepeatAt = undefined;
@@ -164,6 +174,57 @@ function abortableDelay(milliseconds: number, signal: AbortSignal) {
       resolve();
     }, { once: true });
   });
+}
+
+async function getAllLiveListeners(accessToken: string) {
+  const listeners: SpoonListener[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const page = await getLiveListenersPage(accessToken, cursor);
+    listeners.push(...page.listeners);
+    if (!page.nextCursor) break;
+    if (seenCursors.has(page.nextCursor)) throw new Error("Repeated Spoon listener cursor");
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return listeners;
+}
+
+async function pollListenerJoins(
+  sessionKey: string,
+  accessToken: string,
+  signal: AbortSignal,
+) {
+  while (!signal.aborted) {
+    try {
+      const runtime = runtimes.get(sessionKey);
+      if (!runtime || runtime.currentLiveId === undefined) return;
+      const listeners = await getAllLiveListeners(accessToken);
+      const { currentIds, joinedListeners } = diffListenerSnapshot(runtime.listenerIds, listeners);
+      runtime.listenerIds = currentIds;
+      const settings = getBotSettingsByKey(sessionKey);
+      for (const listener of joinedListeners) {
+        const reply = processBotAutomation(runtime, {
+          event: "presence",
+          data: {
+            user: listener,
+            type: "JOIN",
+            fanRank: null,
+            isManager: false,
+            favoriteTemperature: null,
+            time: new Date().toISOString(),
+          },
+        }, settings);
+        if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
+      }
+    } catch {
+      // The event stream remains active while listener snapshots retry independently.
+    }
+    await abortableDelay(LISTENER_POLL_MS, signal);
+  }
 }
 
 function nextBackoff(attempt: number) {
@@ -243,7 +304,12 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       for (const message of rankingReplies) void sendBotChat(sessionKey, message);
       return;
     }
-    const keepReplies = getRouletteKeepCommandRepliesByKey(sessionKey, event.data.message);
+    const keepReplies = getRouletteKeepCommandRepliesByKey(
+      sessionKey,
+      event.data.message,
+      event.data.user.id,
+      event.data.user.nickname,
+    );
     if (keepReplies) {
       for (const message of keepReplies) void sendBotChat(sessionKey, message);
       return;
@@ -266,11 +332,12 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       return;
     }
     const counterReply = applyBotCounterCommand(sessionKey, event.data.message, event.data.isDj);
-    reply = rpsReply ?? songRequestReply ?? counterReply ?? (
-      event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
-        ? MANAGER_REQUIRED_MESSAGE
-        : findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
+    const fallbackReply = resolveCommandFallback(
+      event.data.message,
+      event.data.user.nickname,
+      findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname),
     );
+    reply = rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
   } else {
     reply = processBotAutomation(runtime, event, settings);
   }
@@ -424,9 +491,20 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         runtime.connectedAt = new Date().toISOString();
       }
 
-      const reason = await consumeEventStream(response.body, streamSignal, (event) => {
-        recordEvent(sessionKey, event);
-      });
+      const listenerPollingController = new AbortController();
+      const listenerPollingSignal = AbortSignal.any([streamSignal, listenerPollingController.signal]);
+      const listenerPollingTask = session.scope.split(" ").includes("listeners.read")
+        ? pollListenerJoins(sessionKey, session.access_token, listenerPollingSignal)
+        : Promise.resolve();
+      let reason;
+      try {
+        reason = await consumeEventStream(response.body, streamSignal, (event) => {
+          recordEvent(sessionKey, event);
+        });
+      } finally {
+        listenerPollingController.abort();
+        await listenerPollingTask;
+      }
 
       if (signal.aborted) return;
       if (streamSignal.aborted) continue;
@@ -489,6 +567,7 @@ function startBotByKey(sessionKey: string) {
     favoriteListeners: new Map(),
     currentLiveId: existing?.currentLiveId,
     managerEventsConfirmed: false,
+    listenerIds: null,
     controller,
   };
   runtimes.set(sessionKey, runtime);

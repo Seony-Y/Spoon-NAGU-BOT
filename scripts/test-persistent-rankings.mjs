@@ -78,7 +78,18 @@ assert.deepEqual(
 	store.listRouletteKeeps(firstSessionId).map((keep) => [keep.itemLabel, keep.count]),
 	[["노래 신청권", 1], ["커피 쿠폰", 2]],
 );
-assert.match(store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!룰렛팬 킵").join(" "), /커피 쿠폰 2개/);
+assert.match(
+	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!내 킵", "roulette-user", "룰렛팬").join(" "),
+	/커피 쿠폰 2개/,
+);
+assert.deepEqual(
+	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!내 킵", "different-user", "룰렛팬"),
+	["룰렛팬님의 킵 목록이 비어 있습니다."],
+);
+assert.equal(
+	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!룰렛팬 킵", "roulette-user", "룰렛팬"),
+	null,
+);
 assert.equal(store.listRouletteResults(firstSessionId).length, 4);
 assert.equal(store.listRouletteResults(firstSessionId)[0].isMiss, true);
 assert.equal(store.saveRouletteItem(firstSessionId, rouletteItems[1].id, "노래 신청권 플러스", 4), true);
@@ -210,18 +221,27 @@ assert.equal(store.recordAudienceEvent(firstSessionKey, 101, presence), true);
 const heartReplies = store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!하트랭킹", "listener-a", "청취자 A",
 );
-assert.match(heartReplies[0], /1위 청취자 A 25개/);
+assert.equal(heartReplies[0], "[누적 하트 랭킹]");
+assert.match(heartReplies[1], /1위 청취자 A 25개/);
+const currentHeartReplies = store.getAudienceRankingCommandRepliesByKey(
+	firstSessionKey, 101, "!오늘의 하트랭킹", "listener-a", "청취자 A",
+);
+assert.equal(currentHeartReplies[0], "[현재 방송 하트 랭킹]");
+assert.match(currentHeartReplies[1], /1위 청취자 A 25개/);
 const spoonReplies = store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!스푼랭킹", "listener-a", "청취자 A",
 );
-assert.match(spoonReplies[0], /1위 청취자 A/);
+assert.match(spoonReplies[1], /1위 청취자 A/);
 assert.doesNotMatch(spoonReplies.join(" "), /300/);
 const myInfoReplies = store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!내정보", "listener-a", "청취자 A",
 );
-assert.match(myInfoReplies[0], /하트 1위 \(25개\)/);
-assert.match(myInfoReplies[0], /애청온도 1위 \(38\.5°C\)/);
-assert.match(myInfoReplies[0], /스푼 1위/);
+assert.match(myInfoReplies.join(" "), /\[누적\] 하트 1위 \(25개\)/);
+assert.match(myInfoReplies.join(" "), /\[누적\] 애청온도 1위 \(38\.5°C\)/);
+assert.match(myInfoReplies.join(" "), /\[누적\] 스푼 1위/);
+assert.match(myInfoReplies.join(" "), /\[현재 방송\] 하트 1위 \(25개\)/);
+assert.match(myInfoReplies.join(" "), /\[현재 방송\] 애청온도 1위 \(38\.5°C\)/);
+assert.match(myInfoReplies.join(" "), /\[현재 방송\] 스푼 1위/);
 assert.doesNotMatch(myInfoReplies.join(" "), /300/);
 
 store.deleteSession(firstSessionId);
@@ -232,6 +252,14 @@ assert.equal(store.startRpsRound(secondSessionId, "가위"), true);
 store.applyRpsCommand(secondSessionKey, "!가위바위보 바위", false, "listener-reconnect", "재접속 참가자");
 store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
 
+assert.deepEqual(
+	store.listRouletteKeeps(secondSessionId).map((keep) => [keep.nickname, keep.itemLabel, keep.count]),
+	[["룰렛팬", "노래 신청권", 2], ["룰렛팬", "커피 쿠폰", 2]],
+);
+assert.match(
+	store.getRouletteKeepCommandRepliesByKey(secondSessionKey, "!내 킵", "roulette-user", "룰렛팬").join(" "),
+	/커피 쿠폰 2개/,
+);
 const restoredActiveRpsRound = store.getRpsRound(secondSessionId);
 assert.equal(restoredActiveRpsRound.active, true);
 assert.equal(restoredActiveRpsRound.roundId, 2);
@@ -282,9 +310,15 @@ for (let index = 1; index <= 11; index += 1) {
 	});
 }
 const limitedHeartReplies = store.getAudienceRankingCommandRepliesByKey(
+	secondSessionKey, 202, "!오늘의 하트랭킹", "listener-limit-1", "랭커 1",
+);
+assert.equal(limitedHeartReplies[0], "[현재 방송 하트 랭킹]");
+assert.equal(limitedHeartReplies.length, 11);
+assert.equal(limitedHeartReplies.slice(1).every((reply) => (reply.match(/\d+위 /g) ?? []).length === 1), true);
+assert.doesNotMatch(limitedHeartReplies.join(" "), /11위/);
+const cumulativeHeartReplies = store.getAudienceRankingCommandRepliesByKey(
 	secondSessionKey, 202, "!하트랭킹", "listener-limit-1", "랭커 1",
-).join(" ");
-assert.equal((limitedHeartReplies.match(/\d+위 /g) ?? []).length, 10);
-assert.doesNotMatch(limitedHeartReplies, /11위/);
+);
+assert.equal(cumulativeHeartReplies[0], "[누적 하트 랭킹]");
 
 console.log("Persistent ranking checks passed: restore, deduplication, and period totals");
