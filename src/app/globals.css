@@ -66,7 +66,7 @@ body {
   min-height: 52px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 28px;
   padding: 0 20px;
   border-bottom: 1px solid var(--line);
@@ -1444,6 +1444,17 @@ h1 {
 
 .command-editor {
   margin-top: 24px;
+}
+
+.command-group-title {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.command-group-title.is-dj-only {
+  color: var(--red);
 }
 
 .command-editor ul {

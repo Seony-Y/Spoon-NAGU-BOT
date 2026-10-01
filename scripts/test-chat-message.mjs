@@ -39,7 +39,20 @@ assert.deepEqual(parseCounterCommand("!실드 -1", false), {
 });
 assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았습니다.");
 
-assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지"), { kind: "add", title: "밤편지" });
+assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지-아이유"), {
+	kind: "add",
+	title: "밤편지",
+	artist: "아이유",
+});
+assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지 - 아이유"), {
+	kind: "add",
+	title: "밤편지",
+	artist: "아이유",
+});
+assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지"), { kind: "usage" });
+assert.deepEqual(parseSongRequestCommand("!신청곡 -아이유"), { kind: "usage" });
+assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지-"), { kind: "usage" });
+assert.deepEqual(parseSongRequestCommand(" !신청곡 목록 "), { kind: "list" });
 assert.deepEqual(parseSongRequestCommand(" !신청곡 삭제 42 "), { kind: "delete", id: 42 });
 assert.deepEqual(parseSongRequestCommand("!신청곡"), { kind: "usage" });
 assert.deepEqual(parseSongRequestCommand(`!신청곡 ${"가".repeat(101)}`), { kind: "usage" });

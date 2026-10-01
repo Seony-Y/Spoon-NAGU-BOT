@@ -2,6 +2,8 @@
 
 Spoon OAuth and bot management server for Railway.
 
+DJs sign in with the Spoon account they use for broadcasting and approve the requested broadcast and chat permissions. NAGU BOT does not maintain a separate user account or store Spoon passwords.
+
 ## Local setup
 
 1. Copy `.env.example` to `.env.local`.
@@ -52,7 +54,8 @@ While the bot event stream is connected, these built-in commands reply automatic
 - `!애청온도랭킹` — show up to 10 listeners ranked by favorite temperature in the current broadcast
 - `!스푼랭킹` — show up to 10 listeners ranked by donations without exposing Spoon totals
 - `!내정보` — show the listener's heart, favorite-temperature, and Spoon ranks without exposing their Spoon total
-- `!신청곡 곡명` — add a song request for any listener
+- `!신청곡 곡명-가수` — add a song request for any listener
+- `!신청곡 목록` — list every queued song request for any listener
 - `!신청곡 삭제 번호` — remove a numbered song request for the DJ only
 
 ## Audience and automation

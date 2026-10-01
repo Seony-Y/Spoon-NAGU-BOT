@@ -299,20 +299,20 @@ export default async function Home({ searchParams }: HomeProps) {
         <section className="connection-section" aria-labelledby="connection-title">
           <div className="connection-card">
             <div className="connection-copy">
-              <p className="section-label">계정 연결</p>
+              <p className="section-label">DJ 로그인</p>
               <h2 id="connection-title">
                 {connected
-                  ? "Spoon 계정이 연결됐어요"
+                  ? "Spoon DJ 계정으로 로그인했어요"
                   : connectionBlocked
                     ? "관리자가 연결을 차단했어요"
-                    : "Spoon 계정을 연결해 주세요"}
+                    : "Spoon DJ 계정으로 로그인해 주세요"}
               </h2>
               <p>
                 {connected
                   ? "NAGU BOT이 승인된 권한으로 방송을 도울 준비가 됐습니다."
                   : connectionBlocked
                     ? "차단 해제 전에는 계정 재연결과 봇 참여를 사용할 수 없습니다."
-                    : "방송 정보와 채팅 기능을 사용하려면 DJ 계정의 동의가 필요합니다."}
+                    : "방송에 사용하는 DJ 계정을 연결하고 NAGU BOT의 방송·채팅 권한에 동의해 주세요."}
               </p>
             </div>
 
@@ -320,7 +320,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="notice success" role="status">
                 <span className="notice-icon" aria-hidden="true">✓</span>
                 <div>
-                  <strong>연결 완료</strong>
+                  <strong>DJ 로그인 완료</strong>
                   <span>승인된 권한 {scopes.length}개</span>
                 </div>
               </div>
@@ -360,12 +360,12 @@ export default async function Home({ searchParams }: HomeProps) {
                   <button className="disconnect" type="submit">연결 해제</button>
                 </form>
               ) : (
-                <a className="connect" href="/oauth/connect">Spoon 계정 연결하기</a>
+                <a className="connect" href="/oauth/connect">Spoon DJ 계정으로 로그인</a>
               )}
             </div>}
 
             <p className="privacy">
-              인증 정보는 암호화되어 안전하게 보관되며 비밀번호는 저장하지 않습니다.
+              별도 회원가입은 필요하지 않습니다. 인증 정보는 암호화되며 Spoon 비밀번호는 저장하지 않습니다.
             </p>
           </div>
 
@@ -756,13 +756,15 @@ export default async function Home({ searchParams }: HomeProps) {
                       <button type="submit">사용 설정 저장</button>
                     </form>
                     <h4>명령어 관리</h4>
+                    <h5 className="command-group-title">전체 사용</h5>
                     <ul>
                       <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
                       <li><div><strong>!하트랭킹</strong><span>현재 방송 하트 상위 10명과 개수 조회</span></div></li>
                       <li><div><strong>!애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
                       <li><div><strong>!스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
                       <li><div><strong>!내정보</strong><span>나의 현재 방송 하트·애청온도·스푼 순위 조회</span></div></li>
-                      <li><div><strong>!신청곡 곡명</strong><span>모두 신청 가능 · DJ는 !신청곡 삭제 번호로 삭제</span></div></li>
+                      <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
+                      <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
                     </ul>
                     {botCounters.length > 0 && (
                       <ul>
@@ -770,7 +772,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           <li key={`counter-${counter.id}`}>
                             <div>
                               <strong>!{counter.name}</strong>
-                              <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 · 조회는 모두, +N/-N 변경은 DJ만</span>
+                              <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 조회 · 모두 사용 가능</span>
                             </div>
                           </li>
                         ))}
@@ -790,6 +792,15 @@ export default async function Home({ searchParams }: HomeProps) {
                         ))}
                       </ul>
                     )}
+                    <h5 className="command-group-title is-dj-only">DJ 전용</h5>
+                    <ul>
+                      {botCounters.map((counter) => (
+                        <li key={`counter-dj-${counter.id}`}>
+                          <div><strong>!{counter.name} +N/-N</strong><span>개수 증가·감소 · DJ만 사용 가능</span></div>
+                        </li>
+                      ))}
+                      <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
+                    </ul>
                     <form className="command-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="upsert_command" />
                       <label htmlFor="command-name">명령어</label>
@@ -803,16 +814,16 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "requests" && <div className="song-request-editor">
                     <div className="counter-guide">
                       <h4>신청곡 관리</h4>
-                      <p>청취자는 <code>!신청곡 곡명</code>으로 신청하고, DJ는 채팅의 <code>!신청곡 삭제 번호</code> 또는 여기서 삭제할 수 있습니다.</p>
+                      <p>청취자는 <code>!신청곡 곡명-가수</code>로 신청하고 <code>!신청곡 목록</code>으로 전체 목록을 확인할 수 있습니다. DJ는 채팅의 <code>!신청곡 삭제 번호</code> 또는 여기서 삭제할 수 있습니다.</p>
                     </div>
                     {songRequests.length > 0 ? <ol className="song-request-list">
                       {songRequests.map((request) => <li key={request.id}>
                         <span className="song-request-number">#{request.id}</span>
-                        <div><strong>{request.title}</strong><span>{request.requesterNickname} · {formatDateTime(request.createdAt)}</span></div>
+                        <div><strong>{request.artist ? `${request.title} - ${request.artist}` : request.title}</strong><span>{request.requesterNickname} · {formatDateTime(request.createdAt)}</span></div>
                         <form action="/bot/settings" method="post">
                           <input type="hidden" name="mode" value="delete_song_request" />
                           <input type="hidden" name="id" value={request.id} />
-                          <button type="submit" aria-label={`${request.title} 신청곡 삭제`}>삭제</button>
+                          <button type="submit" aria-label={`${request.title}${request.artist ? ` - ${request.artist}` : ""} 신청곡 삭제`}>삭제</button>
                         </form>
                       </li>)}
                     </ol> : <p className="song-request-empty">접수된 신청곡이 없습니다.</p>}

@@ -224,7 +224,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   if (event.event === "chat") {
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
     if (command === "!명령어") {
-      for (const message of getAvailableCommandRepliesByKey(sessionKey, settings.commandsEnabled, event.data.isDj)) {
+      for (const message of getAvailableCommandRepliesByKey(sessionKey, settings.commandsEnabled)) {
         void sendBotChat(sessionKey, message);
       }
       return;
@@ -246,6 +246,10 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.isDj,
       event.data.user.nickname,
     );
+    if (Array.isArray(songRequestReply)) {
+      for (const message of songRequestReply) void sendBotChat(sessionKey, message);
+      return;
+    }
     const counterReply = applyBotCounterCommand(sessionKey, event.data.message, event.data.isDj);
     reply = songRequestReply ?? counterReply ?? (settings.commandsEnabled
       ? event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed

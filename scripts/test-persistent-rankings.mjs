@@ -1,9 +1,22 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 
 process.env.SESSION_SECRET = "test-session-secret-that-is-at-least-32-characters";
 process.env.SESSION_STORE_PATH = join(tmpdir(), `nagu-ranking-test-${process.pid}.db`);
+
+const legacyDatabase = new DatabaseSync(process.env.SESSION_STORE_PATH);
+legacyDatabase.exec(`
+	CREATE TABLE song_requests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_key TEXT NOT NULL,
+		requester_nickname TEXT NOT NULL,
+		title TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	)
+`);
+legacyDatabase.close();
 
 const store = await import("../src/lib/session-store.ts");
 
@@ -21,13 +34,24 @@ const firstSessionKey = store.getSessionKey(firstSessionId);
 store.linkDjWorkspaceByKey(firstSessionKey, "dj-user-id", "DJ 나구");
 
 const settings = store.getBotSettings(firstSessionId);
+const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey, settings.commandsEnabled);
+assert.match(commandReplies.join(" "), /전체 사용 명령어:/);
+assert.match(commandReplies.join(" "), /DJ 전용 명령어:.*!실드 \+N\/-N.*!신청곡 삭제 번호/);
 store.updateBotSettings(firstSessionId, {
 	...settings,
 	greetingMessage: "저장된 {nickname}님 환영 문구",
 	repeatMessage: "저장된 반복 문구",
 });
 store.upsertBotCommand(firstSessionId, "!테스트", "영구 명령어");
-store.applySongRequestCommand(firstSessionKey, "!신청곡 밤편지", false, "청취자 A");
+assert.deepEqual(
+	store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A"),
+	["신청곡 목록이 비어 있습니다."],
+);
+store.applySongRequestCommand(firstSessionKey, "!신청곡 밤편지-아이유", false, "청취자 A");
+assert.match(
+	store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A").join(" "),
+	/#\d+ 밤편지 - 아이유/,
+);
 
 const donation = {
 	id: "event-donation-1",
@@ -91,7 +115,10 @@ store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
 assert.equal(store.getBotSettings(secondSessionId).greetingMessage, "저장된 {nickname}님 환영 문구");
 assert.equal(store.getBotSettings(secondSessionId).repeatMessage, "저장된 반복 문구");
 assert.equal(store.findBotCommandResponse(secondSessionKey, "!테스트", null), "영구 명령어");
-assert.equal(store.listSongRequests(secondSessionId).length, 1);
+const restoredSongRequests = store.listSongRequests(secondSessionId);
+assert.equal(restoredSongRequests.length, 1);
+assert.equal(restoredSongRequests[0].title, "밤편지");
+assert.equal(restoredSongRequests[0].artist, "아이유");
 
 for (const period of ["current", "daily", "all"]) {
 	const ranking = store.listAudienceRankings(secondSessionId, period, 101);

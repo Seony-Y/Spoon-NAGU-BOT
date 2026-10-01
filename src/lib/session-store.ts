@@ -71,6 +71,7 @@ export type SongRequest = {
   id: number;
   requesterNickname: string;
   title: string;
+  artist: string;
   createdAt: number;
 };
 
@@ -170,6 +171,7 @@ function migrateDatabase(database: DatabaseSync) {
       session_key TEXT NOT NULL,
       requester_nickname TEXT NOT NULL,
       title TEXT NOT NULL,
+      artist TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS dj_workspaces (
@@ -206,6 +208,13 @@ function migrateDatabase(database: DatabaseSync) {
       applied_at INTEGER NOT NULL
     );
   `);
+
+  const songRequestColumns = database.prepare("PRAGMA table_info(song_requests)").all() as Array<{
+    name: string;
+  }>;
+  if (!songRequestColumns.some((column) => column.name === "artist")) {
+    database.exec("ALTER TABLE song_requests ADD COLUMN artist TEXT NOT NULL DEFAULT ''");
+  }
 
   const settingsColumns = database.prepare("PRAGMA table_info(bot_settings)").all() as Array<{
     name: string;
@@ -767,7 +776,6 @@ export function findBotCommandResponse(sessionKey: string, message: string, nick
 export function getAvailableCommandRepliesByKey(
   sessionKey: string,
   commandsEnabled: boolean,
-  isDj: boolean,
 ) {
   const { workspaceKey } = ensureBotSettings(sessionKey);
   const commands = commandsEnabled
@@ -777,26 +785,35 @@ export function getAvailableCommandRepliesByKey(
         ORDER BY command
       `).all(workspaceKey) as Array<{ command: string }>).map((row) => row.command)
     : [];
-  const counters = listBotCountersByKey(sessionKey).map((counter) => `!${counter.name}`);
-  const labels = [
+  const counters = listBotCountersByKey(sessionKey);
+  const publicLabels = [
     "!명령어",
     ...AUDIENCE_RANKING_COMMANDS,
     ...commands,
-    ...counters,
-    "!신청곡 곡명",
-    ...(isDj ? ["!신청곡 삭제 번호"] : []),
+    ...counters.map((counter) => `!${counter.name}`),
+    "!신청곡 곡명-가수",
+    "!신청곡 목록",
   ].filter((label, index, items) => items.indexOf(label) === index);
+  const djLabels = [
+    ...counters.map((counter) => `!${counter.name} +N/-N`),
+    "!신청곡 삭제 번호",
+  ];
 
   const replies: string[] = [];
-  for (const label of labels) {
-    const prefix = replies.length === 0 ? "사용 가능한 명령어: " : "명령어 계속: ";
-    const current = replies.at(-1);
-    if (!current || `${current}, ${label}`.length > 200) {
-      replies.push(`${prefix}${label}`);
-    } else {
-      replies[replies.length - 1] = `${current}, ${label}`;
+  const appendGroup = (heading: string, continuation: string, labels: string[]) => {
+    let groupReplyIndex = -1;
+    for (const label of labels) {
+      const current = groupReplyIndex >= 0 ? replies[groupReplyIndex] : undefined;
+      if (!current || `${current}, ${label}`.length > 200) {
+        replies.push(`${groupReplyIndex < 0 ? heading : continuation}: ${label}`);
+        groupReplyIndex = replies.length - 1;
+      } else {
+        replies[groupReplyIndex] = `${current}, ${label}`;
+      }
     }
-  }
+  };
+  appendGroup("전체 사용 명령어", "전체 명령어 계속", publicLabels);
+  appendGroup("DJ 전용 명령어", "DJ 명령어 계속", djLabels);
   return replies;
 }
 
@@ -904,7 +921,7 @@ export function applyBotCounterCommand(sessionKey: string, message: string, isDj
 export function listSongRequestsByKey(sessionKey: string): SongRequest[] {
   const workspaceKey = getWorkspaceKey(sessionKey);
   return getDatabase().prepare(`
-    SELECT id, requester_nickname, title, created_at
+    SELECT id, requester_nickname, title, artist, created_at
     FROM song_requests
     WHERE session_key = ?
     ORDER BY id
@@ -913,12 +930,14 @@ export function listSongRequestsByKey(sessionKey: string): SongRequest[] {
       id: number;
       requester_nickname: string;
       title: string;
+      artist: string;
       created_at: number;
     };
     return {
       id: request.id,
       requesterNickname: request.requester_nickname,
       title: request.title,
+      artist: request.artist,
       createdAt: request.created_at,
     };
   });
@@ -949,10 +968,29 @@ export function applySongRequestCommand(
 ) {
   const command = parseSongRequestCommand(message);
   if (!command) return null;
-  if (command.kind === "usage") return "사용법: !신청곡 곡명 / DJ: !신청곡 삭제 번호";
+  if (command.kind === "usage") {
+    return "사용법: !신청곡 곡명-가수 / !신청곡 목록 / DJ: !신청곡 삭제 번호";
+  }
 
   const database = getDatabase();
   const workspaceKey = getWorkspaceKey(sessionKey);
+  if (command.kind === "list") {
+    const requests = listSongRequestsByKey(sessionKey);
+    if (requests.length === 0) return ["신청곡 목록이 비어 있습니다."];
+
+    const replies: string[] = [];
+    for (const request of requests) {
+      const label = `#${request.id} ${request.title}${request.artist ? ` - ${request.artist}` : ""}`;
+      const prefix = replies.length === 0 ? "신청곡 목록: " : "신청곡 계속: ";
+      const current = replies.at(-1);
+      if (!current || `${current}, ${label}`.length > 200) {
+        replies.push(`${prefix}${label}`);
+      } else {
+        replies[replies.length - 1] = `${current}, ${label}`;
+      }
+    }
+    return replies;
+  }
   if (command.kind === "delete") {
     if (!isDj) return "신청곡 삭제는 DJ만 할 수 있습니다.";
     const result = database.prepare(
@@ -964,11 +1002,17 @@ export function applySongRequestCommand(
   }
 
   const row = database.prepare(`
-    INSERT INTO song_requests (session_key, requester_nickname, title, created_at)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO song_requests (session_key, requester_nickname, title, artist, created_at)
+    VALUES (?, ?, ?, ?, ?)
     RETURNING id
-  `).get(workspaceKey, requesterNickname?.trim().slice(0, 50) || "청취자", command.title, Date.now()) as { id: number };
-  return `신청곡 #${row.id} ${command.title} 접수 완료!`;
+  `).get(
+    workspaceKey,
+    requesterNickname?.trim().slice(0, 50) || "청취자",
+    command.title,
+    command.artist,
+    Date.now(),
+  ) as { id: number };
+  return `신청곡 #${row.id} ${command.title} - ${command.artist} 접수 완료!`;
 }
 
 export function isSessionBlockedByKey(sessionKey: string) {
