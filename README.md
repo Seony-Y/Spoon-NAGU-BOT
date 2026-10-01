@@ -35,7 +35,9 @@ Attach a Railway volume and mount it at `/data`, then set:
 SESSION_STORE_PATH=/data/nagu.db
 ```
 
-The volume is required so OAuth sessions and rotated refresh tokens survive restarts. Run a single service replica because SQLite is local to that volume.
+The volume is required so OAuth sessions, settings, roulette data, game history, recent events, and rotated refresh tokens survive restarts. Railway defaults to `/data/nagu.db` when `SESSION_STORE_PATH` is omitted, but the `/data` volume must still be attached. Run a single service replica because SQLite is local to that volume.
+
+Persistent DJ workspace data survives browser refreshes, broadcast endings, Railway process restarts and deployments, and reconnecting for a later broadcast. If OAuth is restarted without the existing browser session, the bot links the stored workspace again when the DJ next sends a chat event because Spoon OAuth tokens do not expose the DJ user ID.
 
 ## Bot participation
 
@@ -43,7 +45,7 @@ The dashboard's **봇 참여** button persists the desired participation state a
 
 **봇 퇴장** closes the event stream and disables restart restoration. Spoon may keep the listener presence visible for a short time after the stream closes.
 
-Enabled bots reconnect when the Railway process restarts. The enabled state and tokens are stored in SQLite; the recent event list is held in process memory and starts empty after a restart.
+Enabled bots reconnect when the Railway process restarts. The enabled state, tokens, and 50 most recent bot events are stored in SQLite and restored after a restart.
 
 ## Chat
 

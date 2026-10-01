@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
+import { normalizeDjNickname } from "@/lib/bot-automation";
+import { ensureBotRunning } from "@/lib/bot-runtime";
 import { sendChat } from "@/lib/chat";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
@@ -63,11 +65,12 @@ export async function POST(request: NextRequest) {
     if (feature === "donation") updateBotSettings(sessionId, { ...current, donationEnabled: enabled });
     if (feature === "heart") updateBotSettings(sessionId, { ...current, heartEnabled: enabled });
     if (feature === "repeat") updateBotSettings(sessionId, { ...current, repeatEnabled: enabled });
+    ensureBotRunning(sessionId);
     return NextResponse.json({ enabled });
   }
 
   if (mode === "dj_nickname") {
-    const djNickname = String(formData.get("djNickname") ?? "").trim();
+    const djNickname = normalizeDjNickname(String(formData.get("djNickname") ?? ""));
     const automation = String(formData.get("automation") ?? "ranking");
     if (djNickname.length > 50) return redirect(request, "invalid_nickname", automation);
 
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
     const settings = getBotSettings(sessionId);
     updateBotSettings(sessionId, { ...settings, greetingMessage });
     const announcement = greetingMessage
-      .replaceAll("{name}", settings.djNickname || "DJ")
+      .replaceAll("{name}", normalizeDjNickname(settings.djNickname) || "DJ")
       .replaceAll("{nickname}", "여러분");
     const result = await sendChat(sessionId, announcement);
     return redirect(request, result.kind === "sent" ? "greeting_sent" : `greeting_saved_${result.kind}`);
@@ -133,6 +136,7 @@ export async function POST(request: NextRequest) {
       updateBotSettings(sessionId, { ...current, commandsEnabled: enabled });
     }
 
+    ensureBotRunning(sessionId);
     return redirect(request, "feature_saved", feature);
   }
 

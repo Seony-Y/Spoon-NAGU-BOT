@@ -4,6 +4,7 @@ import { getBotAuthSession } from "./auth";
 import {
   createBotAutomationState,
   diffListenerSnapshot,
+  normalizeDjNickname,
   processBotAutomation,
   resetBotAutomationState,
   type BotActivity,
@@ -23,7 +24,9 @@ import {
   getSessionKey,
   isSessionBlockedByKey,
   isBotEnabled,
+  listRecentBotEventsByKey,
   listEnabledBotSessions,
+  recordRecentBotEventByKey,
   setBotEnabled,
   setBotEnabledByKey,
   linkDjWorkspaceByKey,
@@ -130,7 +133,6 @@ function setRuntimeState(sessionKey: string, state: BotConnectionState) {
 
 function clearBroadcastState(runtime: BotRuntime) {
   resetBotAutomationState(runtime);
-  runtime.events = [];
   runtime.lastEventAt = undefined;
   runtime.favoriteListeners.clear();
   runtime.currentLiveId = undefined;
@@ -151,7 +153,10 @@ function scheduleRepeatAnnouncements(sessionKey: string, runtime: BotRuntime) {
       const settings = getBotSettingsByKey(sessionKey);
       const interval = settings.repeatIntervalMinutes * 60 * 1000;
       if (settings.repeatEnabled && Date.now() - (runtime.lastRepeatAt ?? 0) >= interval) {
-        const message = settings.repeatMessage.replaceAll("{name}", settings.djNickname || "DJ");
+        const message = settings.repeatMessage.replaceAll(
+          "{name}",
+          normalizeDjNickname(settings.djNickname) || "DJ",
+        );
         if (message) void sendBotChat(sessionKey, message.slice(0, 200));
         runtime.lastRepeatAt = Date.now();
       }
@@ -279,6 +284,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   if (event.event === "chat" && event.data.isDj && event.data.user.nickname) {
     linkDjWorkspaceByKey(sessionKey, event.data.user.id, event.data.user.nickname);
   }
+  recordRecentBotEventByKey(sessionKey, event, receivedAt);
   if (runtime.currentLiveId !== undefined) {
     recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
   }
@@ -556,10 +562,12 @@ function startBotByKey(sessionKey: string) {
 
   const controller = new AbortController();
   const automation = createBotAutomationState();
+  const restoredEvents = existing?.events ?? listRecentBotEventsByKey(sessionKey) as BotEvent[];
   const runtime: BotRuntime = {
     enabled: true,
     state: "starting",
-    events: existing?.events ?? [],
+    events: restoredEvents,
+    lastEventAt: restoredEvents[0]?.receivedAt,
     activity: automation.activity,
     greetedUserIds: automation.greetedUserIds,
     announcedHeartMilestone: automation.announcedHeartMilestone,
@@ -586,6 +594,11 @@ export function startBot(sessionId: string) {
   if (!setBotEnabled(sessionId, true)) return false;
   startBotByKey(sessionKey);
   return true;
+}
+
+export function ensureBotRunning(sessionId: string) {
+  if (!isBotEnabled(sessionId)) return;
+  startBotByKey(getSessionKey(sessionId));
 }
 
 export function stopBot(sessionId: string) {

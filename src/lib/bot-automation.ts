@@ -1,7 +1,5 @@
 import type { ParsedSseEvent } from "./spoon-events";
 
-const HEART_MILESTONE = 100;
-
 export type BotActivity = {
   hearts: number;
   spoons: number;
@@ -33,6 +31,12 @@ const defaultOptions: BotAutomationOptions = {
   donationEnabled: true,
   heartEnabled: true,
 };
+
+export function normalizeDjNickname(value: string) {
+  const trimmed = value.trim();
+  const wrapped = trimmed.match(/^\{([^{}]+)\}$/);
+  return wrapped ? wrapped[1].trim() : trimmed;
+}
 
 export function createBotAutomationState(): BotAutomationState {
   return {
@@ -66,6 +70,7 @@ export function processBotAutomation(
   event: ParsedSseEvent,
   options: BotAutomationOptions = defaultOptions,
 ) {
+  const djNickname = normalizeDjNickname(options.djNickname) || "DJ";
   if (event.event === "presence") {
     if (!options.welcomeEnabled) return null;
     if (state.greetedUserIds.has(event.data.user.id)) return null;
@@ -80,7 +85,7 @@ export function processBotAutomation(
           ? "단골"
           : "";
     const greeting = options.greetingMessage
-      .replaceAll("{name}", options.djNickname || "DJ")
+      .replaceAll("{name}", djNickname)
       .replaceAll("{nickname}", name);
     return `${prefix ? `${prefix} ` : ""}${greeting}`;
   }
@@ -90,7 +95,7 @@ export function processBotAutomation(
     if (!options.donationEnabled) return null;
     const name = event.data.user.nickname ?? "청취자";
     return options.donationMessage
-      .replaceAll("{name}", options.djNickname || "DJ")
+      .replaceAll("{name}", djNickname)
       .replaceAll("{nickname}", name)
       .replaceAll("{amount}", event.data.amount.toLocaleString("ko-KR"));
   }
@@ -98,14 +103,11 @@ export function processBotAutomation(
   if (event.event === "like") {
     state.activity.hearts += event.data.totalAmount;
     if (!options.heartEnabled) return null;
-    const milestone = Math.floor(state.activity.hearts / HEART_MILESTONE) * HEART_MILESTONE;
-    if (milestone > state.announcedHeartMilestone) {
-      state.announcedHeartMilestone = milestone;
-      return options.heartMessage
-        .replaceAll("{name}", options.djNickname || "DJ")
-        .replaceAll("{nickname}", event.data.user.nickname ?? "청취자")
-        .replaceAll("{milestone}", milestone.toLocaleString("ko-KR"));
-    }
+    state.announcedHeartMilestone = state.activity.hearts;
+    return options.heartMessage
+      .replaceAll("{name}", djNickname)
+      .replaceAll("{nickname}", event.data.user.nickname ?? "청취자")
+      .replaceAll("{milestone}", state.activity.hearts.toLocaleString("ko-KR"));
   }
 
   return null;

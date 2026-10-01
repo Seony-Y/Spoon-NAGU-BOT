@@ -136,6 +136,13 @@ export type AudienceRankingEntry = {
   favoriteTemperature: number | null;
 };
 
+export type PersistedBotEvent = {
+  id?: string;
+  type: Exclude<ParsedSseEvent["event"], "end">;
+  data: Exclude<ParsedSseEvent, { event: "end" }>["data"];
+  receivedAt: string;
+};
+
 export const AUDIENCE_RANKING_COMMANDS = [
   "!하트랭킹",
   "!애청온도랭킹",
@@ -253,6 +260,14 @@ function migrateDatabase(database: DatabaseSync) {
       favorite_temperature REAL,
       occurred_at INTEGER NOT NULL,
       stat_date TEXT NOT NULL,
+      PRIMARY KEY (workspace_key, event_id)
+    );
+    CREATE TABLE IF NOT EXISTS recent_bot_events (
+      workspace_key TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      received_at INTEGER NOT NULL,
       PRIMARY KEY (workspace_key, event_id)
     );
     CREATE TABLE IF NOT EXISTS rps_rounds (
@@ -401,8 +416,10 @@ function getDatabase() {
     return globalForDatabase.naguSessionDatabase;
   }
 
+  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
   const databasePath = resolve(
-    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH || ".data/nagu.db",
+    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH
+      || (isRailway ? "/data/nagu.db" : ".data/nagu.db"),
   );
   mkdirSync(dirname(databasePath), { recursive: true });
 
@@ -615,6 +632,13 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
            spoons, hearts, favorite_temperature, occurred_at, stat_date
     FROM audience_events WHERE workspace_key = ?
   `).run(targetKey, sourceKey);
+  database.prepare(`
+    INSERT OR IGNORE INTO recent_bot_events (
+      workspace_key, event_id, event_type, data_json, received_at
+    )
+    SELECT ?, event_id, event_type, data_json, received_at
+    FROM recent_bot_events WHERE workspace_key = ?
+  `).run(targetKey, sourceKey);
   const sourceRpsRounds = database.prepare(`
     SELECT round_id, dj_choice, active, started_at, ended_at
     FROM rps_rounds WHERE workspace_key = ? ORDER BY round_id
@@ -738,6 +762,7 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM bot_counters WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM bot_settings WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_events WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM recent_bot_events WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_profiles WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_entries WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_rounds WHERE workspace_key = ?").run(sourceKey);
@@ -838,6 +863,64 @@ export function recordAudienceEvent(
   return true;
 }
 
+export function recordRecentBotEventByKey(
+  sessionKey: string,
+  event: Exclude<ParsedSseEvent, { event: "end" }>,
+  receivedAt: string,
+) {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const timestamp = Date.parse(receivedAt);
+  const eventId = event.id || createHash("sha256")
+    .update(`recent:${event.event}:${JSON.stringify(event.data)}:${receivedAt}`)
+    .digest("hex");
+  const database = getDatabase();
+  database.prepare(`
+    INSERT OR IGNORE INTO recent_bot_events (
+      workspace_key, event_id, event_type, data_json, received_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    workspaceKey,
+    eventId,
+    event.event,
+    JSON.stringify(event.data),
+    Number.isNaN(timestamp) ? Date.now() : timestamp,
+  );
+  database.prepare(`
+    DELETE FROM recent_bot_events
+    WHERE workspace_key = ? AND event_id NOT IN (
+      SELECT event_id FROM recent_bot_events
+      WHERE workspace_key = ?
+      ORDER BY received_at DESC LIMIT 50
+    )
+  `).run(workspaceKey, workspaceKey);
+}
+
+export function listRecentBotEventsByKey(sessionKey: string): PersistedBotEvent[] {
+  const rows = getDatabase().prepare(`
+    SELECT event_id, event_type, data_json, received_at
+    FROM recent_bot_events
+    WHERE workspace_key = ?
+    ORDER BY received_at DESC LIMIT 50
+  `).all(getWorkspaceKey(sessionKey)) as Array<{
+    event_id: string;
+    event_type: PersistedBotEvent["type"];
+    data_json: string;
+    received_at: number;
+  }>;
+  return rows.flatMap((row) => {
+    try {
+      return [{
+        id: row.event_id,
+        type: row.event_type,
+        data: JSON.parse(row.data_json) as PersistedBotEvent["data"],
+        receivedAt: new Date(row.received_at).toISOString(),
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export function listAudienceRankingsByKey(
   sessionKey: string,
   period: AudienceRankingPeriod,
@@ -905,7 +988,12 @@ function rankAudienceEntries(
 
 function formatRankingReplies(scope: string, title: string, labels: string[]) {
   if (labels.length === 0) return [`[${scope} ${title}] 집계 데이터가 없습니다.`];
-  return [`[${scope} ${title}]`, ...labels.slice(0, 10)];
+  const lines = [`[${scope} ${title}]`];
+  for (const label of labels.slice(0, 10)) {
+    if ([...lines, label].join("\n").length > 200) break;
+    lines.push(label);
+  }
+  return [lines.join("\n")];
 }
 
 export function getAudienceRankingCommandRepliesByKey(

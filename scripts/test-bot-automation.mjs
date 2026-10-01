@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createBotAutomationState,
   diffListenerSnapshot,
+  normalizeDjNickname,
   processBotAutomation,
   resetBotAutomationState,
 } from "../src/lib/bot-automation.ts";
@@ -17,6 +18,8 @@ const nextListeners = diffListenerSnapshot(initialListeners.currentIds, [
   { id: "fan-2", nickname: "신규 청취자" },
 ]);
 assert.deepEqual(nextListeners.joinedListeners, [{ id: "fan-2", nickname: "신규 청취자" }]);
+assert.equal(normalizeDjNickname("나구"), "나구");
+assert.equal(normalizeDjNickname(" {나구} "), "나구");
 const presence = {
   event: "presence",
   data: {
@@ -49,9 +52,9 @@ const like = (totalAmount) => ({
   },
 });
 
-assert.equal(processBotAutomation(state, like(99)), null);
+assert.equal(processBotAutomation(state, like(99)), "일등팬님, 하트 99개 감사합니다!");
 assert.equal(processBotAutomation(state, like(1)), "일등팬님, 하트 100개 감사합니다!");
-assert.equal(processBotAutomation(state, like(250)), "일등팬님, 하트 300개 감사합니다!");
+assert.equal(processBotAutomation(state, like(250)), "일등팬님, 하트 350개 감사합니다!");
 assert.equal(state.activity.hearts, 350);
 
 assert.equal(processBotAutomation(state, {
@@ -72,7 +75,7 @@ assert.equal(state.announcedHeartMilestone, 0);
 
 const configuredState = createBotAutomationState();
 const configuredOptions = {
-  djNickname: "나구",
+  djNickname: "{나구}",
   greetingMessage: "DJ {name}의 방송입니다. {nickname}님, 잘 오셨어요!",
   welcomeEnabled: true,
   donationEnabled: false,
