@@ -28,9 +28,9 @@ export default function GuidePage() {
             <div className="guide-accordion-content">
               <div className="guide-topic">
                 <h3>최초 Spoon DJ 연결</h3>
-                <p>NAGU BOT은 아직 TEST 운영 중이므로 별도의 입장코드가 필요합니다. 입장코드는 운영자 나구링에게 문의해 주세요.</p>
+                <p>NAGU BOT은 아직 TEST 운영 중이므로 별도의 입장코드가 필요합니다. 입장코드는 운영자 나구링(@gu._.ling)에게 문의해 주세요.</p>
                 <ol>
-                  <li>홈의 <strong>입장코드</strong>에 나구링에게 받은 코드를 입력하고 확인을 누릅니다.</li>
+                  <li>홈의 <strong>입장코드</strong>에 나구링(@gu._.ling)에게 받은 코드를 입력하고 확인을 누릅니다.</li>
                   <li>코드 확인 후 활성화된 <strong>Spoon DJ 계정으로 로그인</strong>을 누릅니다.</li>
                   <li>Spoon 로그인 화면에서 방송에 사용할 DJ 계정으로 로그인하고 요청 권한을 모두 승인합니다. 하나라도 승인하지 않으면 연결되지 않습니다.</li>
                   <li>NAGU BOT으로 돌아와 <strong>연결됨</strong> 상태인지 확인합니다.</li>
@@ -90,7 +90,7 @@ export default function GuidePage() {
           <details className="guide-accordion" id="disconnect">
             <summary><span className="guide-number">05</span><strong>연결 해제</strong><span>인증 종료와 저장 데이터 안내</span><i aria-hidden="true" /></summary>
             <div className="guide-accordion-content">
-              <div className="guide-topic"><h3>연결 종료</h3><p>사용을 마치면 홈에서 <strong>연결 해제</strong>를 누릅니다. BOT은 자동으로 퇴장하고 기존 OAuth 토큰은 폐기됩니다. 재연결 복원을 위한 운영 설정과 기록의 삭제는 운영자 나구링에게 요청할 수 있습니다.</p></div>
+              <div className="guide-topic"><h3>연결 종료</h3><p>사용을 마치면 홈에서 <strong>연결 해제</strong>를 누릅니다. BOT은 자동으로 퇴장하고 기존 OAuth 토큰은 폐기됩니다. 재연결 복원을 위한 운영 설정과 기록의 삭제는 운영자 나구링(@gu._.ling)에게 요청할 수 있습니다.</p></div>
               <div className="guide-topic">
                 <h3>다른 Spoon 계정으로 전환</h3>
                 <ol>
