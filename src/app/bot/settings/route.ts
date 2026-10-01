@@ -26,6 +26,8 @@ const RESERVED_COMMANDS = [
   "!안녕",
   "!신청곡",
   "!가위바위보",
+  "!참여",
+  "!정답",
   ...AUDIENCE_RANKING_COMMANDS,
 ];
 

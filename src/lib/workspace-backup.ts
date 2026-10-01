@@ -11,6 +11,7 @@ import {
 
 const BACKUP_VERSION = 1;
 const MAX_ROWS_PER_TABLE = 50_000;
+const OPTIONAL_CORE_TABLES = new Set(["quiz_rounds", "quiz_submissions"]);
 
 type BackupBody = {
   format: "nagu-bot-workspace";
@@ -53,13 +54,16 @@ function isValidData(data: unknown, includesAudience: boolean): data is Workspac
     : [...WORKSPACE_BACKUP_TABLES.core];
   const expectedNames = new Set<string>(specifications.map((specification) => specification.name));
   if (Object.keys(tables).some((name) => !expectedNames.has(name))) return false;
-  if (WORKSPACE_BACKUP_TABLES.core.some(({ name }) => !Object.hasOwn(tables, name))) return false;
+  if (WORKSPACE_BACKUP_TABLES.core.some(({ name }) => (
+    !OPTIONAL_CORE_TABLES.has(name) && !Object.hasOwn(tables, name)
+  ))) return false;
   if (includesAudience && WORKSPACE_BACKUP_TABLES.audience.some(({ name }) => !Object.hasOwn(tables, name))) {
     return false;
   }
 
   for (const specification of specifications) {
     const rows = tables[specification.name];
+    if (OPTIONAL_CORE_TABLES.has(specification.name) && rows === undefined) continue;
     if (!Array.isArray(rows) || rows.length > MAX_ROWS_PER_TABLE) return false;
     const expectedColumns = new Set<string>(specification.columns);
     for (const row of rows) {

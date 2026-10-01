@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -147,6 +148,43 @@ assert.equal(typeof finishedRpsRound.endedAt, "number");
 assert.equal(store.finishRpsRound(firstSessionId), null);
 assert.deepEqual(store.listRpsRounds(firstSessionId).map((round) => round.roundId), [1]);
 
+assert.equal(store.startRaffleRound(firstSessionId, 300), true);
+assert.equal(store.startRaffleRound(firstSessionId, 1), false);
+assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-1", "추첨 참가자 1"), /참여 완료/);
+assert.equal(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-1", "추첨 참가자 1"), "이미 참여했습니다.");
+assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-2", "추첨 참가자 2"), /참여 완료/);
+assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-3", "추첨 참가자 3"), /참여 완료/);
+const finishedRaffle = store.finishRaffleRound(firstSessionId, () => 0);
+assert.equal(finishedRaffle.active, false);
+assert.equal(finishedRaffle.entries.filter((entry) => entry.winner).length, 3);
+assert.deepEqual(finishedRaffle.entries.filter((entry) => entry.winner).map((entry) => entry.userId), ["raffle-1", "raffle-2", "raffle-3"]);
+assert.equal(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-4", "늦은 참가자"), "현재 진행 중인 추첨이 없습니다.");
+assert.equal(store.listRaffleRounds(firstSessionId)[0].roundId, 1);
+
+assert.equal(store.startQuizRound(firstSessionId, "", "정답"), false);
+assert.equal(store.startQuizRound(firstSessionId, "대한민국의 수도는?", "서울", 10_000), true);
+assert.equal(store.startQuizRound(firstSessionId, "다음 문제", "다음 정답"), false);
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 부산", false, "quiz-1", "퀴즈 참가자 1", 11_000), "퀴즈 참가자 1님, 답안을 제출했습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 부산", false, "quiz-1", "퀴즈 참가자 1", 12_000), "이미 동일한 대답을 제출했습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 인천", false, "quiz-2", "퀴즈 참가자 2", 11_500), "퀴즈 참가자 2님, 답안을 제출했습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 대구", false, "quiz-1", "퀴즈 참가자 1", 11_500), "퀴즈 참가자 1님, 답안을 제출했습니다.");
+assert.deepEqual(store.getQuizRoundByKey(firstSessionKey).submissions.map((entry) => entry.userId), ["quiz-2", "quiz-1"]);
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-2", "퀴즈 참가자 2", 13_500), "퀴즈 참가자 2님, 답안을 제출했습니다.");
+assert.equal(store.getQuizRoundByKey(firstSessionKey).active, true);
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-1", "퀴즈 참가자 1", 13_500), "퀴즈 참가자 1님, 답안을 제출했습니다.");
+const finishedQuiz = store.finishQuizRound(firstSessionId, 15_000);
+assert.equal(finishedQuiz.active, false);
+assert.equal(finishedQuiz.winnerUserId, "quiz-2");
+assert.equal(finishedQuiz.winnerNickname, "퀴즈 참가자 2");
+assert.equal(finishedQuiz.elapsedMs, 3_500);
+assert.deepEqual(finishedQuiz.submissions.filter((entry) => entry.correct).map((entry) => entry.userId), ["quiz-2", "quiz-1"]);
+assert.deepEqual(store.formatQuizResultMessages(finishedQuiz), [
+	"퀴즈 종료! 정답: 서울",
+	"최초 정답: 퀴즈 참가자 2 (3.5초), 퀴즈 참가자 1 (3.5초)",
+	"정답자: 퀴즈 참가자 2 (3.5초), 퀴즈 참가자 1 (3.5초)",
+]);
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-3", "늦은 참가자"), "현재 진행 중인 퀴즈가 없습니다.");
+
 const settings = store.getBotSettings(firstSessionId);
 const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey);
 assert.match(commandReplies.join(" "), /전체 사용 명령어:/);
@@ -157,6 +195,7 @@ assert.doesNotMatch(commandReplies.join(" "), /!애청온도랭킹/);
 assert.doesNotMatch(commandReplies.join(" "), /!오늘의 애청온도랭킹/);
 assert.doesNotMatch(commandReplies.join(" "), /!스푼랭킹/);
 assert.match(commandReplies.join(" "), /!오늘의 스푼랭킹/);
+assert.match(commandReplies.join(" "), /!참여/);
 store.updateBotSettings(firstSessionId, {
 	...settings,
 	greetingMessage: "저장된 {nickname}님 환영 문구",
@@ -275,8 +314,22 @@ assert.doesNotMatch(myInfoReplies.join(" "), /300/);
 const coreBackup = backups.createSignedWorkspaceBackup(firstSessionId, false);
 assert.equal(coreBackup.includesAudience, false);
 assert.equal(coreBackup.data.tables.audience_events, undefined);
+assert.equal(coreBackup.data.tables.raffle_rounds.length, 1);
+assert.equal(coreBackup.data.tables.raffle_entries.length, 3);
+assert.equal(coreBackup.data.tables.quiz_rounds.length, 1);
+assert.equal(coreBackup.data.tables.quiz_submissions.length, 2);
 assert.equal(JSON.stringify(coreBackup).includes("test-access"), false);
 assert.ok(backups.parseSignedWorkspaceBackup(JSON.parse(JSON.stringify(coreBackup))));
+const preQuizBackup = structuredClone(coreBackup);
+delete preQuizBackup.data.tables.quiz_rounds;
+delete preQuizBackup.data.tables.quiz_submissions;
+const { signature: ignoredSignature, ...preQuizBody } = preQuizBackup;
+void ignoredSignature;
+preQuizBackup.signature = createHmac("sha256", process.env.SESSION_SECRET)
+	.update("nagu-workspace-backup-v1\0")
+	.update(JSON.stringify(preQuizBody))
+	.digest("hex");
+assert.ok(backups.parseSignedWorkspaceBackup(preQuizBackup));
 const tamperedBackup = JSON.parse(JSON.stringify(coreBackup));
 tamperedBackup.data.tables.bot_settings[0].dj_nickname = "변조된 DJ";
 assert.equal(backups.parseSignedWorkspaceBackup(tamperedBackup), null);
@@ -306,6 +359,10 @@ store.saveSession(secondSessionId, token);
 const secondSessionKey = store.getSessionKey(secondSessionId);
 assert.equal(store.startRpsRound(secondSessionId, "가위"), true);
 store.applyRpsCommand(secondSessionKey, "!가위바위보 바위", false, "listener-reconnect", "재접속 참가자");
+assert.equal(store.startRaffleRound(secondSessionId, 1), true);
+store.applyRaffleCommand(secondSessionKey, "!참여", false, "raffle-reconnect", "재접속 추첨 참가자");
+assert.equal(store.startQuizRound(secondSessionId, "병합할 문제", "병합 정답", 20_000), true);
+store.applyQuizCommand(secondSessionKey, "!정답 오답", false, "quiz-reconnect", "재접속 퀴즈 참가자", 21_000);
 store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
 
 assert.equal(store.listRecentBotEventsByKey(secondSessionKey)[0].type, "presence");
@@ -323,11 +380,19 @@ const restoredActiveRpsRound = store.getRpsRound(secondSessionId);
 assert.equal(restoredActiveRpsRound.active, true);
 assert.equal(restoredActiveRpsRound.roundId, 2);
 assert.equal(restoredActiveRpsRound.entries[0].nickname, "재접속 참가자");
+const restoredRaffleRounds = store.listRaffleRounds(secondSessionId);
+assert.deepEqual(restoredRaffleRounds.map((round) => [round.roundId, round.active]), [[2, true], [1, false]]);
+assert.equal(restoredRaffleRounds[0].entries[0].nickname, "재접속 추첨 참가자");
+assert.equal(store.finishRaffleRound(secondSessionId, () => 0).roundId, 2);
 assert.deepEqual(
 	store.listRpsRounds(secondSessionId).map((round) => [round.roundId, round.active]),
 	[[2, true], [1, false]],
 );
 assert.equal(store.finishRpsRound(secondSessionId).roundId, 2);
+const mergedQuizRounds = store.listQuizRounds(secondSessionId);
+assert.deepEqual(mergedQuizRounds.map((round) => [round.roundId, round.active]), [[2, true], [1, false]]);
+assert.equal(mergedQuizRounds[0].submissions[0].nickname, "재접속 퀴즈 참가자");
+assert.equal(store.finishQuizRound(secondSessionId, 22_000).roundId, 2);
 assert.equal(store.startRpsRound(secondSessionId, "보"), true);
 store.applyRpsCommand(secondSessionKey, "!가위바위보 가위", false, "listener-third", "세 번째 참가자");
 assert.equal(store.finishRpsRound(secondSessionId).roundId, 3);

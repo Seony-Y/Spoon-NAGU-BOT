@@ -47,7 +47,7 @@ The dashboard's **봇 참여** button persists the desired participation state a
 
 Enabled bots reconnect when the Railway process restarts or an authenticated dashboard request reaches a new server process. The enabled state, current broadcast ID, tokens, current-broadcast activity, and 50 most recent bot events are stored in SQLite and restored after a restart.
 
-The top-level **데이터 백업** tab downloads a signed JSON backup containing the DJ display name, automation messages/toggles/interval, commands, counters, song requests, rock-paper-scissors rounds and entries, and roulette settings/items/results/keeps. The optional full download also contains listener profiles, presence/heart/donation events, and live Spoon-ranking snapshots. OAuth tokens, session cookies, admin state, bot participation/current-live state, and transient recent events are never exported. Restoring replaces core workspace data after signature and schema validation; a core-only restore preserves existing audience tables. Uploads are limited to 10 MB.
+The top-level **데이터 백업** tab downloads a signed JSON backup containing the DJ display name, automation messages/toggles/interval, commands, counters, song requests, rock-paper-scissors, raffle and quiz rounds/entries, and roulette settings/items/results/keeps. The optional full download also contains listener profiles, presence/heart/donation events, and live Spoon-ranking snapshots. OAuth tokens, session cookies, admin state, bot participation/current-live state, and transient recent events are never exported. Restoring replaces core workspace data after signature and schema validation; a core-only restore preserves existing audience tables. Uploads are limited to 10 MB.
 
 ## Chat
 
@@ -60,11 +60,13 @@ While the bot event stream is connected, these built-in commands reply automatic
 - `!오늘의 스푼랭킹` — show up to 10 listeners ranked by donations in the current broadcast without exposing Spoon totals
 - `!내정보` — show the listener's current-live Spoon rank without exposing Spoon totals
 - `!가위바위보 가위|바위|보` — join the active DJ rock-paper-scissors round once; results are revealed when the DJ ends the round
+- `!참여` — join the active raffle once per account; winner counts have no configured upper limit
+- `!정답 정답내용` — submit or replace an answer for the active quiz; correct submissions remain private until the DJ ends the quiz
 - `!신청곡 곡명-가수` — add a song request for any listener
 - `!신청곡 목록` — list every queued song request for any listener
 - `!신청곡 삭제 번호` — remove a numbered song request for the DJ only
 
-The Game dashboard retains rock-paper-scissors rounds by DJ workspace and shows the 10 most recent completed rounds. Each expandable record includes the DJ choice, participant count, win/draw/loss totals, and participant results.
+The Game dashboard retains rock-paper-scissors, raffle, and quiz rounds by DJ workspace and shows the 10 most recent completed rounds. Quiz history includes each listener's latest submission, the first correct listener, elapsed time, and every correct listener. Quiz results are announced through bot chat only when the DJ presses the finish button.
 
 ## Audience and automation
 

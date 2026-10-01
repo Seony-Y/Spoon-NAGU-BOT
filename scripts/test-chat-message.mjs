@@ -17,6 +17,10 @@ import {
 	getRpsResult,
 	parseRpsCommand,
 } from "../src/lib/rock-paper-scissors.ts";
+import {
+	formatRaffleResultMessages,
+	selectRaffleWinners,
+} from "../src/lib/raffle.ts";
 
 assert.equal(validateChatMessage("   "), "invalid_message");
 assert.equal(validateChatMessage("가".repeat(200)), null);
@@ -54,6 +58,20 @@ assert.deepEqual(parseCounterCommand("!실드 -1", false), {
 	adjustment: { name: "실드", delta: -1 },
 });
 assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았습니다.");
+
+const raffleParticipants = [
+	{ userId: "one", nickname: "첫 번째" },
+	{ userId: "two", nickname: "두 번째" },
+	{ userId: "three", nickname: "세 번째" },
+];
+assert.deepEqual(selectRaffleWinners(raffleParticipants, 2, () => 0), raffleParticipants.slice(0, 2));
+assert.equal(new Set(selectRaffleWinners(raffleParticipants, 3, (maximum) => maximum - 1).map((entry) => entry.userId)).size, 3);
+assert.deepEqual(formatRaffleResultMessages([]), ["[추첨] 참가자가 없어 당첨자 없이 종료했습니다."]);
+assert.match(formatRaffleResultMessages(raffleParticipants)[0], /^\[추첨\] 당첨자: 1\. 첫 번째/);
+assert.ok(formatRaffleResultMessages(Array.from({ length: 20 }, (_, index) => ({
+	userId: String(index),
+	nickname: `긴닉네임-${index}-${"가".repeat(40)}`,
+}))).every((message) => message.length <= 200));
 
 assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지-아이유"), {
 	kind: "add",

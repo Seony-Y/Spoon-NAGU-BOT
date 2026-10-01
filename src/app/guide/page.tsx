@@ -48,7 +48,7 @@ export default function GuidePage() {
               <div className="guide-topic"><h3>방송 현황</h3><p>현재 방송 제목과 상태, 청취자 수를 확인합니다. 새 정보가 필요하면 해당 영역의 새로고침 버튼을 누릅니다.</p></div>
               <div className="guide-topic"><h3>청취자 및 팬 랭킹</h3><p>현재 청취자 목록과 Spoon API가 제공하는 현재 방송 후원 팬 랭킹을 확인합니다. 하트 합계는 봇 참여 이후 수신분만 집계합니다. 채팅에서 <code>!오늘의 스푼랭킹</code>은 현재 방송 후원 상위 10명을 보여줍니다. <code>!내정보</code>는 오늘의 스푼 순위만 보여주며 스푼 수치는 노출하지 않습니다.</p></div>
               <div className="guide-topic"><h3>최근 이벤트</h3><p>입장, 채팅, 하트, 후원 등 BOT이 실시간으로 수신한 방송 이벤트를 최근 순서로 확인합니다.</p></div>
-              <div className="guide-topic"><h3>로컬 백업</h3><p>상단 데이터 백업 탭에서 DJ 표시 이름, 자동화 설정, 명령어, 카운터, 신청곡, 가위바위보와 룰렛 데이터를 서명된 JSON 파일로 저장하고 복원할 수 있습니다. 청취자 ID·닉네임, 입장·하트·스푼 이벤트와 스푼 랭킹 스냅샷은 청취자 기록 포함 다운로드에서만 추가됩니다. OAuth 토큰, 로그인 쿠키, 관리자 정보, 봇 참여 상태와 최근 이벤트 목록은 백업하지 않습니다.</p></div>
+              <div className="guide-topic"><h3>로컬 백업</h3><p>상단 데이터 백업 탭에서 DJ 표시 이름, 자동화 설정, 명령어, 카운터, 신청곡, 가위바위보·추첨·퀴즈·룰렛 데이터를 서명된 JSON 파일로 저장하고 복원할 수 있습니다. 청취자 ID·닉네임, 입장·하트·스푼 이벤트와 스푼 랭킹 스냅샷은 청취자 기록 포함 다운로드에서만 추가됩니다. OAuth 토큰, 로그인 쿠키, 관리자 정보, 봇 참여 상태와 최근 이벤트 목록은 백업하지 않습니다.</p></div>
             </div>
           </details>
 
@@ -63,12 +63,22 @@ export default function GuidePage() {
           </details>
 
           <details className="guide-accordion" id="game">
-            <summary><span className="guide-number">04</span><strong>Game</strong><span>가위바위보와 룰렛 진행</span><i aria-hidden="true" /></summary>
+            <summary><span className="guide-number">04</span><strong>Game</strong><span>가위바위보, 추첨, 퀴즈와 룰렛 진행</span><i aria-hidden="true" /></summary>
             <div className="guide-accordion-content">
               <div className="guide-topic">
                 <h3>가위바위보</h3>
                 <p>DJ가 가위·바위·보를 비공개로 선택하고 라운드를 시작합니다. 청취자는 <code>!가위바위보 가위</code>처럼 한 번 참여하며, 종료하면 BOT 채팅과 화면에 결과가 공개됩니다.</p>
                 <p>진행 중에는 실시간 참여자 수가 표시되고, 종료된 라운드는 최근 기록에서 참가자별 결과를 확인할 수 있습니다.</p>
+              </div>
+              <div className="guide-topic">
+                <h3>추첨</h3>
+                <p>DJ가 당첨 인원을 1명 이상, 상한 없이 정해 시작하면 청취자는 <code>!참여</code>로 계정당 한 번 참여합니다. 이미 참여한 계정에는 <strong>이미 참여했습니다.</strong>라고 안내합니다. DJ가 종료하면 참가자 중 설정 인원만큼 무작위로 당첨자를 확정하고 BOT 채팅에 공개합니다. 참가자가 설정 인원보다 적으면 모든 참가자가 당첨됩니다.</p>
+                <p>진행 중에는 실시간 참여자 수가 표시되고, 최근 기록에서 전체 참가자와 당첨 여부를 확인할 수 있습니다.</p>
+              </div>
+              <div className="guide-topic">
+                <h3>퀴즈</h3>
+                <p>DJ가 문제와 정답을 등록하면 청취자는 <code>!정답 정답내용</code>으로 답안을 제출합니다. 같은 계정도 다른 답안을 다시 제출할 수 있으며, 이때 기존 답안과 제출 시각이 최신 값으로 바뀌어 제출 순서가 뒤로 이동합니다. 같은 답안을 다시 내면 <strong>이미 동일한 대답을 제출했습니다.</strong>라고 안내합니다.</p>
+                <p>최초 정답이 들어와도 퀴즈는 계속 진행되어 다른 청취자도 정답을 제출할 수 있습니다. DJ가 화면의 <strong>퀴즈 종료 및 정답 공개</strong> 버튼을 누르면 BOT 채팅에 정답, 최초 정답자와 소요 시간, 전체 정답자 목록을 나누어 공개합니다. 이 결과는 최근 퀴즈 기록과 로컬 백업에도 저장됩니다.</p>
               </div>
               <div className="guide-topic">
                 <h3>룰렛 설정</h3>

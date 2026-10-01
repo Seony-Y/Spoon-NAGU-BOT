@@ -14,6 +14,8 @@ import {
   isSessionBlocked,
   listBotCommands,
   listBotCounters,
+  listQuizRounds,
+  listRaffleRounds,
   listSongRequests,
   listRpsRounds,
   listRouletteItems,
@@ -39,6 +41,8 @@ type HomeProps = {
     automation?: string;
     game?: string;
     rps?: string;
+    raffle?: string;
+    quiz?: string;
     roulette?: string;
     rouletteEdit?: string;
     preview?: string;
@@ -86,6 +90,20 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
 function formatDateTime(value: string | number) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : dateTimeFormatter.format(date);
+}
+
+function formatElapsedTime(value: number | null) {
+  if (value === null) return "기록 없음";
+  if (value < 1000) return `${value}ms`;
+  const seconds = value / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}초`;
+}
+
+function getFirstCorrectAt(submissions: Array<{ correct: boolean; correctAt: number | null }>) {
+  const correctTimes = submissions.flatMap((submission) => (
+    submission.correct && submission.correctAt !== null ? [submission.correctAt] : []
+  ));
+  return correctTimes.length > 0 ? Math.min(...correctTimes) : null;
 }
 
 const botStateLabels: Record<BotConnectionState, string> = {
@@ -212,7 +230,13 @@ export default async function Home({ searchParams }: HomeProps) {
   const isGameTab = params.tab === "game";
   const isBackupTab = params.tab === "backup";
   const isDashboardTab = !isBotTab && !isGameTab && !isBackupTab;
-  const gameTab = params.game === "roulette" ? "roulette" : "rps";
+  const gameTab = params.game === "roulette"
+    ? "roulette"
+    : params.game === "quiz"
+      ? "quiz"
+    : params.game === "raffle"
+      ? "raffle"
+      : "rps";
   const automationTab = automationTabs.some(([key]) => key === params.automation)
     ? params.automation
     : "welcome";
@@ -294,6 +318,35 @@ export default async function Home({ searchParams }: HomeProps) {
     : [];
   const rpsRound = rpsRounds.find((round) => round.active) ?? rpsRounds[0] ?? null;
   const rpsHistory = rpsRounds.filter((round) => !round.active);
+  const raffleRounds = isGameTab && gameTab === "raffle" && connected && sessionId && !previewConnected
+    ? listRaffleRounds(sessionId)
+    : [];
+  const raffleRound = raffleRounds.find((round) => round.active) ?? raffleRounds[0] ?? null;
+  const raffleHistory = raffleRounds.filter((round) => !round.active);
+  const previewQuizStartedAt = PREVIEW_FUTURE_TIMESTAMP - 30_000;
+  const quizRounds = isGameTab && gameTab === "quiz" && connected && sessionId
+    ? previewConnected
+      ? [{
+          roundId: 3,
+          active: false,
+          question: "대한민국의 수도는 어디일까요?",
+          answer: "서울",
+          startedAt: previewQuizStartedAt,
+          endedAt: previewQuizStartedAt + 15_000,
+          winnerUserId: "preview-quiz-1",
+          winnerNickname: "첫번째 청취자",
+          elapsedMs: 3_500,
+          submissions: [
+            { userId: "preview-quiz-1", nickname: "첫번째 청취자", answer: "서울", submittedAt: previewQuizStartedAt + 3_500, correct: true, correctAt: previewQuizStartedAt + 3_500 },
+            { userId: "preview-quiz-2", nickname: "나구 친구", answer: "서울", submittedAt: previewQuizStartedAt + 3_501, correct: true, correctAt: previewQuizStartedAt + 3_500 },
+            { userId: "preview-quiz-3", nickname: "오늘의 게스트", answer: "서울", submittedAt: previewQuizStartedAt + 8_200, correct: true, correctAt: previewQuizStartedAt + 8_200 },
+            { userId: "preview-quiz-4", nickname: "퀴즈 도전자", answer: "부산", submittedAt: previewQuizStartedAt + 10_100, correct: false, correctAt: null },
+          ],
+        }]
+      : listQuizRounds(sessionId)
+    : [];
+  const quizRound = quizRounds.find((round) => round.active) ?? quizRounds[0] ?? null;
+  const quizHistory = quizRounds.filter((round) => !round.active);
   const isRoulettePage = isGameTab && gameTab === "roulette" && connected && sessionId;
   const rouletteSettings = isRoulettePage
     ? previewConnected
@@ -667,6 +720,8 @@ export default async function Home({ searchParams }: HomeProps) {
 
               <nav className="game-tabs" aria-label="게임 선택">
                 <Link scroll={false} className={gameTab === "rps" ? "is-active" : ""} href="/?tab=game&game=rps">가위바위보</Link>
+                <Link scroll={false} className={gameTab === "raffle" ? "is-active" : ""} href="/?tab=game&game=raffle">추첨</Link>
+                <Link scroll={false} className={gameTab === "quiz" ? "is-active" : ""} href="/?tab=game&game=quiz">퀴즈</Link>
                 <Link scroll={false} className={gameTab === "roulette" ? "is-active" : ""} href="/?tab=game&game=roulette">룰렛</Link>
               </nav>
 
@@ -754,6 +809,201 @@ export default async function Home({ searchParams }: HomeProps) {
                   )}
 
                   <p className="game-command"><code>!가위바위보 가위</code> <code>!가위바위보 바위</code> <code>!가위바위보 보</code></p>
+                </section>
+              )}
+
+              {gameTab === "raffle" && (
+                <section className="game-panel" aria-labelledby="raffle-title">
+                  {raffleRound?.active && <AutoRefresh intervalMs={2000} />}
+                  <div className="game-panel-heading">
+                    <div>
+                      <h3 id="raffle-title">추첨</h3>
+                      <p>당첨 인원을 상한 없이 정해 시작하면 청취자가 방송 채팅에서 <code>!참여</code>로 한 번 참여할 수 있습니다.</p>
+                    </div>
+                    <span className={`game-state ${raffleRound?.active ? "is-active" : ""}`}>
+                      {raffleRound?.active ? "진행 중" : "대기"}
+                    </span>
+                  </div>
+
+                  {params.raffle === "started" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>추첨을 시작했습니다.</strong></div>}
+                  {params.raffle === "finished" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>당첨자를 확정하고 방송 채팅에 공개했습니다.</strong></div>}
+                  {params.raffle === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 추첨을 먼저 종료해 주세요.</strong></div>}
+                  {params.raffle === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 추첨이 없습니다.</strong></div>}
+                  {params.raffle === "invalid_winner_count" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>당첨 인원은 1명 이상의 정수로 입력해 주세요.</strong></div>}
+                  {params.raffle === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 참여시킨 뒤 시작해 주세요.</strong></div>}
+                  {params.raffle === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
+
+                  {raffleRound?.active ? (
+                    <div className="rps-active-round">
+                      <div className="rps-round-number">
+                        <span>라운드</span>
+                        <strong>#{raffleRound.roundId} · 최대 {raffleRound.winnerCount}명 당첨</strong>
+                      </div>
+                      <div className="rps-live-count" role="status" aria-live="polite" aria-atomic="true">
+                        <span>실시간 참여자</span>
+                        <strong>{raffleRound.entries.length.toLocaleString("ko-KR")}<small>명</small></strong>
+                      </div>
+                      <form action="/game/raffle" method="post">
+                        <input type="hidden" name="action" value="finish" />
+                        <button className="rps-finish" type="submit">추첨 종료 및 당첨자 공개</button>
+                      </form>
+                    </div>
+                  ) : (
+                    <form className="rps-start-form raffle-start-form" action="/game/raffle" method="post">
+                      <input type="hidden" name="action" value="start" />
+                      <fieldset disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}>
+                        <legend>당첨 인원</legend>
+                        <label className="raffle-winner-count">
+                          <input type="number" name="winnerCount" min={1} step={1} defaultValue={1} required />
+                          <span>명</span>
+                        </label>
+                        <button type="submit">추첨 시작</button>
+                      </fieldset>
+                    </form>
+                  )}
+
+                  {raffleHistory.length > 0 && (
+                    <section className="rps-history" aria-labelledby="raffle-history-title">
+                      <div className="rps-history-heading">
+                        <h4 id="raffle-history-title">추첨 기록</h4>
+                        <span>최근 {raffleHistory.length}개</span>
+                      </div>
+                      {raffleHistory.map((round, index) => {
+                        const winnerTotal = round.entries.filter((entry) => entry.winner).length;
+                        return (
+                          <details className="rps-history-round" key={round.roundId} open={index === 0}>
+                            <summary>
+                              <span><strong>라운드 #{round.roundId}</strong><small>{formatDateTime(round.endedAt ?? round.startedAt)}</small></span>
+                              <span>당첨 {winnerTotal}명</span>
+                              <span>참여 {round.entries.length}명 · 설정 {round.winnerCount}명</span>
+                            </summary>
+                            {round.entries.length > 0 ? (
+                              <ol>
+                                {round.entries.map((entry) => (
+                                  <li key={entry.userId}>
+                                    <strong>{entry.nickname}</strong>
+                                    <span>참여</span>
+                                    <em className={entry.winner ? "is-win" : ""}>{entry.winner ? "당첨" : "미당첨"}</em>
+                                  </li>
+                                ))}
+                              </ol>
+                            ) : <p>참가자가 없는 라운드입니다.</p>}
+                          </details>
+                        );
+                      })}
+                    </section>
+                  )}
+
+                  <p className="game-command"><code>!참여</code></p>
+                </section>
+              )}
+
+              {gameTab === "quiz" && (
+                <section className="game-panel" aria-labelledby="quiz-title">
+                  {quizRound?.active && <AutoRefresh intervalMs={2000} />}
+                  <div className="game-panel-heading">
+                    <div>
+                      <h3 id="quiz-title">퀴즈</h3>
+                      <p>문제와 정답을 등록하면 <code>!정답 정답내용</code>으로 제출된 최초 정답을 자동 판정합니다.</p>
+                    </div>
+                    <span className={`game-state ${quizRound?.active ? "is-active" : ""}`}>
+                      {quizRound?.active ? "진행 중" : "대기"}
+                    </span>
+                  </div>
+
+                  {params.quiz === "started" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>퀴즈 문제를 방송 채팅에 공개했습니다.</strong></div>}
+                  {params.quiz === "finished" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>퀴즈를 종료하고 정답을 공개했습니다.</strong></div>}
+                  {params.quiz === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 퀴즈를 먼저 종료해 주세요.</strong></div>}
+                  {params.quiz === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 퀴즈가 없습니다.</strong></div>}
+                  {params.quiz === "invalid_quiz" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>문제는 180자 이하, 정답은 100자 이하로 입력해 주세요.</strong></div>}
+                  {params.quiz === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 참여시킨 뒤 시작해 주세요.</strong></div>}
+                  {params.quiz === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
+
+                  {quizRound?.active ? (
+                    <>
+                      <div className="rps-active-round">
+                        <div className="rps-round-number">
+                          <span>문제 #{quizRound.roundId}</span>
+                          <strong>{quizRound.question}</strong>
+                          <small>정답: {quizRound.answer}</small>
+                        </div>
+                        <div className="rps-live-count" role="status" aria-live="polite" aria-atomic="true">
+                          <span>현재 제출자</span>
+                          <strong>{quizRound.submissions.length.toLocaleString("ko-KR")}<small>명</small></strong>
+                        </div>
+                        <form action="/game/quiz" method="post">
+                          <input type="hidden" name="action" value="finish" />
+                          <button className="rps-finish" type="submit">퀴즈 종료 및 정답 공개</button>
+                        </form>
+                      </div>
+                      {quizRound.submissions.length > 0 && (
+                        <section className="rps-history quiz-live-submissions" aria-labelledby="quiz-submissions-title">
+                          <div className="rps-history-heading">
+                            <h4 id="quiz-submissions-title">최신 제출 순서</h4>
+                            <span>다시 제출하면 순서가 뒤로 이동합니다.</span>
+                          </div>
+                          <ol>
+                            {quizRound.submissions.map((submission) => (
+                              <li key={submission.userId}>
+                                <strong>{submission.nickname}</strong>
+                                <span>{submission.answer}</span>
+                                <time dateTime={new Date(submission.submittedAt).toISOString()}>{formatDateTime(submission.submittedAt)}</time>
+                              </li>
+                            ))}
+                          </ol>
+                        </section>
+                      )}
+                    </>
+                  ) : (
+                    <form className="rps-start-form quiz-start-form" action="/game/quiz" method="post">
+                      <input type="hidden" name="action" value="start" />
+                      <fieldset disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}>
+                        <legend>새 문제 등록</legend>
+                        <div className="quiz-start-fields">
+                          <label>문제<input name="question" maxLength={180} placeholder="대한민국의 수도는?" required /></label>
+                          <label>정답<input name="answer" maxLength={100} placeholder="서울" required /></label>
+                        </div>
+                        <button type="submit">퀴즈 시작</button>
+                      </fieldset>
+                    </form>
+                  )}
+
+                  {quizHistory.length > 0 && (
+                    <section className="rps-history" aria-labelledby="quiz-history-title">
+                      <div className="rps-history-heading">
+                        <h4 id="quiz-history-title">퀴즈 기록</h4>
+                        <span>최근 {quizHistory.length}개</span>
+                      </div>
+                      {quizHistory.map((round, index) => (
+                        <details className="rps-history-round quiz-history-round" key={round.roundId} open={index === 0}>
+                          <summary>
+                            <span className="quiz-history-question"><small>문제 #{round.roundId}</small><strong>{round.question}</strong></span>
+                            <span className="quiz-history-result">최초 정답 - {getFirstCorrectAt(round.submissions) === null
+                              ? "없음"
+                              : round.submissions.filter((submission) => submission.correctAt === getFirstCorrectAt(round.submissions)).map((submission) => submission.nickname).join(", ")} (정답자 {round.submissions.filter((submission) => submission.correct).length}명)</span>
+                          </summary>
+                          <p className="quiz-history-answer">정답: <strong>{round.answer}</strong></p>
+                          {round.submissions.length > 0 ? (
+                            <ol>
+                              {round.submissions.map((submission) => (
+                                <li key={submission.userId}>
+                                  <strong>{submission.nickname}</strong>
+                                  <span>{submission.answer}</span>
+                                  <em className={submission.correct ? "is-win" : ""}>
+                                    {submission.correct
+                                      ? `${submission.correctAt === getFirstCorrectAt(round.submissions) ? "최초 정답" : "정답"} · ${formatElapsedTime(Math.max(0, (submission.correctAt ?? round.startedAt) - round.startedAt))}`
+                                      : "오답"}
+                                  </em>
+                                </li>
+                              ))}
+                            </ol>
+                          ) : <p>제출된 답안이 없습니다. 정답은 {round.answer}입니다.</p>}
+                        </details>
+                      ))}
+                    </section>
+                  )}
+
+                  <p className="game-command"><code>!정답 정답내용</code></p>
                 </section>
               )}
 
@@ -1040,6 +1290,8 @@ export default async function Home({ searchParams }: HomeProps) {
                       <li><div><strong>!오늘의 스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
                       <li><div><strong>!내정보</strong><span>오늘의 스푼 순위 조회 · 스푼 수 비공개</span></div></li>
                       <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
+                      <li><div><strong>!참여</strong><span>진행 중인 추첨에 계정당 한 번 참여 · 모두 사용 가능</span></div></li>
+                      <li><div><strong>!정답 정답내용</strong><span>진행 중인 퀴즈에 답안 제출 · 다른 답안으로 다시 제출 가능</span></div></li>
                       <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!내 킵</strong><span>내 룰렛 당첨 항목과 수량 조회</span></div></li>
@@ -1201,7 +1453,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <ul>
                       <li>DJ 표시 이름과 자동화 문구·사용 여부·반복 간격</li>
                       <li>사용자 명령어, 카운터, 신청곡 목록</li>
-                      <li>가위바위보 라운드·참여 기록</li>
+                      <li>가위바위보·추첨·퀴즈 라운드와 참여 기록</li>
                       <li>룰렛 설정·상품·당첨·킵 기록</li>
                     </ul>
                   </section>

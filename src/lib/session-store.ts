@@ -23,6 +23,7 @@ import {
   type RpsChoice,
   type RpsResult,
 } from "./rock-paper-scissors";
+import { selectRaffleWinners } from "./raffle";
 
 type SessionRow = {
   id_hash: string;
@@ -96,6 +97,43 @@ export type RpsRound = {
   startedAt: number;
   endedAt: number | null;
   entries: RpsEntry[];
+};
+
+export type RaffleEntry = {
+  userId: string;
+  nickname: string;
+  winner: boolean;
+};
+
+export type RaffleRound = {
+  roundId: number;
+  active: boolean;
+  winnerCount: number;
+  startedAt: number;
+  endedAt: number | null;
+  entries: RaffleEntry[];
+};
+
+export type QuizSubmission = {
+  userId: string;
+  nickname: string;
+  answer: string;
+  submittedAt: number;
+  correct: boolean;
+  correctAt: number | null;
+};
+
+export type QuizRound = {
+  roundId: number;
+  active: boolean;
+  question: string;
+  answer: string;
+  startedAt: number;
+  endedAt: number | null;
+  winnerUserId: string | null;
+  winnerNickname: string | null;
+  elapsedMs: number | null;
+  submissions: QuizSubmission[];
 };
 
 export type RouletteSettings = {
@@ -179,6 +217,10 @@ const CORE_BACKUP_TABLES = [
   { name: "song_requests", key: "session_key", columns: ["requester_nickname", "title", "artist", "created_at"] },
   { name: "rps_rounds", key: "workspace_key", columns: ["round_id", "dj_choice", "active", "started_at", "ended_at"] },
   { name: "rps_entries", key: "workspace_key", columns: ["round_id", "user_id", "nickname", "choice", "result", "created_at"] },
+  { name: "raffle_rounds", key: "workspace_key", columns: ["round_id", "winner_count", "active", "started_at", "ended_at"] },
+  { name: "raffle_entries", key: "workspace_key", columns: ["round_id", "user_id", "nickname", "winner", "created_at"] },
+  { name: "quiz_rounds", key: "workspace_key", columns: ["round_id", "question", "answer", "answer_normalized", "active", "started_at", "ended_at", "winner_user_id", "winner_nickname", "elapsed_ms"] },
+  { name: "quiz_submissions", key: "workspace_key", columns: ["round_id", "user_id", "nickname", "answer", "answer_normalized", "submitted_at", "correct", "correct_at"] },
   { name: "roulette_settings", key: "workspace_key", columns: ["enabled", "cost", "miss_weight"] },
   { name: "roulette_items", key: "workspace_key", columns: ["label", "weight", "created_at"] },
   { name: "roulette_results", key: "workspace_key", columns: ["live_id", "event_id", "user_id", "nickname", "item_label", "is_miss", "spoons", "created_at"] },
@@ -331,6 +373,50 @@ function migrateDatabase(database: DatabaseSync) {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (workspace_key, round_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS raffle_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      winner_count INTEGER NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS raffle_entries (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      winner INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, round_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS quiz_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      answer_normalized TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      winner_user_id TEXT,
+      winner_nickname TEXT,
+      elapsed_ms INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS quiz_submissions (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      answer_normalized TEXT NOT NULL,
+      submitted_at INTEGER NOT NULL,
+      correct INTEGER NOT NULL DEFAULT 0,
+      correct_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id, user_id)
+    );
     CREATE TABLE IF NOT EXISTS roulette_settings (
       workspace_key TEXT PRIMARY KEY,
       enabled INTEGER NOT NULL DEFAULT 0,
@@ -412,6 +498,23 @@ function migrateDatabase(database: DatabaseSync) {
     CREATE UNIQUE INDEX IF NOT EXISTS rps_rounds_active_idx
     ON rps_rounds (workspace_key) WHERE active = 1
   `);
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS raffle_rounds_active_idx
+    ON raffle_rounds (workspace_key) WHERE active = 1
+  `);
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS quiz_rounds_active_idx
+    ON quiz_rounds (workspace_key) WHERE active = 1
+  `);
+  const quizSubmissionColumns = database.prepare("PRAGMA table_info(quiz_submissions)").all() as Array<{
+    name: string;
+  }>;
+  if (!quizSubmissionColumns.some((column) => column.name === "correct")) {
+    database.exec("ALTER TABLE quiz_submissions ADD COLUMN correct INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!quizSubmissionColumns.some((column) => column.name === "correct_at")) {
+    database.exec("ALTER TABLE quiz_submissions ADD COLUMN correct_at INTEGER");
+  }
 
   const settingsColumns = database.prepare("PRAGMA table_info(bot_settings)").all() as Array<{
     name: string;
@@ -759,6 +862,102 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
     `).run(targetKey, nextRoundId, sourceKey, sourceRpsRound.round_id);
   }
 
+  const sourceRaffleRounds = database.prepare(`
+    SELECT round_id, winner_count, active, started_at, ended_at
+    FROM raffle_rounds WHERE workspace_key = ? ORDER BY round_id
+  `).all(sourceKey) as Array<{
+    round_id: number;
+    winner_count: number;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+  }>;
+  const targetRaffleState = database.prepare(`
+    SELECT COALESCE(MAX(round_id), 0) AS max_round_id, MAX(active) AS has_active
+    FROM raffle_rounds WHERE workspace_key = ?
+  `).get(targetKey) as { max_round_id: number; has_active: number | null };
+  let nextRaffleRoundId = targetRaffleState.max_round_id;
+  let targetHasActiveRaffle = targetRaffleState.has_active === 1;
+  for (const sourceRound of sourceRaffleRounds) {
+    nextRaffleRoundId += 1;
+    const active = sourceRound.active === 1 && !targetHasActiveRaffle ? 1 : 0;
+    if (active === 1) targetHasActiveRaffle = true;
+    database.prepare(`
+      INSERT INTO raffle_rounds (
+        workspace_key, round_id, winner_count, active, started_at, ended_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      targetKey,
+      nextRaffleRoundId,
+      sourceRound.winner_count,
+      active,
+      sourceRound.started_at,
+      active === 1 ? null : (sourceRound.ended_at ?? Date.now()),
+    );
+    database.prepare(`
+      INSERT OR IGNORE INTO raffle_entries (
+        workspace_key, round_id, user_id, nickname, winner, created_at
+      )
+      SELECT ?, ?, user_id, nickname, winner, created_at
+      FROM raffle_entries WHERE workspace_key = ? AND round_id = ?
+    `).run(targetKey, nextRaffleRoundId, sourceKey, sourceRound.round_id);
+  }
+
+  const sourceQuizRounds = database.prepare(`
+    SELECT round_id, question, answer, answer_normalized, active, started_at, ended_at,
+           winner_user_id, winner_nickname, elapsed_ms
+    FROM quiz_rounds WHERE workspace_key = ? ORDER BY round_id
+  `).all(sourceKey) as Array<{
+    round_id: number;
+    question: string;
+    answer: string;
+    answer_normalized: string;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+    winner_user_id: string | null;
+    winner_nickname: string | null;
+    elapsed_ms: number | null;
+  }>;
+  const targetQuizState = database.prepare(`
+    SELECT COALESCE(MAX(round_id), 0) AS max_round_id, MAX(active) AS has_active
+    FROM quiz_rounds WHERE workspace_key = ?
+  `).get(targetKey) as { max_round_id: number; has_active: number | null };
+  let nextQuizRoundId = targetQuizState.max_round_id;
+  let targetHasActiveQuiz = targetQuizState.has_active === 1;
+  for (const sourceRound of sourceQuizRounds) {
+    nextQuizRoundId += 1;
+    const active = sourceRound.active === 1 && !targetHasActiveQuiz ? 1 : 0;
+    if (active === 1) targetHasActiveQuiz = true;
+    database.prepare(`
+      INSERT INTO quiz_rounds (
+        workspace_key, round_id, question, answer, answer_normalized, active,
+        started_at, ended_at, winner_user_id, winner_nickname, elapsed_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      targetKey,
+      nextQuizRoundId,
+      sourceRound.question,
+      sourceRound.answer,
+      sourceRound.answer_normalized,
+      active,
+      sourceRound.started_at,
+      active === 1 ? null : (sourceRound.ended_at ?? Date.now()),
+      sourceRound.winner_user_id,
+      sourceRound.winner_nickname,
+      sourceRound.elapsed_ms,
+    );
+    database.prepare(`
+      INSERT OR IGNORE INTO quiz_submissions (
+        workspace_key, round_id, user_id, nickname, answer, answer_normalized,
+        submitted_at, correct, correct_at
+      )
+      SELECT ?, ?, user_id, nickname, answer, answer_normalized,
+             submitted_at, correct, correct_at
+      FROM quiz_submissions WHERE workspace_key = ? AND round_id = ?
+    `).run(targetKey, nextQuizRoundId, sourceKey, sourceRound.round_id);
+  }
+
   database.prepare(`
     INSERT OR IGNORE INTO roulette_settings (workspace_key, enabled, cost, miss_weight)
     SELECT ?, enabled, cost, miss_weight FROM roulette_settings WHERE workspace_key = ?
@@ -846,6 +1045,10 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM audience_profiles WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_entries WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_rounds WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM raffle_entries WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM raffle_rounds WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM quiz_submissions WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM quiz_rounds WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM roulette_keeps WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM roulette_results WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM roulette_items WHERE workspace_key = ?").run(sourceKey);
@@ -1316,6 +1519,8 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
     "!신청곡 곡명-가수",
     "!신청곡 목록",
     "!가위바위보 가위|바위|보",
+    "!참여",
+    "!정답 정답내용",
     "!내 킵",
   ].filter((label, index, items) => items.indexOf(label) === index);
   const djLabels = [
@@ -2000,6 +2205,416 @@ export function applyRpsCommand(
   return inserted.changes > 0
     ? `${nickname?.trim() || "청취자"}님, 가위바위보 참여 완료! 결과는 라운드 종료 후 공개됩니다.`
     : "이미 참여하셨습니다.";
+}
+
+export function getRaffleRoundByKey(sessionKey: string): RaffleRound | null {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const row = getDatabase().prepare(`
+    SELECT round_id, winner_count, active, started_at, ended_at
+    FROM raffle_rounds WHERE workspace_key = ?
+    ORDER BY active DESC, round_id DESC LIMIT 1
+  `).get(workspaceKey) as {
+    round_id: number;
+    winner_count: number;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+  } | undefined;
+  if (!row) return null;
+  const entries = getDatabase().prepare(`
+    SELECT user_id, nickname, winner
+    FROM raffle_entries WHERE workspace_key = ? AND round_id = ?
+    ORDER BY created_at, user_id
+  `).all(workspaceKey, row.round_id).map((entry) => {
+    const value = entry as { user_id: string; nickname: string; winner: number };
+    return { userId: value.user_id, nickname: value.nickname, winner: value.winner === 1 };
+  });
+  return {
+    roundId: row.round_id,
+    active: row.active === 1,
+    winnerCount: row.winner_count,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    entries,
+  };
+}
+
+export function listRaffleRounds(sessionId: string, limit = 10) {
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const rows = getDatabase().prepare(`
+    SELECT round_id, winner_count, active, started_at, ended_at
+    FROM raffle_rounds WHERE workspace_key = ?
+    ORDER BY round_id DESC LIMIT ?
+  `).all(workspaceKey, Math.max(1, Math.min(limit, 50))) as Array<{
+    round_id: number;
+    winner_count: number;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+  }>;
+  const entriesStatement = getDatabase().prepare(`
+    SELECT user_id, nickname, winner FROM raffle_entries
+    WHERE workspace_key = ? AND round_id = ? ORDER BY created_at, user_id
+  `);
+  return rows.map((row) => ({
+    roundId: row.round_id,
+    active: row.active === 1,
+    winnerCount: row.winner_count,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    entries: entriesStatement.all(workspaceKey, row.round_id).map((entry) => {
+      const value = entry as { user_id: string; nickname: string; winner: number };
+      return { userId: value.user_id, nickname: value.nickname, winner: value.winner === 1 };
+    }),
+  } satisfies RaffleRound));
+}
+
+export function startRaffleRound(sessionId: string, winnerCount: number) {
+  if (!Number.isSafeInteger(winnerCount) || winnerCount < 1) return false;
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const current = getRaffleRoundByKey(sessionKey);
+  if (current?.active) return false;
+  getDatabase().prepare(`
+    INSERT INTO raffle_rounds (
+      workspace_key, round_id, winner_count, active, started_at, ended_at
+    ) VALUES (?, ?, ?, 1, ?, NULL)
+  `).run(workspaceKey, (current?.roundId ?? 0) + 1, winnerCount, Date.now());
+  return true;
+}
+
+export function applyRaffleCommand(
+  sessionKey: string,
+  message: string,
+  isDj: boolean,
+  userId: string,
+  nickname: string | null,
+) {
+  if (message.trim() !== "!참여") return null;
+  if (isDj) return "DJ는 추첨에 참여할 수 없습니다.";
+  const round = getRaffleRoundByKey(sessionKey);
+  if (!round?.active) return "현재 진행 중인 추첨이 없습니다.";
+  const displayName = nickname?.trim().slice(0, 50) || "청취자";
+  const inserted = getDatabase().prepare(`
+    INSERT OR IGNORE INTO raffle_entries (
+      workspace_key, round_id, user_id, nickname, winner, created_at
+    ) VALUES (?, ?, ?, ?, 0, ?)
+  `).run(getWorkspaceKey(sessionKey), round.roundId, userId, displayName, Date.now());
+  return inserted.changes > 0
+    ? `${displayName}님, 추첨 참여 완료!`
+    : "이미 참여했습니다.";
+}
+
+export function finishRaffleRound(
+  sessionId: string,
+  pickIndex?: (maximum: number) => number,
+) {
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const current = getRaffleRoundByKey(sessionKey);
+  if (!current?.active) return null;
+  const winners = selectRaffleWinners(current.entries, current.winnerCount, pickIndex);
+  const database = getDatabase();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const markWinner = database.prepare(`
+      UPDATE raffle_entries SET winner = 1
+      WHERE workspace_key = ? AND round_id = ? AND user_id = ?
+    `);
+    for (const winner of winners) markWinner.run(workspaceKey, current.roundId, winner.userId);
+    database.prepare(`
+      UPDATE raffle_rounds SET active = 0, ended_at = ?
+      WHERE workspace_key = ? AND round_id = ? AND active = 1
+    `).run(Date.now(), workspaceKey, current.roundId);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+  return getRaffleRoundByKey(sessionKey);
+}
+
+function normalizeQuizAnswer(answer: string) {
+  return answer.trim().replace(/\s+/gu, " ").toLocaleLowerCase("ko-KR");
+}
+
+function mapQuizRound(sessionKey: string, row: {
+  round_id: number;
+  question: string;
+  answer: string;
+  active: number;
+  started_at: number;
+  ended_at: number | null;
+  winner_user_id: string | null;
+  winner_nickname: string | null;
+  elapsed_ms: number | null;
+}): QuizRound {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const submissions = getDatabase().prepare(`
+    SELECT user_id, nickname, answer, submitted_at, correct, correct_at
+    FROM quiz_submissions
+    WHERE workspace_key = ? AND round_id = ?
+    ORDER BY submitted_at, user_id
+  `).all(workspaceKey, row.round_id).map((submission) => {
+    const value = submission as {
+      user_id: string;
+      nickname: string;
+      answer: string;
+      submitted_at: number;
+      correct: number;
+      correct_at: number | null;
+    };
+    return {
+      userId: value.user_id,
+      nickname: value.nickname,
+      answer: value.answer,
+      submittedAt: value.submitted_at,
+      correct: value.correct === 1,
+      correctAt: value.correct_at,
+    };
+  });
+  return {
+    roundId: row.round_id,
+    active: row.active === 1,
+    question: row.question,
+    answer: row.answer,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    winnerUserId: row.winner_user_id,
+    winnerNickname: row.winner_nickname,
+    elapsedMs: row.elapsed_ms,
+    submissions,
+  };
+}
+
+export function getQuizRoundByKey(sessionKey: string): QuizRound | null {
+  const row = getDatabase().prepare(`
+    SELECT round_id, question, answer, active, started_at, ended_at,
+           winner_user_id, winner_nickname, elapsed_ms
+    FROM quiz_rounds WHERE workspace_key = ?
+    ORDER BY active DESC, round_id DESC LIMIT 1
+  `).get(getWorkspaceKey(sessionKey)) as {
+    round_id: number;
+    question: string;
+    answer: string;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+    winner_user_id: string | null;
+    winner_nickname: string | null;
+    elapsed_ms: number | null;
+  } | undefined;
+  return row ? mapQuizRound(sessionKey, row) : null;
+}
+
+export function listQuizRounds(sessionId: string, limit = 10) {
+  const sessionKey = getSessionKey(sessionId);
+  const rows = getDatabase().prepare(`
+    SELECT round_id, question, answer, active, started_at, ended_at,
+           winner_user_id, winner_nickname, elapsed_ms
+    FROM quiz_rounds WHERE workspace_key = ?
+    ORDER BY round_id DESC LIMIT ?
+  `).all(
+    getWorkspaceKey(sessionKey),
+    Math.max(1, Math.min(limit, 50)),
+  ) as Array<{
+    round_id: number;
+    question: string;
+    answer: string;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+    winner_user_id: string | null;
+    winner_nickname: string | null;
+    elapsed_ms: number | null;
+  }>;
+  return rows.map((row) => mapQuizRound(sessionKey, row));
+}
+
+export function startQuizRound(
+  sessionId: string,
+  question: string,
+  answer: string,
+  startedAt = Date.now(),
+) {
+  const normalizedQuestion = question.trim();
+  const normalizedAnswer = normalizeQuizAnswer(answer);
+  if (
+    !normalizedQuestion
+    || normalizedQuestion.length > 180
+    || !normalizedAnswer
+    || answer.trim().length > 100
+  ) return false;
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const current = getQuizRoundByKey(sessionKey);
+  if (current?.active) return false;
+  getDatabase().prepare(`
+    INSERT INTO quiz_rounds (
+      workspace_key, round_id, question, answer, answer_normalized,
+      active, started_at, ended_at, winner_user_id, winner_nickname, elapsed_ms
+    ) VALUES (?, ?, ?, ?, ?, 1, ?, NULL, NULL, NULL, NULL)
+  `).run(
+    workspaceKey,
+    (current?.roundId ?? 0) + 1,
+    normalizedQuestion,
+    answer.trim(),
+    normalizedAnswer,
+    startedAt,
+  );
+  return true;
+}
+
+export function finishQuizRound(sessionId: string, endedAt = Date.now()) {
+  const sessionKey = getSessionKey(sessionId);
+  const result = getDatabase().prepare(`
+    UPDATE quiz_rounds SET active = 0, ended_at = ?
+    WHERE workspace_key = ? AND active = 1
+  `).run(endedAt, getWorkspaceKey(sessionKey));
+  return result.changes > 0 ? getQuizRoundByKey(sessionKey) : null;
+}
+
+function formatQuizElapsedTime(elapsedMs: number) {
+  if (elapsedMs < 1000) return `${Math.max(0, elapsedMs)}ms`;
+  const seconds = elapsedMs / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}초`;
+}
+
+export function formatQuizResultMessages(round: QuizRound) {
+  const replies = [`퀴즈 종료! 정답: ${round.answer}`];
+  const appendLabels = (heading: string, continuation: string, labels: string[]) => {
+    let replyIndex = -1;
+    for (const label of labels) {
+      const current = replyIndex >= 0 ? replies[replyIndex] : undefined;
+      if (!current || `${current}, ${label}`.length > 200) {
+        replies.push(`${replyIndex < 0 ? heading : continuation}: ${label}`);
+        replyIndex = replies.length - 1;
+      } else {
+        replies[replyIndex] = `${current}, ${label}`;
+      }
+    }
+  };
+  const correctSubmissions = round.submissions
+    .filter((submission) => submission.correct)
+    .sort((left, right) => (left.correctAt ?? 0) - (right.correctAt ?? 0));
+  if (correctSubmissions.length === 0) {
+    replies.push("최초 정답자가 없습니다.");
+    replies.push("정답자가 없습니다.");
+    return replies;
+  }
+  const firstCorrectAt = correctSubmissions[0].correctAt ?? round.startedAt;
+  const firstCorrectLabels = correctSubmissions
+    .filter((submission) => submission.correctAt === firstCorrectAt)
+    .map((submission) => (
+      `${submission.nickname.slice(0, 50)} (${formatQuizElapsedTime(Math.max(0, firstCorrectAt - round.startedAt))})`
+    ));
+  appendLabels("최초 정답", "최초 정답 계속", firstCorrectLabels);
+  const correctLabels = correctSubmissions.map((submission) => {
+    const elapsed = Math.max(0, (submission.correctAt ?? round.startedAt) - round.startedAt);
+    return `${submission.nickname.slice(0, 50)} (${formatQuizElapsedTime(elapsed)})`;
+  });
+  appendLabels("정답자", "정답자 계속", correctLabels);
+  return replies;
+}
+
+export function applyQuizCommand(
+  sessionKey: string,
+  message: string,
+  isDj: boolean,
+  userId: string,
+  nickname: string | null,
+  submittedAt = Date.now(),
+) {
+  const matched = /^!정답(?:\s+(.+))?$/u.exec(message.trim());
+  if (!matched) return null;
+  const submittedAnswer = matched[1]?.trim() ?? "";
+  if (!submittedAnswer) return "사용법: !정답 정답내용";
+  if (submittedAnswer.length > 100) return "정답은 100자 이하로 입력해 주세요.";
+  if (isDj) return "DJ는 퀴즈 정답을 제출할 수 없습니다.";
+
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const round = database.prepare(`
+      SELECT round_id, answer_normalized, started_at
+      FROM quiz_rounds WHERE workspace_key = ? AND active = 1
+    `).get(workspaceKey) as {
+      round_id: number;
+      answer_normalized: string;
+      started_at: number;
+    } | undefined;
+    if (!round) {
+      database.exec("ROLLBACK");
+      return "현재 진행 중인 퀴즈가 없습니다.";
+    }
+
+    const answerNormalized = normalizeQuizAnswer(submittedAnswer);
+    const previous = database.prepare(`
+      SELECT answer_normalized, submitted_at FROM quiz_submissions
+      WHERE workspace_key = ? AND round_id = ? AND user_id = ?
+    `).get(workspaceKey, round.round_id, userId) as {
+      answer_normalized: string;
+      submitted_at: number;
+    } | undefined;
+    if (previous?.answer_normalized === answerNormalized) {
+      database.exec("ROLLBACK");
+      return "이미 동일한 대답을 제출했습니다.";
+    }
+
+    const displayName = nickname?.trim().slice(0, 50) || "청취자";
+    const latest = database.prepare(`
+      SELECT MAX(submitted_at) AS submitted_at FROM quiz_submissions
+      WHERE workspace_key = ? AND round_id = ?
+    `).get(workspaceKey, round.round_id) as { submitted_at: number | null };
+    const orderedSubmittedAt = Math.max(submittedAt, (latest.submitted_at ?? submittedAt - 1) + 1);
+    database.prepare(`
+      INSERT INTO quiz_submissions (
+        workspace_key, round_id, user_id, nickname, answer, answer_normalized,
+        submitted_at, correct, correct_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)
+      ON CONFLICT(workspace_key, round_id, user_id) DO UPDATE SET
+        nickname = excluded.nickname,
+        answer = excluded.answer,
+        answer_normalized = excluded.answer_normalized,
+        submitted_at = excluded.submitted_at
+    `).run(
+      workspaceKey,
+      round.round_id,
+      userId,
+      displayName,
+      submittedAnswer,
+      answerNormalized,
+      orderedSubmittedAt,
+    );
+
+    if (answerNormalized === round.answer_normalized) {
+      const elapsedMs = Math.max(0, submittedAt - round.started_at);
+      database.prepare(`
+        UPDATE quiz_rounds
+        SET winner_user_id = ?, winner_nickname = ?, elapsed_ms = ?
+        WHERE workspace_key = ? AND round_id = ? AND active = 1 AND winner_user_id IS NULL
+      `).run(
+        userId,
+        displayName,
+        elapsedMs,
+        workspaceKey,
+        round.round_id,
+      );
+      database.prepare(`
+        UPDATE quiz_submissions
+        SET correct = 1, correct_at = COALESCE(correct_at, ?)
+        WHERE workspace_key = ? AND round_id = ? AND user_id = ?
+      `).run(submittedAt, workspaceKey, round.round_id, userId);
+    }
+
+    database.exec("COMMIT");
+    return `${displayName}님, 답안을 제출했습니다.`;
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function isSessionBlockedByKey(sessionKey: string) {

@@ -13,6 +13,8 @@ import { sendBotChat } from "./chat";
 import { resolveCommandFallback } from "./chat-message";
 import {
   applyBotCounterCommand,
+  applyQuizCommand,
+  applyRaffleCommand,
   applyRpsCommand,
   applyRouletteDonation,
   applySongRequestCommand,
@@ -341,6 +343,23 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.user.id,
       event.data.user.nickname,
     );
+    const quizReply = applyQuizCommand(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+      event.data.user.id,
+      event.data.user.nickname,
+      Number.isNaN(Date.parse(event.data.sentTime))
+        ? Date.now()
+        : Date.parse(event.data.sentTime),
+    );
+    const raffleReply = applyRaffleCommand(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+      event.data.user.id,
+      event.data.user.nickname,
+    );
     const songRequestReply = applySongRequestCommand(
       sessionKey,
       event.data.message,
@@ -357,7 +376,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.user.nickname,
       findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname),
     );
-    reply = rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
+    reply = quizReply ?? raffleReply ?? rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
   } else {
     reply = processBotAutomation(runtime, event, settings);
   }
