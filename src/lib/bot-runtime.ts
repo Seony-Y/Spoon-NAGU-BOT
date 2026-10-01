@@ -20,10 +20,14 @@ import {
   getAudienceRankingCommandRepliesByKey,
   getAvailableCommandRepliesByKey,
   getBotSettingsByKey,
+  getCurrentLiveIdByKey,
+  getLatestAudienceLiveIdByKey,
+  getLiveAutomationStateByKey,
   getRouletteKeepCommandRepliesByKey,
   getSessionKey,
   isSessionBlockedByKey,
   isBotEnabled,
+  clearRecentBotEventsByKey,
   listRecentBotEventsByKey,
   listEnabledBotSessions,
   recordRecentBotEventByKey,
@@ -31,9 +35,12 @@ import {
   setBotEnabledByKey,
   linkDjWorkspaceByKey,
   recordAudienceEvent,
+  setCurrentLiveIdByKey,
+  syncLiveFanSpoonRanking,
 } from "./session-store";
 import {
   getCurrentLive,
+  getLiveFans,
   getLiveListenersPage,
   getSpoonConfig,
   SpoonApiErrorResponse,
@@ -131,11 +138,14 @@ function setRuntimeState(sessionKey: string, state: BotConnectionState) {
   if (runtime) runtime.state = state;
 }
 
-function clearBroadcastState(runtime: BotRuntime) {
+function clearBroadcastState(sessionKey: string, runtime: BotRuntime) {
   resetBotAutomationState(runtime);
   runtime.lastEventAt = undefined;
+  runtime.events = [];
+  clearRecentBotEventsByKey(sessionKey);
   runtime.favoriteListeners.clear();
   runtime.currentLiveId = undefined;
+  setCurrentLiveIdByKey(sessionKey, undefined);
   runtime.managerEventsConfirmed = false;
   runtime.listenerIds = null;
   if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
@@ -299,6 +309,10 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       }
       return;
     }
+    if (command === "!오늘의 스푼랭킹" || command === "!내정보") {
+      void sendSpoonRankingReplies(sessionKey, runtime, event);
+      return;
+    }
     const rankingReplies = getAudienceRankingCommandRepliesByKey(
       sessionKey,
       runtime.currentLiveId,
@@ -357,6 +371,34 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       void sendBotChat(sessionKey, result.slice(0, 200));
     }
   }
+}
+
+async function sendSpoonRankingReplies(
+  sessionKey: string,
+  runtime: BotRuntime,
+  event: Extract<ParsedSseEvent, { event: "chat" }>,
+) {
+  if (runtime.currentLiveId !== undefined) {
+    try {
+      const session = await getBotAuthSession(sessionKey);
+      if (session?.scope.split(" ").includes("fans.read")) {
+        const { fans } = await getLiveFans(session.access_token);
+        syncLiveFanSpoonRanking(sessionKey, runtime.currentLiveId, fans);
+      }
+    } catch {
+      // Existing persisted rankings remain available when the live fan API is unavailable.
+    }
+  }
+
+  const replies = getAudienceRankingCommandRepliesByKey(
+    sessionKey,
+    runtime.currentLiveId,
+    event.data.message,
+    event.data.user.id,
+    event.data.user.nickname,
+  );
+  if (!replies) return;
+  for (const message of replies) void sendBotChat(sessionKey, message);
 }
 
 export async function consumeEventStream(
@@ -421,7 +463,6 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
     forceRefresh = false;
     if (!session) {
       setRuntimeState(sessionKey, "authentication_required");
-      setBotEnabledByKey(sessionKey, false);
       return;
     }
 
@@ -435,7 +476,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       const live = await getCurrentLive(session.access_token);
       const runtime = runtimes.get(sessionKey);
       if (!live) {
-        if (runtime?.currentLiveId !== undefined) clearBroadcastState(runtime);
+        if (runtime?.currentLiveId !== undefined) clearBroadcastState(sessionKey, runtime);
         retriedUnauthorized = false;
         retryAttempt = 0;
         setRuntimeState(sessionKey, "waiting");
@@ -443,8 +484,9 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         continue;
       }
       if (runtime && runtime.currentLiveId !== live.liveId) {
-        clearBroadcastState(runtime);
+        clearBroadcastState(sessionKey, runtime);
         runtime.currentLiveId = live.liveId;
+        setCurrentLiveIdByKey(sessionKey, live.liveId);
         scheduleRepeatAnnouncements(sessionKey, runtime);
       }
 
@@ -463,7 +505,6 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (response.status === 401) {
         if (retriedUnauthorized) {
           setRuntimeState(sessionKey, "authentication_required");
-          setBotEnabledByKey(sessionKey, false);
           return;
         }
         retriedUnauthorized = true;
@@ -522,7 +563,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
 
       if (reason === "LIVE_ENDED") {
         const endedRuntime = runtimes.get(sessionKey);
-        if (endedRuntime) clearBroadcastState(endedRuntime);
+        if (endedRuntime) clearBroadcastState(sessionKey, endedRuntime);
         setRuntimeState(sessionKey, "waiting");
         await abortableDelay(OFFLINE_RETRY_MS, signal);
         continue;
@@ -532,7 +573,6 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (error instanceof SpoonApiErrorResponse && error.status === 401) {
         if (retriedUnauthorized) {
           setRuntimeState(sessionKey, "authentication_required");
-          setBotEnabledByKey(sessionKey, false);
           return;
         }
         retriedUnauthorized = true;
@@ -562,6 +602,14 @@ function startBotByKey(sessionKey: string) {
 
   const controller = new AbortController();
   const automation = createBotAutomationState();
+  const currentLiveId = existing?.currentLiveId
+    ?? getCurrentLiveIdByKey(sessionKey)
+    ?? getLatestAudienceLiveIdByKey(sessionKey);
+  if (currentLiveId !== undefined) {
+    const restored = getLiveAutomationStateByKey(sessionKey, currentLiveId);
+    automation.activity = restored.activity;
+    automation.greetedUserIds = new Set(restored.greetedUserIds);
+  }
   const restoredEvents = existing?.events ?? listRecentBotEventsByKey(sessionKey) as BotEvent[];
   const runtime: BotRuntime = {
     enabled: true,
@@ -573,7 +621,7 @@ function startBotByKey(sessionKey: string) {
     announcedHeartMilestone: automation.announcedHeartMilestone,
     favoriteRanking: [],
     favoriteListeners: new Map(),
-    currentLiveId: existing?.currentLiveId,
+    currentLiveId,
     managerEventsConfirmed: false,
     listenerIds: null,
     controller,
@@ -610,6 +658,13 @@ export function stopBot(sessionId: string) {
     runtime.enabled = false;
     runtime.state = "stopped";
   }
+}
+
+export function suspendBotForAuthentication(sessionId: string) {
+  const runtime = runtimes.get(getSessionKey(sessionId));
+  runtime?.controller?.abort();
+  if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
+  if (runtime) runtime.state = "authentication_required";
 }
 
 export function getBotSnapshot(sessionId: string): BotSnapshot {

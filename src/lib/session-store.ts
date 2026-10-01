@@ -8,7 +8,7 @@ import {
   formatCounterAdjustment,
   parseCounterCommand,
 } from "./counter-command";
-import type { SpoonToken } from "./spoon";
+import type { SpoonFan, SpoonToken } from "./spoon";
 import {
   decryptToken,
   encryptToken,
@@ -29,7 +29,9 @@ type SessionRow = {
   token_payload: string;
   bot_enabled: number;
   blocked: number;
+  auth_valid: number;
   workspace_key: string | null;
+  current_live_id: number | null;
 };
 
 type BotSettingsRow = {
@@ -142,13 +144,13 @@ export type PersistedBotEvent = {
   data: Exclude<ParsedSseEvent, { event: "end" }>["data"];
   receivedAt: string;
 };
+export type WorkspaceBackupValue = string | number | null;
+
+export type WorkspaceBackupData = {
+  tables: Record<string, Array<Record<string, WorkspaceBackupValue>>>;
+};
 
 export const AUDIENCE_RANKING_COMMANDS = [
-  "!하트랭킹",
-  "!애청온도랭킹",
-  "!스푼랭킹",
-  "!오늘의 하트랭킹",
-  "!오늘의 애청온도랭킹",
   "!오늘의 스푼랭킹",
   "!내정보",
 ] as const;
@@ -170,6 +172,29 @@ export type EnabledBotSession = {
 const globalForDatabase = globalThis as typeof globalThis & {
   naguSessionDatabase?: DatabaseSync;
 };
+const CORE_BACKUP_TABLES = [
+  { name: "bot_settings", key: "session_key", columns: ["dj_nickname", "greeting_message", "donation_message", "heart_message", "hourly_enabled", "hourly_message", "repeat_interval_minutes", "commands_enabled", "welcome_enabled", "donation_enabled", "heart_enabled", "commands_initialized"] },
+  { name: "bot_commands", key: "session_key", columns: ["command", "response"] },
+  { name: "bot_counters", key: "session_key", columns: ["name", "initial_value", "value"] },
+  { name: "song_requests", key: "session_key", columns: ["requester_nickname", "title", "artist", "created_at"] },
+  { name: "rps_rounds", key: "workspace_key", columns: ["round_id", "dj_choice", "active", "started_at", "ended_at"] },
+  { name: "rps_entries", key: "workspace_key", columns: ["round_id", "user_id", "nickname", "choice", "result", "created_at"] },
+  { name: "roulette_settings", key: "workspace_key", columns: ["enabled", "cost", "miss_weight"] },
+  { name: "roulette_items", key: "workspace_key", columns: ["label", "weight", "created_at"] },
+  { name: "roulette_results", key: "workspace_key", columns: ["live_id", "event_id", "user_id", "nickname", "item_label", "is_miss", "spoons", "created_at"] },
+  { name: "roulette_keeps", key: "workspace_key", columns: ["user_id", "nickname", "item_label", "count", "updated_at"] },
+] as const;
+
+const AUDIENCE_BACKUP_TABLES = [
+  { name: "audience_profiles", key: "workspace_key", columns: ["user_id", "nickname", "first_seen_at", "last_seen_at"] },
+  { name: "audience_events", key: "workspace_key", columns: ["event_id", "event_type", "live_id", "user_id", "spoons", "hearts", "favorite_temperature", "occurred_at", "stat_date"] },
+  { name: "audience_spoon_snapshots", key: "workspace_key", columns: ["live_id", "user_id", "spoons", "stat_date", "updated_at"] },
+] as const;
+
+export const WORKSPACE_BACKUP_TABLES = {
+  core: CORE_BACKUP_TABLES,
+  audience: AUDIENCE_BACKUP_TABLES,
+} as const;
 
 function migrateDatabase(database: DatabaseSync) {
   database.exec(`
@@ -178,7 +203,9 @@ function migrateDatabase(database: DatabaseSync) {
       token_payload TEXT NOT NULL,
       bot_enabled INTEGER NOT NULL DEFAULT 0,
       blocked INTEGER NOT NULL DEFAULT 0,
+      auth_valid INTEGER NOT NULL DEFAULT 1,
       workspace_key TEXT,
+      current_live_id INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
@@ -193,8 +220,14 @@ function migrateDatabase(database: DatabaseSync) {
   if (!columns.some((column) => column.name === "blocked")) {
     database.exec("ALTER TABLE oauth_sessions ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
   }
+  if (!columns.some((column) => column.name === "auth_valid")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN auth_valid INTEGER NOT NULL DEFAULT 1");
+  }
   if (!columns.some((column) => column.name === "workspace_key")) {
     database.exec("ALTER TABLE oauth_sessions ADD COLUMN workspace_key TEXT");
+  }
+  if (!columns.some((column) => column.name === "current_live_id")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN current_live_id INTEGER");
   }
 
   database.exec(`
@@ -261,6 +294,15 @@ function migrateDatabase(database: DatabaseSync) {
       occurred_at INTEGER NOT NULL,
       stat_date TEXT NOT NULL,
       PRIMARY KEY (workspace_key, event_id)
+    );
+    CREATE TABLE IF NOT EXISTS audience_spoon_snapshots (
+      workspace_key TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      spoons INTEGER NOT NULL,
+      stat_date TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, live_id, user_id)
     );
     CREATE TABLE IF NOT EXISTS recent_bot_events (
       workspace_key TEXT NOT NULL,
@@ -454,10 +496,10 @@ function decryptStoredToken(sessionKey: string, payload: string): StoredSpoonTok
 
 export function getSessionByKey(sessionKey: string): StoredSpoonToken | null {
   const row = getDatabase()
-    .prepare("SELECT token_payload FROM oauth_sessions WHERE id_hash = ?")
+    .prepare("SELECT token_payload, auth_valid FROM oauth_sessions WHERE id_hash = ?")
     .get(sessionKey) as SessionRow | undefined;
 
-  if (!row) return null;
+  if (!row || row.auth_valid !== 1) return null;
   return decryptStoredToken(sessionKey, row.token_payload);
 }
 
@@ -469,7 +511,10 @@ export function saveSession(currentSessionId: string | undefined, token: SpoonTo
     getDatabase().prepare(`
       INSERT INTO oauth_sessions (id_hash, token_payload, workspace_key, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(id_hash) DO UPDATE SET token_payload = excluded.token_payload, updated_at = excluded.updated_at
+      ON CONFLICT(id_hash) DO UPDATE SET
+        token_payload = excluded.token_payload,
+        auth_valid = 1,
+        updated_at = excluded.updated_at
     `).run(sessionKey, encryptToken(token), sessionKey, now, now);
     return currentSessionId;
   }
@@ -488,7 +533,7 @@ export function getSession(sessionId: string | undefined) {
 
 export function updateSessionByKey(sessionKey: string, token: SpoonToken) {
   const result = getDatabase()
-    .prepare("UPDATE oauth_sessions SET token_payload = ?, updated_at = ? WHERE id_hash = ?")
+    .prepare("UPDATE oauth_sessions SET token_payload = ?, auth_valid = 1, updated_at = ? WHERE id_hash = ?")
     .run(encryptToken(token), Date.now(), sessionKey);
   return result.changes > 0;
 }
@@ -527,9 +572,33 @@ export function isBotEnabled(sessionId: string) {
   return row?.bot_enabled === 1;
 }
 
+export function getCurrentLiveIdByKey(sessionKey: string) {
+  const row = getDatabase().prepare(
+    "SELECT current_live_id FROM oauth_sessions WHERE id_hash = ?",
+  ).get(sessionKey) as Pick<SessionRow, "current_live_id"> | undefined;
+  return row?.current_live_id ?? undefined;
+}
+
+export function getLatestAudienceLiveIdByKey(sessionKey: string) {
+  const row = getDatabase().prepare(`
+    SELECT live_id
+    FROM audience_events
+    WHERE workspace_key = ?
+    ORDER BY occurred_at DESC
+    LIMIT 1
+  `).get(getWorkspaceKey(sessionKey)) as { live_id: number } | undefined;
+  return row?.live_id;
+}
+
+export function setCurrentLiveIdByKey(sessionKey: string, liveId: number | undefined) {
+  getDatabase().prepare(
+    "UPDATE oauth_sessions SET current_live_id = ?, updated_at = ? WHERE id_hash = ?",
+  ).run(liveId ?? null, Date.now(), sessionKey);
+}
+
 export function listEnabledBotSessions(): EnabledBotSession[] {
   const rows = getDatabase()
-    .prepare("SELECT id_hash, token_payload, bot_enabled, blocked FROM oauth_sessions WHERE bot_enabled = 1 AND blocked = 0")
+    .prepare("SELECT id_hash, token_payload, bot_enabled, blocked, auth_valid FROM oauth_sessions WHERE bot_enabled = 1 AND blocked = 0 AND auth_valid = 1")
     .all() as SessionRow[];
 
   return rows.flatMap((row) => {
@@ -631,6 +700,16 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
     SELECT ?, event_id, event_type, live_id, user_id,
            spoons, hearts, favorite_temperature, occurred_at, stat_date
     FROM audience_events WHERE workspace_key = ?
+  `).run(targetKey, sourceKey);
+  database.prepare(`
+    INSERT INTO audience_spoon_snapshots (
+      workspace_key, live_id, user_id, spoons, stat_date, updated_at
+    )
+    SELECT ?, live_id, user_id, spoons, stat_date, updated_at
+    FROM audience_spoon_snapshots WHERE workspace_key = ?
+    ON CONFLICT(workspace_key, live_id, user_id) DO UPDATE SET
+      spoons = MAX(audience_spoon_snapshots.spoons, excluded.spoons),
+      updated_at = MAX(audience_spoon_snapshots.updated_at, excluded.updated_at)
   `).run(targetKey, sourceKey);
   database.prepare(`
     INSERT OR IGNORE INTO recent_bot_events (
@@ -762,6 +841,7 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM bot_counters WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM bot_settings WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_events WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM audience_spoon_snapshots WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM recent_bot_events WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_profiles WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_entries WHERE workspace_key = ?").run(sourceKey);
@@ -863,6 +943,76 @@ export function recordAudienceEvent(
   return true;
 }
 
+export function getLiveAutomationStateByKey(sessionKey: string, liveId: number) {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const totals = database.prepare(`
+    SELECT
+      COALESCE(SUM(hearts), 0) AS hearts,
+      COALESCE(SUM(spoons), 0) AS spoons,
+      COUNT(DISTINCT CASE WHEN event_type = 'presence' THEN user_id END) AS welcomed_listeners
+    FROM audience_events
+    WHERE workspace_key = ? AND live_id = ?
+  `).get(workspaceKey, liveId) as {
+    hearts: number;
+    spoons: number;
+    welcomed_listeners: number;
+  };
+  const greetedUserIds = database.prepare(`
+    SELECT DISTINCT user_id
+    FROM audience_events
+    WHERE workspace_key = ? AND live_id = ? AND event_type = 'presence'
+  `).all(workspaceKey, liveId) as Array<{ user_id: string }>;
+  return {
+    activity: {
+      hearts: totals.hearts,
+      spoons: totals.spoons,
+      welcomedListeners: totals.welcomed_listeners,
+    },
+    greetedUserIds: greetedUserIds.map((row) => row.user_id),
+  };
+}
+
+export function syncLiveFanSpoonRanking(
+  sessionKey: string,
+  liveId: number,
+  fans: SpoonFan[],
+) {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const now = Date.now();
+  const statDate = getKoreanDate(now);
+  const upsertSnapshot = database.prepare(`
+    INSERT INTO audience_spoon_snapshots (
+      workspace_key, live_id, user_id, spoons, stat_date, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_key, live_id, user_id) DO UPDATE SET
+      spoons = MAX(audience_spoon_snapshots.spoons, excluded.spoons),
+      stat_date = excluded.stat_date,
+      updated_at = excluded.updated_at
+  `);
+  const upsertProfile = database.prepare(`
+    INSERT INTO audience_profiles (workspace_key, user_id, nickname, first_seen_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_key, user_id) DO UPDATE SET
+      nickname = COALESCE(excluded.nickname, audience_profiles.nickname),
+      last_seen_at = MAX(audience_profiles.last_seen_at, excluded.last_seen_at)
+  `);
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (const fan of fans) {
+      if (fan.spoonCount === null || fan.spoonCount <= 0) continue;
+      upsertSnapshot.run(workspaceKey, liveId, fan.id, fan.spoonCount, statDate, now);
+      upsertProfile.run(workspaceKey, fan.id, fan.nickname, now, now);
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function recordRecentBotEventByKey(
   sessionKey: string,
   event: Exclude<ParsedSseEvent, { event: "end" }>,
@@ -921,6 +1071,13 @@ export function listRecentBotEventsByKey(sessionKey: string): PersistedBotEvent[
   });
 }
 
+export function clearRecentBotEventsByKey(sessionKey: string) {
+  getDatabase().prepare(`
+    DELETE FROM recent_bot_events
+    WHERE workspace_key = ?
+  `).run(getWorkspaceKey(sessionKey));
+}
+
 export function listAudienceRankingsByKey(
   sessionKey: string,
   period: AudienceRankingPeriod,
@@ -938,7 +1095,8 @@ export function listAudienceRankingsByKey(
     parameters.push(getKoreanDate(Date.now()));
   }
 
-  return getDatabase().prepare(`
+  const database = getDatabase();
+  const entries = (database.prepare(`
     SELECT e.user_id, COALESCE(p.nickname, '청취자') AS nickname,
            SUM(e.spoons) AS spoons, SUM(e.hearts) AS hearts,
            MAX(e.favorite_temperature) AS favorite_temperature
@@ -962,7 +1120,61 @@ export function listAudienceRankingsByKey(
       hearts: entry.hearts,
       favoriteTemperature: entry.favorite_temperature,
     };
-  });
+  })) as AudienceRankingEntry[];
+  const entryMap = new Map(entries.map((entry) => [entry.userId, entry]));
+  const snapshotConditions = ["s.workspace_key = ?"];
+  const snapshotParameters: Array<string | number> = [workspaceKey];
+  if (period === "current") {
+    snapshotConditions.push("s.live_id = ?");
+    snapshotParameters.push(liveId as number);
+  } else if (period === "daily") {
+    snapshotConditions.push("s.stat_date = ?");
+    snapshotParameters.push(getKoreanDate(Date.now()));
+  }
+  const effectiveSpoons = database.prepare(`
+    WITH event_spoons AS (
+      SELECT e.live_id, e.user_id, SUM(e.spoons) AS spoons
+      FROM audience_events e
+      WHERE ${conditions.join(" AND ")}
+      GROUP BY e.live_id, e.user_id
+    ), snapshot_spoons AS (
+      SELECT s.live_id, s.user_id, MAX(s.spoons) AS spoons
+      FROM audience_spoon_snapshots s
+      WHERE ${snapshotConditions.join(" AND ")}
+      GROUP BY s.live_id, s.user_id
+    ), spoon_keys AS (
+      SELECT live_id, user_id FROM event_spoons
+      UNION
+      SELECT live_id, user_id FROM snapshot_spoons
+    )
+    SELECT k.user_id, COALESCE(p.nickname, '청취자') AS nickname,
+           SUM(MAX(COALESCE(e.spoons, 0), COALESCE(s.spoons, 0))) AS spoons
+    FROM spoon_keys k
+    LEFT JOIN event_spoons e ON e.live_id = k.live_id AND e.user_id = k.user_id
+    LEFT JOIN snapshot_spoons s ON s.live_id = k.live_id AND s.user_id = k.user_id
+    LEFT JOIN audience_profiles p
+      ON p.workspace_key = ? AND p.user_id = k.user_id
+    GROUP BY k.user_id, p.nickname
+  `).all(...parameters, ...snapshotParameters, workspaceKey) as Array<{
+    user_id: string;
+    nickname: string;
+    spoons: number;
+  }>;
+  for (const row of effectiveSpoons) {
+    const entry = entryMap.get(row.user_id);
+    if (entry) {
+      entry.spoons = row.spoons;
+    } else {
+      entryMap.set(row.user_id, {
+        userId: row.user_id,
+        nickname: row.nickname,
+        spoons: row.spoons,
+        hearts: 0,
+        favoriteTemperature: null,
+      });
+    }
+  }
+  return [...entryMap.values()];
 }
 
 export function listAudienceRankings(
@@ -1013,20 +1225,8 @@ export function getAudienceRankingCommandRepliesByKey(
   const period: AudienceRankingPeriod = isCurrentCommand ? "current" : "all";
   const scope = isCurrentCommand ? "현재 방송" : "누적";
   const entries = listAudienceRankingsByKey(sessionKey, period, liveId);
-  const heartRanking = rankAudienceEntries(entries, (entry) => entry.hearts);
-  const favoriteRanking = rankAudienceEntries(entries, (entry) => entry.favoriteTemperature);
   const spoonRanking = rankAudienceEntries(entries, (entry) => entry.spoons);
-  if (command === "!하트랭킹" || command === "!오늘의 하트랭킹") {
-    return formatRankingReplies(scope, "하트 랭킹", heartRanking.map((entry, index) => (
-      `${index + 1}위 ${entry.nickname.slice(0, 30)} ${entry.hearts.toLocaleString("ko-KR")}개`
-    )));
-  }
-  if (command === "!애청온도랭킹" || command === "!오늘의 애청온도랭킹") {
-    return formatRankingReplies(scope, "애청온도 랭킹", favoriteRanking.map((entry, index) => (
-      `${index + 1}위 ${entry.nickname.slice(0, 30)} ${entry.favoriteTemperature?.toLocaleString("ko-KR")}°C`
-    )));
-  }
-  if (command === "!스푼랭킹" || command === "!오늘의 스푼랭킹") {
+  if (command === "!오늘의 스푼랭킹") {
     return formatRankingReplies(scope, "스푼 랭킹", spoonRanking.map((entry, index) => (
       `${index + 1}위 ${entry.nickname.slice(0, 30)}`
     )));
@@ -1036,29 +1236,13 @@ export function getAudienceRankingCommandRepliesByKey(
     const index = ranking.findIndex((entry) => entry.userId === targetUserId);
     return index < 0 ? null : { place: index + 1, entry: ranking[index] };
   };
-  const formatMyInfo = (label: string, rankingEntries: AudienceRankingEntry[]) => {
-    const heart = rank(rankAudienceEntries(rankingEntries, (entry) => entry.hearts), userId);
-    const favorite = rank(
-      rankAudienceEntries(rankingEntries, (entry) => entry.favoriteTemperature),
-      userId,
-    );
-    const spoon = rank(rankAudienceEntries(rankingEntries, (entry) => entry.spoons), userId);
-    return [
-      `[${label}] 하트 ${heart ? `${heart.place}위 (${heart.entry.hearts.toLocaleString("ko-KR")}개)` : "순위 없음"}`,
-      `[${label}] 애청온도 ${favorite ? `${favorite.place}위 (${favorite.entry.favoriteTemperature?.toLocaleString("ko-KR")}°C)` : "순위 없음"}`,
-      `[${label}] 스푼 ${spoon ? `${spoon.place}위` : "순위 없음"}`,
-    ];
-  };
-  const cumulativeEntries = listAudienceRankingsByKey(sessionKey, "all");
   const currentEntries = liveId === undefined
     ? []
     : listAudienceRankingsByKey(sessionKey, "current", liveId);
+  const currentSpoon = rank(rankAudienceEntries(currentEntries, (entry) => entry.spoons), userId);
   return [
     `[${nickname?.trim() || "청취자"}님의 내정보]`,
-    ...formatMyInfo("누적", cumulativeEntries),
-    ...(liveId === undefined
-      ? ["[현재 방송] 방송 정보를 조회할 수 없습니다."]
-      : formatMyInfo("현재 방송", currentEntries)),
+    `오늘의 스푼랭킹 ${liveId === undefined ? "조회 불가" : currentSpoon ? `${currentSpoon.place}위` : "순위 없음"}`,
   ];
 }
 
@@ -1866,6 +2050,66 @@ export function deleteAuthSessionByKey(sessionKey: string) {
   getDatabase().prepare("DELETE FROM oauth_sessions WHERE id_hash = ?").run(sessionKey);
 }
 
+export function invalidateAuthSessionByKey(sessionKey: string) {
+  getDatabase().prepare(
+    "UPDATE oauth_sessions SET auth_valid = 0, updated_at = ? WHERE id_hash = ?",
+  ).run(Date.now(), sessionKey);
+}
+
 export function deleteAuthSession(sessionId: string) {
   deleteAuthSessionByKey(getSessionKey(sessionId));
+}
+
+export function invalidateStoredAuthSession(sessionId: string) {
+  invalidateAuthSessionByKey(getSessionKey(sessionId));
+}
+export function exportWorkspaceData(sessionId: string, includeAudience: boolean): WorkspaceBackupData {
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const specifications = includeAudience
+    ? [...CORE_BACKUP_TABLES, ...AUDIENCE_BACKUP_TABLES]
+    : [...CORE_BACKUP_TABLES];
+  const tables: WorkspaceBackupData["tables"] = {};
+  for (const specification of specifications) {
+    tables[specification.name] = database.prepare(`
+      SELECT ${specification.columns.join(", ")}
+      FROM ${specification.name}
+      WHERE ${specification.key} = ?
+    `).all(workspaceKey) as Array<Record<string, WorkspaceBackupValue>>;
+  }
+  return { tables };
+}
+
+export function restoreWorkspaceData(sessionId: string, backup: WorkspaceBackupData) {
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const includedSpecifications = [...CORE_BACKUP_TABLES, ...AUDIENCE_BACKUP_TABLES]
+    .filter((specification) => Object.hasOwn(backup.tables, specification.name));
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (const specification of [...includedSpecifications].reverse()) {
+      database.prepare(`DELETE FROM ${specification.name} WHERE ${specification.key} = ?`)
+        .run(workspaceKey);
+    }
+    for (const specification of includedSpecifications) {
+      const columns = [specification.key, ...specification.columns];
+      const placeholders = columns.map(() => "?").join(", ");
+      const insert = database.prepare(`
+        INSERT INTO ${specification.name} (${columns.join(", ")})
+        VALUES (${placeholders})
+      `);
+      for (const row of backup.tables[specification.name]) {
+        insert.run(workspaceKey, ...specification.columns.map((column) => row[column]));
+      }
+    }
+    database.exec("COMMIT");
+  } catch {
+    database.exec("ROLLBACK");
+    return false;
+  }
+  ensureBotSettings(sessionKey);
+  return true;
 }

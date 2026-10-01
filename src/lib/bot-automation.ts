@@ -103,11 +103,11 @@ export function processBotAutomation(
   if (event.event === "like") {
     state.activity.hearts += event.data.totalAmount;
     if (!options.heartEnabled) return null;
-    state.announcedHeartMilestone = state.activity.hearts;
+    state.announcedHeartMilestone = event.data.totalAmount;
     return options.heartMessage
       .replaceAll("{name}", djNickname)
       .replaceAll("{nickname}", event.data.user.nickname ?? "청취자")
-      .replaceAll("{milestone}", state.activity.hearts.toLocaleString("ko-KR"));
+      .replaceAll("{milestone}", event.data.totalAmount.toLocaleString("ko-KR"));
   }
 
   return null;

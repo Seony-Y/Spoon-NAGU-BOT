@@ -39,10 +39,10 @@ assert.equal(
 assert.equal(processBotAutomation(state, presence), null);
 assert.equal(state.activity.welcomedListeners, 1);
 
-const like = (totalAmount) => ({
+const like = (totalAmount, user = { id: "fan-1", nickname: "일등팬" }) => ({
   event: "like",
   data: {
-    user: { id: "fan-1", nickname: "일등팬" },
+    user,
     type: "FREE",
     totalAmount,
     amount: totalAmount,
@@ -52,10 +52,16 @@ const like = (totalAmount) => ({
   },
 });
 
-assert.equal(processBotAutomation(state, like(99)), "일등팬님, 하트 99개 감사합니다!");
-assert.equal(processBotAutomation(state, like(1)), "일등팬님, 하트 100개 감사합니다!");
-assert.equal(processBotAutomation(state, like(250)), "일등팬님, 하트 350개 감사합니다!");
-assert.equal(state.activity.hearts, 350);
+assert.equal(
+  processBotAutomation(state, like(1, { id: "fan-1", nickname: "1번 사용자" })),
+  "1번 사용자님, 하트 1개 감사합니다!",
+);
+assert.equal(
+  processBotAutomation(state, like(2, { id: "fan-2", nickname: "2번 사용자" })),
+  "2번 사용자님, 하트 2개 감사합니다!",
+);
+assert.equal(processBotAutomation(state, like(250)), "일등팬님, 하트 250개 감사합니다!");
+assert.equal(state.activity.hearts, 253);
 
 assert.equal(processBotAutomation(state, {
   event: "donation",

@@ -29,6 +29,7 @@ legacyDatabase.exec(`
 legacyDatabase.close();
 
 const store = await import("../src/lib/session-store.ts");
+const backups = await import("../src/lib/workspace-backup.ts");
 
 const token = {
 	access_token: "test-access",
@@ -41,6 +42,9 @@ const now = new Date().toISOString();
 const firstSessionId = "first-session";
 store.saveSession(firstSessionId, token);
 const migratedDatabase = new DatabaseSync(process.env.SESSION_STORE_PATH);
+const migratedSessionColumns = migratedDatabase.prepare("PRAGMA table_info(oauth_sessions)").all();
+assert.ok(migratedSessionColumns.some((column) => column.name === "current_live_id"));
+assert.ok(migratedSessionColumns.some((column) => column.name === "auth_valid"));
 const migratedRpsColumns = migratedDatabase.prepare("PRAGMA table_info(rps_rounds)").all();
 assert.equal(migratedRpsColumns.find((column) => column.name === "workspace_key").pk, 1);
 assert.equal(migratedRpsColumns.find((column) => column.name === "round_id").pk, 2);
@@ -147,6 +151,12 @@ const settings = store.getBotSettings(firstSessionId);
 const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey);
 assert.match(commandReplies.join(" "), /전체 사용 명령어:/);
 assert.match(commandReplies.join(" "), /DJ 전용 명령어:.*!실드 \+N\/-N.*!신청곡 삭제 번호/);
+assert.doesNotMatch(commandReplies.join(" "), /!하트랭킹/);
+assert.doesNotMatch(commandReplies.join(" "), /!오늘의 하트랭킹/);
+assert.doesNotMatch(commandReplies.join(" "), /!애청온도랭킹/);
+assert.doesNotMatch(commandReplies.join(" "), /!오늘의 애청온도랭킹/);
+assert.doesNotMatch(commandReplies.join(" "), /!스푼랭킹/);
+assert.match(commandReplies.join(" "), /!오늘의 스푼랭킹/);
 store.updateBotSettings(firstSessionId, {
 	...settings,
 	greetingMessage: "저장된 {nickname}님 환영 문구",
@@ -217,34 +227,78 @@ assert.equal(store.recordAudienceEvent(firstSessionKey, 101, donation), true);
 assert.equal(store.recordAudienceEvent(firstSessionKey, 101, donation), false);
 assert.equal(store.recordAudienceEvent(firstSessionKey, 101, like), true);
 assert.equal(store.recordAudienceEvent(firstSessionKey, 101, presence), true);
+assert.equal(store.getLatestAudienceLiveIdByKey(firstSessionKey), 101);
+store.setCurrentLiveIdByKey(firstSessionKey, 101);
+assert.equal(store.getCurrentLiveIdByKey(firstSessionKey), 101);
+assert.deepEqual(store.getLiveAutomationStateByKey(firstSessionKey, 101), {
+	activity: { hearts: 25, spoons: 300, welcomedListeners: 1 },
+	greetedUserIds: ["listener-a"],
+});
+store.syncLiveFanSpoonRanking(firstSessionKey, 101, [
+	{ id: "listener-a", nickname: "청취자 A", rank: 2, spoonCount: 300 },
+	{ id: "listener-before-bot", nickname: "기존 후원자", rank: 1, spoonCount: 500 },
+]);
 store.recordRecentBotEventByKey(firstSessionKey, presence, "2026-09-30T00:00:00.000Z");
 assert.equal(store.listRecentBotEventsByKey(firstSessionKey)[0].type, "presence");
 
-const heartReplies = store.getAudienceRankingCommandRepliesByKey(
+assert.equal(store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!하트랭킹", "listener-a", "청취자 A",
-);
-assert.equal(heartReplies.length, 1);
-assert.equal(heartReplies[0], "[누적 하트 랭킹]\n1위 청취자 A 25개");
-const currentHeartReplies = store.getAudienceRankingCommandRepliesByKey(
+), null);
+assert.equal(store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!오늘의 하트랭킹", "listener-a", "청취자 A",
-);
-assert.equal(currentHeartReplies.length, 1);
-assert.equal(currentHeartReplies[0], "[현재 방송 하트 랭킹]\n1위 청취자 A 25개");
-const spoonReplies = store.getAudienceRankingCommandRepliesByKey(
+), null);
+assert.equal(store.getAudienceRankingCommandRepliesByKey(
+	firstSessionKey, undefined, "!애청온도랭킹", "listener-a", "청취자 A",
+), null);
+assert.equal(store.getAudienceRankingCommandRepliesByKey(
+	firstSessionKey, 101, "!오늘의 애청온도랭킹", "listener-a", "청취자 A",
+), null);
+assert.equal(store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!스푼랭킹", "listener-a", "청취자 A",
+), null);
+const currentSpoonReplies = store.getAudienceRankingCommandRepliesByKey(
+	firstSessionKey, 101, "!오늘의 스푼랭킹", "listener-a", "청취자 A",
 );
-assert.match(spoonReplies[0], /\n1위 청취자 A/);
-assert.doesNotMatch(spoonReplies.join(" "), /300/);
+assert.match(currentSpoonReplies[0], /^\[현재 방송 스푼 랭킹\]\n1위 기존 후원자/);
+assert.equal(store.listAudienceRankings(firstSessionId, "all").find(
+	(entry) => entry.userId === "listener-a",
+).spoons, 300);
 const myInfoReplies = store.getAudienceRankingCommandRepliesByKey(
 	firstSessionKey, 101, "!내정보", "listener-a", "청취자 A",
 );
-assert.match(myInfoReplies.join(" "), /\[누적\] 하트 1위 \(25개\)/);
-assert.match(myInfoReplies.join(" "), /\[누적\] 애청온도 1위 \(38\.5°C\)/);
-assert.match(myInfoReplies.join(" "), /\[누적\] 스푼 1위/);
-assert.match(myInfoReplies.join(" "), /\[현재 방송\] 하트 1위 \(25개\)/);
-assert.match(myInfoReplies.join(" "), /\[현재 방송\] 애청온도 1위 \(38\.5°C\)/);
-assert.match(myInfoReplies.join(" "), /\[현재 방송\] 스푼 1위/);
+assert.deepEqual(myInfoReplies, [
+	"[청취자 A님의 내정보]",
+	"오늘의 스푼랭킹 2위",
+]);
 assert.doesNotMatch(myInfoReplies.join(" "), /300/);
+
+const coreBackup = backups.createSignedWorkspaceBackup(firstSessionId, false);
+assert.equal(coreBackup.includesAudience, false);
+assert.equal(coreBackup.data.tables.audience_events, undefined);
+assert.equal(JSON.stringify(coreBackup).includes("test-access"), false);
+assert.ok(backups.parseSignedWorkspaceBackup(JSON.parse(JSON.stringify(coreBackup))));
+const tamperedBackup = JSON.parse(JSON.stringify(coreBackup));
+tamperedBackup.data.tables.bot_settings[0].dj_nickname = "변조된 DJ";
+assert.equal(backups.parseSignedWorkspaceBackup(tamperedBackup), null);
+store.updateBotSettings(firstSessionId, {
+	...store.getBotSettings(firstSessionId),
+	djNickname: "임시 DJ",
+});
+assert.equal(backups.restoreSignedWorkspaceBackup(firstSessionId, coreBackup), true);
+assert.equal(store.getBotSettings(firstSessionId).djNickname, "DJ 나구");
+const fullBackup = backups.createSignedWorkspaceBackup(firstSessionId, true);
+assert.equal(fullBackup.includesAudience, true);
+assert.equal(fullBackup.data.tables.audience_events.length, 3);
+
+store.setBotEnabled(firstSessionId, true);
+store.invalidateStoredAuthSession(firstSessionId);
+assert.equal(store.getSession(firstSessionId), null);
+assert.equal(store.isBotEnabled(firstSessionId), true);
+store.saveSession(firstSessionId, { ...token, access_token: "reauthenticated-access" });
+assert.equal(store.getSession(firstSessionId).access_token, "reauthenticated-access");
+assert.equal(store.isBotEnabled(firstSessionId), true);
+assert.equal(store.getCurrentLiveIdByKey(firstSessionKey), 101);
+assert.equal(store.getBotSettings(firstSessionId).djNickname, "DJ 나구");
 
 store.deleteSession(firstSessionId);
 const secondSessionId = "second-session";
@@ -255,6 +309,8 @@ store.applyRpsCommand(secondSessionKey, "!가위바위보 바위", false, "liste
 store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
 
 assert.equal(store.listRecentBotEventsByKey(secondSessionKey)[0].type, "presence");
+store.clearRecentBotEventsByKey(secondSessionKey);
+assert.deepEqual(store.listRecentBotEventsByKey(secondSessionKey), []);
 assert.deepEqual(
 	store.listRouletteKeeps(secondSessionId).map((keep) => [keep.nickname, keep.itemLabel, keep.count]),
 	[["룰렛팬", "노래 신청권", 2], ["룰렛팬", "커피 쿠폰", 2]],
@@ -290,11 +346,12 @@ assert.equal(restoredSongRequests[0].artist, "아이유");
 
 for (const period of ["current", "daily", "all"]) {
 	const ranking = store.listAudienceRankings(secondSessionId, period, 101);
-	assert.equal(ranking.length, 1);
-	assert.equal(ranking[0].userId, "listener-a");
-	assert.equal(ranking[0].spoons, 300);
-	assert.equal(ranking[0].hearts, 25);
-	assert.equal(ranking[0].favoriteTemperature, 38.5);
+	assert.equal(ranking.length, 2);
+	const restoredListener = ranking.find((entry) => entry.userId === "listener-a");
+	assert.equal(restoredListener.spoons, 300);
+	assert.equal(restoredListener.hearts, 25);
+	assert.equal(restoredListener.favoriteTemperature, 38.5);
+	assert.equal(ranking.find((entry) => entry.userId === "listener-before-bot").spoons, 500);
 }
 
 for (let index = 1; index <= 11; index += 1) {
@@ -311,18 +368,17 @@ for (let index = 1; index <= 11; index += 1) {
 			time: now,
 		},
 	});
+	store.recordAudienceEvent(secondSessionKey, 202, {
+		id: `event-favorite-ranking-limit-${index}`,
+		event: "presence",
+		data: {
+			user: { id: `listener-limit-${index}`, nickname: `랭커 ${index}` },
+			type: "JOIN",
+			fanRank: null,
+			isManager: false,
+			favoriteTemperature: 50 - (index / 10),
+			time: now,
+		},
+	});
 }
-const limitedHeartReplies = store.getAudienceRankingCommandRepliesByKey(
-	secondSessionKey, 202, "!오늘의 하트랭킹", "listener-limit-1", "랭커 1",
-);
-assert.equal(limitedHeartReplies.length, 1);
-assert.match(limitedHeartReplies[0], /^\[현재 방송 하트 랭킹\]\n1위 /);
-assert.equal((limitedHeartReplies[0].match(/\d+위 /g) ?? []).length, 10);
-assert.equal(limitedHeartReplies[0].length <= 200, true);
-assert.doesNotMatch(limitedHeartReplies.join(" "), /11위/);
-const cumulativeHeartReplies = store.getAudienceRankingCommandRepliesByKey(
-	secondSessionKey, 202, "!하트랭킹", "listener-limit-1", "랭커 1",
-);
-assert.match(cumulativeHeartReplies[0], /^\[누적 하트 랭킹\]\n1위 /);
-
 console.log("Persistent ranking checks passed: restore, deduplication, and period totals");

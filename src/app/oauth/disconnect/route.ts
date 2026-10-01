@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { disconnectAuthSession } from "@/lib/auth";
-import { stopBot } from "@/lib/bot-runtime";
+import { suspendBotForAuthentication } from "@/lib/bot-runtime";
 import { SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
 import { buildApplicationUrl } from "@/lib/spoon";
 
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (sessionId) {
-      stopBot(sessionId);
+      suspendBotForAuthentication(sessionId);
       await disconnectAuthSession(sessionId);
     }
   } catch {
@@ -20,7 +20,6 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(buildApplicationUrl(target, request.url), 303);
-  response.cookies.delete(SESSION_COOKIE);
   response.cookies.delete(STATE_COOKIE);
   return response;
 }

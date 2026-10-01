@@ -7,13 +7,12 @@ import {
   type SpoonToken,
 } from "./spoon";
 import {
-  deleteAuthSession,
-  deleteAuthSessionByKey,
-  deleteSession,
   getSession,
   getSessionByKey,
   getSessionKey,
   isSessionBlockedByKey,
+  invalidateAuthSessionByKey,
+  invalidateStoredAuthSession,
   saveSession,
   updateSessionByKey,
 } from "./session-store";
@@ -34,7 +33,7 @@ async function refreshSessionByKey(sessionKey: string, force = false) {
     return updateSessionByKey(sessionKey, refreshed) ? getSessionByKey(sessionKey) : null;
   } catch (error) {
     if (error instanceof SpoonOAuthErrorResponse && error.code === "invalid_grant") {
-      deleteAuthSessionByKey(sessionKey);
+      invalidateAuthSessionByKey(sessionKey);
       return null;
     }
 
@@ -71,7 +70,7 @@ export function getBotAuthSession(sessionKey: string, force = false) {
 }
 
 export function invalidateAuthSession(sessionId: string) {
-  deleteAuthSession(sessionId);
+  invalidateStoredAuthSession(sessionId);
 }
 
 export async function disconnectAuthSession(sessionId: string) {
@@ -79,6 +78,6 @@ export async function disconnectAuthSession(sessionId: string) {
   try {
     if (current) await revokeToken(current.refresh_token);
   } finally {
-    deleteSession(sessionId);
+    invalidateStoredAuthSession(sessionId);
   }
 }

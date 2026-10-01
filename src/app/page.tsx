@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import naguBot from "@/asset/NaGuBot.png";
 import { getAuthSession } from "@/lib/auth";
 import { loadAudienceStatus } from "@/lib/audience";
-import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
+import { ensureBotRunning, getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
 import { getMissingRequiredScopes } from "@/lib/spoon";
@@ -12,7 +12,6 @@ import {
   getBotSettings,
   getRouletteSettings,
   isSessionBlocked,
-  listAudienceRankings,
   listBotCommands,
   listBotCounters,
   listSongRequests,
@@ -20,8 +19,6 @@ import {
   listRouletteItems,
   listRouletteKeeps,
   listRouletteResults,
-  type AudienceRankingEntry,
-  type AudienceRankingPeriod,
   type RouletteKeep,
 } from "@/lib/session-store";
 import { AutoRefresh, RefreshButton, RefreshLiveButton } from "./refresh-live-button";
@@ -40,7 +37,6 @@ type HomeProps = {
     settings?: string;
     tab?: string;
     automation?: string;
-    ranking?: string;
     game?: string;
     rps?: string;
     roulette?: string;
@@ -138,6 +134,9 @@ const settingsNotices: Record<string, { tone: "success" | "error"; text: string 
   invalid_counter: { tone: "error", text: "이름은 공백 없이 20자 이하, 개수는 0~1,000,000으로 입력해 주세요." },
   song_request_deleted: { tone: "success", text: "신청곡을 삭제했습니다." },
   song_requests_cleared: { tone: "success", text: "신청곡 목록을 모두 비웠습니다." },
+  backup_restored: { tone: "success", text: "로컬 백업을 복원했습니다." },
+  backup_invalid: { tone: "error", text: "백업 파일이 올바르지 않거나 서명을 확인할 수 없습니다." },
+  backup_too_large: { tone: "error", text: "백업 파일은 10MB 이하만 복원할 수 있습니다." },
 };
 
 const automationTabs = [
@@ -149,22 +148,6 @@ const automationTabs = [
   ["commands", "채팅 명령어"],
   ["requests", "신청곡"],
 ] as const;
-
-const rankingPeriods: Array<[AudienceRankingPeriod, string]> = [
-  ["current", "현재 방송"],
-  ["daily", "오늘"],
-  ["all", "역대"],
-];
-
-function topRanking(
-  entries: AudienceRankingEntry[],
-  value: (entry: AudienceRankingEntry) => number | null,
-) {
-  return [...entries]
-    .filter((entry) => (value(entry) ?? 0) > 0)
-    .sort((left, right) => (value(right) ?? 0) - (value(left) ?? 0))
-    .slice(0, 10);
-}
 
 function groupRouletteKeeps(keeps: RouletteKeep[]) {
   const users = new Map<string, {
@@ -227,14 +210,12 @@ export default async function Home({ searchParams }: HomeProps) {
   const previewConnected = process.env.NODE_ENV === "development" && params.preview === "connected";
   const isBotTab = params.tab === "bot";
   const isGameTab = params.tab === "game";
-  const isDashboardTab = !isBotTab && !isGameTab;
+  const isBackupTab = params.tab === "backup";
+  const isDashboardTab = !isBotTab && !isGameTab && !isBackupTab;
   const gameTab = params.game === "roulette" ? "roulette" : "rps";
   const automationTab = automationTabs.some(([key]) => key === params.automation)
     ? params.automation
     : "welcome";
-  const rankingPeriod = rankingPeriods.some(([key]) => key === params.ranking)
-    ? params.ranking as AudienceRankingPeriod
-    : "current";
   const cookieStore = await cookies();
   const sessionId = previewConnected ? "development-preview" : cookieStore.get(SESSION_COOKIE)?.value;
   const connectionBlocked = previewConnected ? false : isSessionBlocked(sessionId);
@@ -293,6 +274,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const allScopesRequired = params.error === "all_scopes_required";
   const disconnected = params.status === "disconnected";
   const liveStatus = liveResult.status;
+  if (connected && sessionId && !previewConnected) ensureBotRunning(sessionId);
   const bot = connected && sessionId ? getBotSnapshot(sessionId) : null;
   const hasEventScope = scopes.some((scope) => scope.startsWith("events."));
   const hasChatScope = scopes.includes("chat.send");
@@ -307,20 +289,6 @@ export default async function Home({ searchParams }: HomeProps) {
   const botCommands = isBotTab && connected && sessionId ? listBotCommands(sessionId) : [];
   const botCounters = isBotTab && connected && sessionId ? listBotCounters(sessionId) : [];
   const songRequests = isBotTab && connected && sessionId ? listSongRequests(sessionId) : [];
-  const currentLiveId = liveStatus?.kind === "live" ? liveStatus.live.liveId : undefined;
-  const audienceRankings = isDashboardTab && connected && sessionId
-    ? previewConnected
-      ? [
-          { userId: "preview-fan-1", nickname: "스푼 요정", spoons: 1250, hearts: 840, favoriteTemperature: 42.1 },
-          { userId: "preview-fan-2", nickname: "단골 청취자", spoons: 840, hearts: 1250, favoriteTemperature: 39.7 },
-          { userId: "preview-fan-3", nickname: "응원단장", spoons: 520, hearts: 610, favoriteTemperature: 36.8 },
-        ]
-      : listAudienceRankings(
-          sessionId,
-          rankingPeriod,
-          currentLiveId,
-        )
-    : [];
   const rpsRounds = isGameTab && connected && sessionId && !previewConnected
     ? listRpsRounds(sessionId)
     : [];
@@ -364,10 +332,6 @@ export default async function Home({ searchParams }: HomeProps) {
     rouletteItems,
     rouletteSettings?.missWeight ?? 0,
   );
-  const spoonRanking = topRanking(audienceRankings, (entry) => entry.spoons);
-  const heartRanking = topRanking(audienceRankings, (entry) => entry.hearts);
-  const favoriteRanking = topRanking(audienceRankings, (entry) => entry.favoriteTemperature);
-
   return (
     <div className="site-shell">
       <SiteHeader connectionStatus={connected ? "connected" : "waiting"} />
@@ -487,6 +451,9 @@ export default async function Home({ searchParams }: HomeProps) {
             <Link scroll={false} className={isGameTab ? "is-active" : ""} href="/?tab=game&game=rps" aria-current={isGameTab ? "page" : undefined}>
               Game
             </Link>
+            <Link scroll={false} className={isBackupTab ? "is-active" : ""} href="/?tab=backup" aria-current={isBackupTab ? "page" : undefined}>
+              데이터 백업
+            </Link>
           </nav>}
 
           {isDashboardTab && connected && liveStatus && (
@@ -577,80 +544,6 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
-          {isDashboardTab && connected && bot && (
-            <article className="broadcast-status-card" aria-labelledby="broadcast-status-title">
-              <div className="automation-heading">
-                <div>
-                  <p className="section-label">실시간 집계</p>
-                  <h2 id="broadcast-status-title">방송 현황</h2>
-                </div>
-              </div>
-
-              <dl className="activity-metrics">
-                <div>
-                  <dt>환영 인원</dt>
-                  <dd>{bot.activity.welcomedListeners.toLocaleString("ko-KR")}명</dd>
-                </div>
-                <div>
-                  <dt>누적 하트</dt>
-                  <dd>{bot.activity.hearts.toLocaleString("ko-KR")}개</dd>
-                </div>
-                <div>
-                  <dt>누적 후원</dt>
-                  <dd>{bot.activity.spoons.toLocaleString("ko-KR")}스푼</dd>
-                </div>
-              </dl>
-
-              <section className="live-ranking-section" aria-labelledby="live-ranking-title">
-                <div className="automation-heading">
-                  <div>
-                    <p className="section-label">방송 현황</p>
-                    <h3 id="live-ranking-title">실시간 랭킹</h3>
-                  </div>
-                  <RefreshButton label="실시간 랭킹" />
-                </div>
-                <nav className="ranking-period-tabs" aria-label="랭킹 기간">
-                  {rankingPeriods.map(([key, label]) => (
-                    <Link
-                      scroll={false}
-                      key={key}
-                      className={rankingPeriod === key ? "is-active" : ""}
-                      href={`/?ranking=${key}`}
-                    >
-                      {label}
-                    </Link>
-                  ))}
-                </nav>
-                <div className="ranking-columns persistent-ranking-columns">
-                  <section>
-                    <h4>후원 스푼</h4>
-                    {spoonRanking.length > 0 ? (
-                      <ol>{spoonRanking.map((listener, index) => (
-                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.spoons.toLocaleString("ko-KR")}스푼</em></li>
-                      ))}</ol>
-                    ) : <p>집계된 후원이 없습니다.</p>}
-                  </section>
-                  <section>
-                    <h4>하트</h4>
-                    {heartRanking.length > 0 ? (
-                      <ol>{heartRanking.map((listener, index) => (
-                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.hearts.toLocaleString("ko-KR")}개</em></li>
-                      ))}</ol>
-                    ) : <p>집계된 하트가 없습니다.</p>}
-                  </section>
-                  <section>
-                    <h4>애청온도</h4>
-                    {favoriteRanking.length > 0 ? (
-                      <ol>{favoriteRanking.map((listener, index) => (
-                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.favoriteTemperature?.toFixed(1)}°</em></li>
-                      ))}</ol>
-                    ) : <p>집계된 애청온도가 없습니다.</p>}
-                  </section>
-                </div>
-              </section>
-            </article>
-          )}
-
           {isDashboardTab && connected && (
             <article className="audience-card" aria-labelledby="audience-title">
               <div className="audience-heading">
@@ -722,6 +615,12 @@ export default async function Home({ searchParams }: HomeProps) {
                     <p className="audience-empty">팬 랭킹을 불러오지 못했습니다.</p>
                   )}
                 </section>
+              </div>
+
+              <div className="audience-heart-summary">
+                <span>하트 후원 랭킹</span>
+                <strong>{(bot?.activity.hearts ?? 0).toLocaleString("ko-KR")}개</strong>
+                <p>봇 참여 이후만 집계됩니다.</p>
               </div>
 
               <p className="audience-footnote">목록에는 이벤트 스트림으로 입장한 봇 계정도 포함될 수 있습니다.</p>
@@ -1057,7 +956,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
                   <nav className="automation-tabs" aria-label="자동화 설정">
                     {automationTabs.map(([key, label]) => (
-                      <Link scroll={false} key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}&ranking=${rankingPeriod}`}>
+                      <Link scroll={false} key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}`}>
                         {label}
                       </Link>
                     ))}
@@ -1089,7 +988,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <AutomationToggle feature="heart" initialEnabled={botSettings.heartEnabled} label="하트 후원 감사" />
                       <label htmlFor="heart-message">하트 감사말</label>
                       <textarea id="heart-message" name="message" defaultValue={botSettings.heartMessage} maxLength={200} rows={3} required />
-                      <p><code>{"{nickname}"}</code>은 후원자, <code>{"{milestone}"}</code>은 누적 하트 수입니다.</p><button type="submit">하트 후원 저장</button>
+                      <p><code>{"{nickname}"}</code>은 후원자, <code>{"{milestone}"}</code>은 보낸 하트 수입니다.</p><button type="submit">하트 후원 저장</button>
                     </form>
                   )}
 
@@ -1138,13 +1037,8 @@ export default async function Home({ searchParams }: HomeProps) {
                     <ul>
                       <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
                       <li><div><strong>!안녕</strong><span>청취자 닉네임으로 인사 · 모두 사용 가능</span></div></li>
-                      <li><div><strong>!하트랭킹</strong><span>누적 하트 상위 10명과 개수 조회</span></div></li>
-                      <li><div><strong>!애청온도랭킹</strong><span>누적 애청온도 상위 10명 조회</span></div></li>
-                      <li><div><strong>!스푼랭킹</strong><span>누적 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
-                      <li><div><strong>!오늘의 하트랭킹</strong><span>현재 방송 하트 상위 10명과 개수 조회</span></div></li>
-                      <li><div><strong>!오늘의 애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
                       <li><div><strong>!오늘의 스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
-                      <li><div><strong>!내정보</strong><span>나의 누적 및 현재 방송 하트·애청온도·스푼 순위를 구분해 조회</span></div></li>
+                      <li><div><strong>!내정보</strong><span>오늘의 스푼 순위 조회 · 스푼 수 비공개</span></div></li>
                       <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
@@ -1277,6 +1171,73 @@ export default async function Home({ searchParams }: HomeProps) {
               <p className="bot-footnote">
                 네트워크 연결을 끊어도 Spoon의 입장 기록은 일정 시간 남을 수 있습니다.
               </p>
+            </article>
+          )}
+
+          {isBackupTab && connected && (
+            <article className="bot-card backup-page" aria-labelledby="backup-title">
+              <div className="bot-heading">
+                <div>
+                  <p className="section-label">로컬 보관</p>
+                  <h2 id="backup-title">데이터 백업</h2>
+                </div>
+              </div>
+
+              {settingsNotice && (
+                <div className={`settings-notice is-${settingsNotice.tone}`} role={settingsNotice.tone === "error" ? "alert" : "status"}>
+                  <span aria-hidden="true">{settingsNotice.tone === "success" ? "✓" : "!"}</span>
+                  <strong>{settingsNotice.text}</strong>
+                </div>
+              )}
+
+              <section className="backup-tools" aria-labelledby="backup-tools-title">
+                <div>
+                  <h3 id="backup-tools-title">백업 다운로드 및 복원</h3>
+                  <p>OAuth 토큰과 로그인 세션은 포함하지 않습니다. 다운로드한 파일은 안전한 위치에 보관해 주세요.</p>
+                </div>
+                <div className="backup-scope" aria-label="백업 데이터 범위">
+                  <section>
+                    <h4>운영 데이터</h4>
+                    <ul>
+                      <li>DJ 표시 이름과 자동화 문구·사용 여부·반복 간격</li>
+                      <li>사용자 명령어, 카운터, 신청곡 목록</li>
+                      <li>가위바위보 라운드·참여 기록</li>
+                      <li>룰렛 설정·상품·당첨·킵 기록</li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h4>청취자 기록 추가</h4>
+                    <ul>
+                      <li>청취자 ID·닉네임·최초/최근 확인 시각</li>
+                      <li>방송별 입장·하트·스푼 후원 이벤트</li>
+                      <li>현재 방송 스푼 랭킹 스냅샷</li>
+                    </ul>
+                  </section>
+                  <section>
+                    <h4>저장하지 않음</h4>
+                    <ul>
+                      <li>OAuth 토큰, 로그인 쿠키, 관리자 정보</li>
+                      <li>봇 참여 상태와 현재 방송 연결 상태</li>
+                      <li>대시보드의 최근 이벤트 목록</li>
+                    </ul>
+                  </section>
+                </div>
+                <div className="backup-downloads">
+                  <a href="/bot/backup">운영 데이터 다운로드</a>
+                  <a href="/bot/backup?audience=1">청취자 기록 포함 다운로드</a>
+                </div>
+                <form action="/bot/backup" method="post" encType="multipart/form-data">
+                  <label htmlFor="workspace-backup-file">백업 파일</label>
+                  <input id="workspace-backup-file" type="file" name="backup" accept="application/json,.json" required />
+                  <label className="backup-confirm">
+                    <input type="checkbox" required />
+                    <span>현재 운영 데이터를 백업 파일 내용으로 교체합니다.</span>
+                  </label>
+                  <button type="submit">백업 복원</button>
+                </form>
+                <p className="backup-privacy">두 백업 모두 신청곡·게임·룰렛 참여 닉네임을 포함할 수 있습니다. 청취자 기록 포함 백업에는 청취자 프로필과 후원 이벤트가 추가됩니다.</p>
+                <p className="backup-privacy">복원하면 운영 데이터는 백업 시점 내용으로 교체됩니다. 운영 데이터 백업만 복원할 때는 서버의 기존 청취자 기록을 유지합니다.</p>
+              </section>
             </article>
           )}
         </section>

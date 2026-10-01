@@ -45,7 +45,9 @@ The dashboard's **봇 참여** button persists the desired participation state a
 
 **봇 퇴장** closes the event stream and disables restart restoration. Spoon may keep the listener presence visible for a short time after the stream closes.
 
-Enabled bots reconnect when the Railway process restarts. The enabled state, tokens, and 50 most recent bot events are stored in SQLite and restored after a restart.
+Enabled bots reconnect when the Railway process restarts or an authenticated dashboard request reaches a new server process. The enabled state, current broadcast ID, tokens, current-broadcast activity, and 50 most recent bot events are stored in SQLite and restored after a restart.
+
+The top-level **데이터 백업** tab downloads a signed JSON backup containing the DJ display name, automation messages/toggles/interval, commands, counters, song requests, rock-paper-scissors rounds and entries, and roulette settings/items/results/keeps. The optional full download also contains listener profiles, presence/heart/donation events, and live Spoon-ranking snapshots. OAuth tokens, session cookies, admin state, bot participation/current-live state, and transient recent events are never exported. Restoring replaces core workspace data after signature and schema validation; a core-only restore preserves existing audience tables. Uploads are limited to 10 MB.
 
 ## Chat
 
@@ -55,10 +57,8 @@ While the bot event stream is connected, these built-in commands reply automatic
 
 - `!안녕` — greet the listener by nickname
 - `!명령어` — list the commands and named counters currently available, including live dashboard updates
-- `!하트랭킹` — show up to 10 listeners ranked by hearts in the current broadcast
-- `!애청온도랭킹` — show up to 10 listeners ranked by favorite temperature in the current broadcast
-- `!스푼랭킹` — show up to 10 listeners ranked by donations without exposing Spoon totals
-- `!내정보` — show the listener's heart, favorite-temperature, and Spoon ranks without exposing their Spoon total
+- `!오늘의 스푼랭킹` — show up to 10 listeners ranked by donations in the current broadcast without exposing Spoon totals
+- `!내정보` — show the listener's current-live Spoon rank without exposing Spoon totals
 - `!가위바위보 가위|바위|보` — join the active DJ rock-paper-scissors round once; results are revealed when the DJ ends the round
 - `!신청곡 곡명-가수` — add a song request for any listener
 - `!신청곡 목록` — list every queued song request for any listener
@@ -82,11 +82,11 @@ Before manager-only presence events are confirmed, a custom chat command receive
 
 Spoon does not expose a profile endpoint or nickname in the OAuth token. Message templates use `DJ` until the connected DJ sends a chat event, then the bot learns and stores that nickname automatically.
 
-The **봇 운영** tab provides current-broadcast, daily (Asia/Seoul), and all-time listener rankings for donated spoons, hearts, and favorite temperature. Rankings are accumulated by Spoon user ID, while the latest nickname is kept for display. SSE event IDs prevent duplicate totals after reconnects. The same tab also provides welcome messages, donation thanks, heart donations, repeat announcements, named counters, chat commands, and the song-request queue. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+The **봇 운영** tab provides welcome messages, donation thanks, heart donations, repeat announcements, named counters, chat commands, and the song-request queue. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
 Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. Anyone can use `!실드` to display the current value, while only the DJ can use `!실드 +2` or `!실드 -1` to change it. Values never become negative. The same permission rule applies to every named counter. Names, initial values, current values, resets, and deletions are managed in the counter tab.
 
-Disconnecting revokes OAuth credentials and removes only the local authentication session. When the DJ chats after reconnecting, the stable Spoon user ID restores that DJ's latest automation messages, commands, counters, song requests, and accumulated rankings from the persistent workspace.
+Disconnecting revokes OAuth credentials but keeps the opaque browser session and local workspace link. Reconnecting from the same browser restores that DJ's automation messages, commands, counters, song requests, current broadcast context, and enabled bot state without waiting for a DJ chat event. Clearing the browser cookie still requires a later DJ chat event to identify and relink the workspace because Spoon OAuth does not expose the DJ user ID.
 
 ## Administration
 
