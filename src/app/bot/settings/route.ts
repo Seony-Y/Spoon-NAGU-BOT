@@ -3,8 +3,11 @@ import { getAuthSession } from "@/lib/auth";
 import { sendChat } from "@/lib/chat";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
+  AUDIENCE_RANKING_COMMANDS,
+  clearSongRequests,
   deleteBotCounter,
   deleteBotCommand,
+  deleteSongRequest,
   getBotSettings,
   resetBotCounter,
   saveBotCounter,
@@ -129,7 +132,9 @@ export async function POST(request: NextRequest) {
   if (mode === "upsert_command") {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
     const response = String(formData.get("response") ?? "").trim();
-    if (command === "!실드") return redirect(request, "reserved_command", "commands");
+    if (["!실드", "!명령어", "!신청곡", ...AUDIENCE_RANKING_COMMANDS].includes(command)) {
+      return redirect(request, "reserved_command", "commands");
+    }
     if (!/^![^\s]{1,19}$/.test(command) || !response || response.length > 200) {
       return redirect(request, "invalid_command");
     }
@@ -141,6 +146,18 @@ export async function POST(request: NextRequest) {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
     if (command) deleteBotCommand(sessionId, command);
     return redirect(request, "command_deleted", "commands");
+  }
+
+  if (mode === "delete_song_request") {
+    const id = Number(formData.get("id"));
+    if (!Number.isSafeInteger(id) || id < 1) return redirect(request, "invalid_request", "requests");
+    const deleted = deleteSongRequest(sessionId, id);
+    return redirect(request, deleted ? "song_request_deleted" : "invalid_request", "requests");
+  }
+
+  if (mode === "clear_song_requests") {
+    clearSongRequests(sessionId);
+    return redirect(request, "song_requests_cleared", "requests");
   }
 
   return redirect(request, "invalid_request");

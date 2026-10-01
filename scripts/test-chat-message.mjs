@@ -7,6 +7,7 @@ import {
 	parseCounterAdjustment,
 	parseCounterQuery,
 } from "../src/lib/counter-command.ts";
+import { parseSongRequestCommand } from "../src/lib/song-request-command.ts";
 
 assert.equal(validateChatMessage("   "), "invalid_message");
 assert.equal(validateChatMessage("가".repeat(200)), null);
@@ -38,4 +39,10 @@ assert.deepEqual(parseCounterCommand("!실드 -1", false), {
 });
 assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았습니다.");
 
-console.log("Chat checks passed: validation, replies, and counter adjustments");
+assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지"), { kind: "add", title: "밤편지" });
+assert.deepEqual(parseSongRequestCommand(" !신청곡 삭제 42 "), { kind: "delete", id: 42 });
+assert.deepEqual(parseSongRequestCommand("!신청곡"), { kind: "usage" });
+assert.deepEqual(parseSongRequestCommand(`!신청곡 ${"가".repeat(101)}`), { kind: "usage" });
+assert.equal(parseSongRequestCommand("신청곡 밤편지"), null);
+
+console.log("Chat checks passed: validation, replies, counters, and song requests");

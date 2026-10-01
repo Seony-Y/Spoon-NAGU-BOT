@@ -10,7 +10,10 @@ import {
 import { sendBotChat } from "./chat";
 import {
   applyBotCounterCommand,
+  applySongRequestCommand,
   findBotCommandResponse,
+  getAudienceRankingCommandRepliesByKey,
+  getAvailableCommandRepliesByKey,
   getBotSettingsByKey,
   getSessionKey,
   isSessionBlockedByKey,
@@ -18,7 +21,8 @@ import {
   listEnabledBotSessions,
   setBotEnabled,
   setBotEnabledByKey,
-  updateDjNicknameByKey,
+  linkDjWorkspaceByKey,
+  recordAudienceEvent,
 } from "./session-store";
 import { getCurrentLive, getSpoonConfig, SpoonApiErrorResponse } from "./spoon";
 import {
@@ -114,6 +118,8 @@ function setRuntimeState(sessionKey: string, state: BotConnectionState) {
 
 function clearBroadcastState(runtime: BotRuntime) {
   resetBotAutomationState(runtime);
+  runtime.events = [];
+  runtime.lastEventAt = undefined;
   runtime.favoriteListeners.clear();
   runtime.currentLiveId = undefined;
   runtime.managerEventsConfirmed = false;
@@ -207,14 +213,41 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   if (event.event === "presence") runtime.managerEventsConfirmed = true;
 
   if (event.event === "chat" && event.data.isDj && event.data.user.nickname) {
-    updateDjNicknameByKey(sessionKey, event.data.user.nickname);
+    linkDjWorkspaceByKey(sessionKey, event.data.user.id, event.data.user.nickname);
+  }
+  if (runtime.currentLiveId !== undefined) {
+    recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
   }
 
   const settings = getBotSettingsByKey(sessionKey);
   let reply: string | null;
   if (event.event === "chat") {
+    const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
+    if (command === "!명령어") {
+      for (const message of getAvailableCommandRepliesByKey(sessionKey, settings.commandsEnabled, event.data.isDj)) {
+        void sendBotChat(sessionKey, message);
+      }
+      return;
+    }
+    const rankingReplies = getAudienceRankingCommandRepliesByKey(
+      sessionKey,
+      runtime.currentLiveId,
+      event.data.message,
+      event.data.user.id,
+      event.data.user.nickname,
+    );
+    if (rankingReplies) {
+      for (const message of rankingReplies) void sendBotChat(sessionKey, message);
+      return;
+    }
+    const songRequestReply = applySongRequestCommand(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+      event.data.user.nickname,
+    );
     const counterReply = applyBotCounterCommand(sessionKey, event.data.message, event.data.isDj);
-    reply = counterReply ?? (settings.commandsEnabled
+    reply = songRequestReply ?? counterReply ?? (settings.commandsEnabled
       ? event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
         ? MANAGER_REQUIRED_MESSAGE
         : findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
@@ -426,6 +459,7 @@ function startBotByKey(sessionKey: string) {
     announcedHeartMilestone: automation.announcedHeartMilestone,
     favoriteRanking: [],
     favoriteListeners: new Map(),
+    currentLiveId: existing?.currentLiveId,
     managerEventsConfirmed: false,
     controller,
   };

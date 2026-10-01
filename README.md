@@ -47,7 +47,13 @@ With the `chat.send` scope, the dashboard can send messages of up to 200 UTF-16 
 While the bot event stream is connected, these built-in commands reply automatically through the same serialized send queue:
 
 - `!안녕` — greet the listener by nickname
-- `!명령어` — list the available commands
+- `!명령어` — list the commands and named counters currently available, including live dashboard updates
+- `!하트랭킹` — show up to 10 listeners ranked by hearts in the current broadcast
+- `!애청온도랭킹` — show up to 10 listeners ranked by favorite temperature in the current broadcast
+- `!스푼랭킹` — show up to 10 listeners ranked by donations without exposing Spoon totals
+- `!내정보` — show the listener's heart, favorite-temperature, and Spoon ranks without exposing their Spoon total
+- `!신청곡 곡명` — add a song request for any listener
+- `!신청곡 삭제 번호` — remove a numbered song request for the DJ only
 
 ## Audience and automation
 
@@ -61,15 +67,15 @@ While participating, the bot also:
 
 Spoon only sends presence events after the DJ makes the bot a manager. Until those events are confirmed, the worker refreshes its event stream every minute, so a manager promotion made during a broadcast is picked up automatically without a manual bot leave/join. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
 
-Before manager-only presence events are confirmed, a chat command receives a manager setup notice instead of running. This makes missing manager permission visible directly in the broadcast chat.
+Before manager-only presence events are confirmed, a custom chat command receives a manager setup notice instead of running. Counters, the command list, and song requests remain available to their documented roles.
 
 Spoon does not expose a profile endpoint or nickname in the OAuth token. Message templates use `DJ` until the connected DJ sends a chat event, then the bot learns and stores that nickname automatically.
 
-The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, welcome messages, donation thanks, heart donations, repeat announcements, named counters, and chat commands. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
+The **봇 운영** tab provides current-broadcast, daily (Asia/Seoul), and all-time listener rankings for donated spoons, hearts, and favorite temperature. Rankings are accumulated by Spoon user ID, while the latest nickname is kept for display. SSE event IDs prevent duplicate totals after reconnects. The same tab also provides welcome messages, donation thanks, heart donations, repeat announcements, named counters, chat commands, and the song-request queue. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
 Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. Anyone can use `!실드` to display the current value, while only the DJ can use `!실드 +2` or `!실드 -1` to change it. Values never become negative. The same permission rule applies to every named counter. Names, initial values, current values, resets, and deletions are managed in the counter tab.
 
-Disconnecting revokes OAuth credentials and removes the local browser session, bot settings, commands, and counters. A later connection starts a new settings workspace.
+Disconnecting revokes OAuth credentials and removes only the local authentication session. When the DJ chats after reconnecting, the stable Spoon user ID restores that DJ's latest automation messages, commands, counters, song requests, and accumulated rankings from the persistent workspace.
 
 ## Administration
 

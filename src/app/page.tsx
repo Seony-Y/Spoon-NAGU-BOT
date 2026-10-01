@@ -8,7 +8,16 @@ import { loadAudienceStatus } from "@/lib/audience";
 import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
-import { getBotSettings, isSessionBlocked, listBotCommands, listBotCounters } from "@/lib/session-store";
+import {
+  getBotSettings,
+  isSessionBlocked,
+  listAudienceRankings,
+  listBotCommands,
+  listBotCounters,
+  listSongRequests,
+  type AudienceRankingEntry,
+  type AudienceRankingPeriod,
+} from "@/lib/session-store";
 import { RefreshButton, RefreshLiveButton } from "./refresh-live-button";
 
 type HomeProps = {
@@ -20,6 +29,7 @@ type HomeProps = {
     settings?: string;
     tab?: string;
     automation?: string;
+    ranking?: string;
     preview?: string;
   }>;
 };
@@ -57,7 +67,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
 });
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string | number) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : dateTimeFormatter.format(date);
 }
@@ -105,17 +115,35 @@ const settingsNotices: Record<string, { tone: "success" | "error"; text: string 
   counter_deleted: { tone: "success", text: "실드 설정을 삭제했습니다." },
   counter_conflict: { tone: "error", text: "같은 이름의 실드 설정이 이미 있습니다." },
   invalid_counter: { tone: "error", text: "이름은 공백 없이 20자 이하, 개수는 0~1,000,000으로 입력해 주세요." },
+  song_request_deleted: { tone: "success", text: "신청곡을 삭제했습니다." },
+  song_requests_cleared: { tone: "success", text: "신청곡 목록을 모두 비웠습니다." },
 };
 
 const automationTabs = [
-  ["ranking", "실시간 랭킹"],
   ["welcome", "입장 환영"],
   ["donation", "후원 감사"],
   ["heart", "하트 후원"],
   ["repeat", "반복 멘트"],
   ["counters", "실드 설정"],
   ["commands", "채팅 명령어"],
+  ["requests", "신청곡"],
 ] as const;
+
+const rankingPeriods: Array<[AudienceRankingPeriod, string]> = [
+  ["current", "현재 방송"],
+  ["daily", "오늘"],
+  ["all", "역대"],
+];
+
+function topRanking(
+  entries: AudienceRankingEntry[],
+  value: (entry: AudienceRankingEntry) => number | null,
+) {
+  return [...entries]
+    .filter((entry) => (value(entry) ?? 0) > 0)
+    .sort((left, right) => (value(right) ?? 0) - (value(left) ?? 0))
+    .slice(0, 10);
+}
 
 function summarizeEvent(event: BotEvent) {
   const name = event.data.user.nickname ?? "익명";
@@ -138,7 +166,10 @@ export default async function Home({ searchParams }: HomeProps) {
   const isBotTab = params.tab === "bot";
   const automationTab = automationTabs.some(([key]) => key === params.automation)
     ? params.automation
-    : "ranking";
+    : "welcome";
+  const rankingPeriod = rankingPeriods.some(([key]) => key === params.ranking)
+    ? params.ranking as AudienceRankingPeriod
+    : "current";
   const cookieStore = await cookies();
   const sessionId = previewConnected ? "development-preview" : cookieStore.get(SESSION_COOKIE)?.value;
   const connectionBlocked = previewConnected ? false : isSessionBlocked(sessionId);
@@ -208,6 +239,24 @@ export default async function Home({ searchParams }: HomeProps) {
   const botSettings = isBotTab ? accountSettings : null;
   const botCommands = isBotTab && connected && sessionId ? listBotCommands(sessionId) : [];
   const botCounters = isBotTab && connected && sessionId ? listBotCounters(sessionId) : [];
+  const songRequests = isBotTab && connected && sessionId ? listSongRequests(sessionId) : [];
+  const currentLiveId = liveStatus?.kind === "live" ? liveStatus.live.liveId : undefined;
+  const audienceRankings = isBotTab && connected && sessionId
+    ? previewConnected
+      ? [
+          { userId: "preview-fan-1", nickname: "스푼 요정", spoons: 1250, hearts: 840, favoriteTemperature: 42.1 },
+          { userId: "preview-fan-2", nickname: "단골 청취자", spoons: 840, hearts: 1250, favoriteTemperature: 39.7 },
+          { userId: "preview-fan-3", nickname: "응원단장", spoons: 520, hearts: 610, favoriteTemperature: 36.8 },
+        ]
+      : listAudienceRankings(
+          sessionId,
+          rankingPeriod,
+          currentLiveId,
+        )
+    : [];
+  const spoonRanking = topRanking(audienceRankings, (entry) => entry.spoons);
+  const heartRanking = topRanking(audienceRankings, (entry) => entry.hearts);
+  const favoriteRanking = topRanking(audienceRankings, (entry) => entry.favoriteTemperature);
 
   return (
     <div className="site-shell">
@@ -380,7 +429,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {(liveStatus.live.categories.length > 0 || liveStatus.live.tags.length > 0) && (
                     <div className="live-tags" aria-label="방송 카테고리와 태그">
                       {liveStatus.live.categories.map((category) => (
-                        <span key={`category-${category}`}>{category}</span>
+                        <span key={`category-${category}`}>{category === "iteconomy" ? "태그" : category}</span>
                       ))}
                       {liveStatus.live.tags.map((tag) => (
                         <span key={`tag-${tag}`}>#{tag}</span>
@@ -494,6 +543,35 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
+          {!isBotTab && connected && bot && (
+            <article className="event-card" aria-labelledby="recent-events-title">
+              <div className="event-feed">
+                <div className="event-feed-heading">
+                  <div>
+                    <p className="section-label">방송 활동</p>
+                    <h2 id="recent-events-title">최근 이벤트</h2>
+                  </div>
+                  <RefreshButton label="이벤트" />
+                </div>
+                {bot.events.length > 0 ? (
+                  <ol>
+                    {bot.events.map((event, index) => (
+                      <li key={event.id ?? `${event.receivedAt}-${index}`}>
+                        <span className={`event-type is-${event.type}`}>
+                          {scopeLabels[`events.${event.type}`]}
+                        </span>
+                        <p>{summarizeEvent(event)}</p>
+                        <time dateTime={event.receivedAt}>{formatDateTime(event.receivedAt)}</time>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="event-empty">현재 방송에서 수신한 이벤트가 없습니다.</p>
+                )}
+              </div>
+            </article>
+          )}
+
           {isBotTab && connected && bot && (
             <article className="bot-card" aria-labelledby="bot-title">
               <div className="bot-heading">
@@ -515,12 +593,60 @@ export default async function Home({ searchParams }: HomeProps) {
                   : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
               </p>
 
+              <section className="live-ranking-section" aria-labelledby="live-ranking-title">
+                <div className="automation-heading">
+                  <div>
+                    <p className="section-label">방송 현황</p>
+                    <h3 id="live-ranking-title">실시간 랭킹</h3>
+                  </div>
+                  <RefreshButton label="실시간 랭킹" />
+                </div>
+                <nav className="ranking-period-tabs" aria-label="랭킹 기간">
+                  {rankingPeriods.map(([key, label]) => (
+                    <Link
+                      scroll={false}
+                      key={key}
+                      className={rankingPeriod === key ? "is-active" : ""}
+                      href={`/?tab=bot&automation=${automationTab}&ranking=${key}`}
+                    >
+                      {label}
+                    </Link>
+                  ))}
+                </nav>
+                <div className="ranking-columns persistent-ranking-columns">
+                  <section>
+                    <h4>후원 스푼</h4>
+                    {spoonRanking.length > 0 ? (
+                      <ol>{spoonRanking.map((listener, index) => (
+                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.spoons.toLocaleString("ko-KR")}스푼</em></li>
+                      ))}</ol>
+                    ) : <p>집계된 후원이 없습니다.</p>}
+                  </section>
+                  <section>
+                    <h4>하트</h4>
+                    {heartRanking.length > 0 ? (
+                      <ol>{heartRanking.map((listener, index) => (
+                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.hearts.toLocaleString("ko-KR")}개</em></li>
+                      ))}</ol>
+                    ) : <p>집계된 하트가 없습니다.</p>}
+                  </section>
+                  <section>
+                    <h4>애청온도</h4>
+                    {favoriteRanking.length > 0 ? (
+                      <ol>{favoriteRanking.map((listener, index) => (
+                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.favoriteTemperature?.toFixed(1)}°</em></li>
+                      ))}</ol>
+                    ) : <p>집계된 애청온도가 없습니다.</p>}
+                  </section>
+                </div>
+              </section>
+
               {botSettings && (
                 <section className="automation-settings" aria-labelledby="automation-title">
                   <div className="automation-heading">
                     <div>
                       <p className="section-label">운영 설정</p>
-                      <h3 id="automation-title">자동화와 실시간 랭킹</h3>
+                      <h3 id="automation-title">방송 자동화 설정</h3>
                     </div>
                     <span>수정 즉시 적용</span>
                   </div>
@@ -547,32 +673,11 @@ export default async function Home({ searchParams }: HomeProps) {
 
                   <nav className="automation-tabs" aria-label="자동화 설정">
                     {automationTabs.map(([key, label]) => (
-                      <Link scroll={false} key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}`}>
+                      <Link scroll={false} key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}&ranking=${rankingPeriod}`}>
                         {label}
                       </Link>
                     ))}
                   </nav>
-
-                  {automationTab === "ranking" && (
-                    <div className="ranking-columns">
-                      <section>
-                        <h4>애청온도 랭킹</h4>
-                        {bot.favoriteRanking.length > 0 ? (
-                          <ol>{bot.favoriteRanking.map((listener, index) => (
-                            <li key={listener.id}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.favoriteTemperature.toFixed(1)}°</em></li>
-                          ))}</ol>
-                        ) : <p>이번 방송에서 수신한 입장 정보가 없습니다.</p>}
-                      </section>
-                      <section>
-                        <h4>스푼 랭킹</h4>
-                        {audienceResult.fans.kind === "ready" && audienceResult.fans.items.length > 0 ? (
-                          <ol>{audienceResult.fans.items.slice(0, 10).map((fan) => (
-                            <li key={fan.id}><span>{fan.rank}</span><strong>{fan.nickname}</strong><em>{(fan.spoonCount ?? 0).toLocaleString("ko-KR")}스푼</em></li>
-                          ))}</ol>
-                        ) : <p>현재 표시할 스푼 랭킹이 없습니다.</p>}
-                      </section>
-                    </div>
-                  )}
 
                   {automationTab === "welcome" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
@@ -651,6 +756,14 @@ export default async function Home({ searchParams }: HomeProps) {
                       <button type="submit">사용 설정 저장</button>
                     </form>
                     <h4>명령어 관리</h4>
+                    <ul>
+                      <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
+                      <li><div><strong>!하트랭킹</strong><span>현재 방송 하트 상위 10명과 개수 조회</span></div></li>
+                      <li><div><strong>!애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
+                      <li><div><strong>!스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
+                      <li><div><strong>!내정보</strong><span>나의 현재 방송 하트·애청온도·스푼 순위 조회</span></div></li>
+                      <li><div><strong>!신청곡 곡명</strong><span>모두 신청 가능 · DJ는 !신청곡 삭제 번호로 삭제</span></div></li>
+                    </ul>
                     {botCounters.length > 0 && (
                       <ul>
                         {botCounters.map((counter) => (
@@ -665,7 +778,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     )}
                     {botCommands.length > 0 && (
                       <ul>
-                        {botCommands.map((item) => (
+                        {botCommands.filter((item) => item.command !== "!명령어").map((item) => (
                           <li key={item.command}>
                             <div><strong>{item.command}</strong><span>{item.response}</span></div>
                             <form action="/bot/settings" method="post">
@@ -685,6 +798,28 @@ export default async function Home({ searchParams }: HomeProps) {
                       <input id="command-response" name="response" placeholder="응답 메시지" maxLength={200} required />
                       <button type="submit">추가 또는 수정</button>
                     </form>
+                  </div>}
+
+                  {automationTab === "requests" && <div className="song-request-editor">
+                    <div className="counter-guide">
+                      <h4>신청곡 관리</h4>
+                      <p>청취자는 <code>!신청곡 곡명</code>으로 신청하고, DJ는 채팅의 <code>!신청곡 삭제 번호</code> 또는 여기서 삭제할 수 있습니다.</p>
+                    </div>
+                    {songRequests.length > 0 ? <ol className="song-request-list">
+                      {songRequests.map((request) => <li key={request.id}>
+                        <span className="song-request-number">#{request.id}</span>
+                        <div><strong>{request.title}</strong><span>{request.requesterNickname} · {formatDateTime(request.createdAt)}</span></div>
+                        <form action="/bot/settings" method="post">
+                          <input type="hidden" name="mode" value="delete_song_request" />
+                          <input type="hidden" name="id" value={request.id} />
+                          <button type="submit" aria-label={`${request.title} 신청곡 삭제`}>삭제</button>
+                        </form>
+                      </li>)}
+                    </ol> : <p className="song-request-empty">접수된 신청곡이 없습니다.</p>}
+                    {songRequests.length > 0 && <form className="song-request-clear" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="clear_song_requests" />
+                      <button type="submit">전체 비우기</button>
+                    </form>}
                   </div>}
                 </section>
               )}
@@ -817,28 +952,6 @@ export default async function Home({ searchParams }: HomeProps) {
                   <span><strong>!안녕</strong> 닉네임으로 환영 인사</span>
                   <span><strong>!명령어</strong> 사용 가능한 명령어 안내</span>
                 </div>
-              </div>
-
-              <div className="event-feed">
-                <div className="event-feed-heading">
-                  <h3>최근 이벤트</h3>
-                  <RefreshButton label="상태" />
-                </div>
-                {bot.events.length > 0 ? (
-                  <ol>
-                    {bot.events.map((event, index) => (
-                      <li key={event.id ?? `${event.receivedAt}-${index}`}>
-                        <span className={`event-type is-${event.type}`}>
-                          {scopeLabels[`events.${event.type}`]}
-                        </span>
-                        <p>{summarizeEvent(event)}</p>
-                        <time dateTime={event.receivedAt}>{formatDateTime(event.receivedAt)}</time>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="event-empty">수신한 이벤트가 아직 없습니다.</p>
-                )}
               </div>
 
               <p className="bot-footnote">
