@@ -9,7 +9,7 @@ import { getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bo
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
 import { getBotSettings, isSessionBlocked, listBotCommands, listBotCounters } from "@/lib/session-store";
-import { RefreshLiveButton } from "./refresh-live-button";
+import { RefreshButton, RefreshLiveButton } from "./refresh-live-button";
 
 type HomeProps = {
   searchParams: Promise<{
@@ -91,10 +91,11 @@ const chatNotices: Record<string, { tone: "success" | "error"; title: string; de
 const settingsNotices: Record<string, { tone: "success" | "error"; text: string }> = {
   greeting_sent: { tone: "success", text: "인사말을 저장하고 현재 방송 채팅에 바로 보냈습니다." },
   feature_saved: { tone: "success", text: "자동화 설정을 저장했습니다. 다음 이벤트부터 적용됩니다." },
+  nickname_saved: { tone: "success", text: "DJ 표시 이름을 저장했습니다." },
   command_saved: { tone: "success", text: "명령어를 저장했습니다. 같은 명령어는 새 응답으로 교체됩니다." },
   command_deleted: { tone: "success", text: "명령어를 삭제했습니다." },
   invalid_greeting: { tone: "error", text: "인사말은 1자 이상 200자 이하로 입력해 주세요." },
-  invalid_nickname: { tone: "error", text: "DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요." },
+  invalid_nickname: { tone: "error", text: "DJ 표시 이름은 50자 이하로 입력해 주세요." },
   invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
   reserved_command: { tone: "error", text: "!실드는 기본 실드 개수 명령어로 항상 유지됩니다." },
   invalid_message: { tone: "error", text: "메시지는 1자 이상 200자 이하로 입력해 주세요." },
@@ -304,40 +305,13 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             )}
 
-            {connected && accountSettings && (
-              <form className="profile-form" action="/account/profile" method="post">
-                <div>
-                  <label htmlFor="account-dj-nickname">DJ 닉네임</label>
-                  <span>{accountSettings.djNickname ? "연결 관리에 표시되는 이름입니다." : "계속하려면 DJ 닉네임을 등록해 주세요."}</span>
-                </div>
-                <input
-                  id="account-dj-nickname"
-                  name="djNickname"
-                  defaultValue={accountSettings.djNickname}
-                  maxLength={50}
-                  placeholder="Spoon DJ 닉네임"
-                  required
-                />
-                <button type="submit">{accountSettings.djNickname ? "수정" : "등록"}</button>
-              </form>
-            )}
-
-            {params.status === "nickname_saved" && (
-              <p className="profile-result" role="status">DJ 닉네임을 저장했습니다.</p>
-            )}
-
-            {params.status === "invalid_nickname" && (
-              <p className="profile-result is-error" role="alert">DJ 닉네임은 1자 이상 50자 이하로 입력해 주세요.</p>
-            )}
-
             {!connectionBlocked && <div className="connection-actions">
-              <a className="connect" href="/oauth/connect">
-                {connected ? "계정 다시 연결하기" : "Spoon 계정 연결하기"}
-              </a>
-              {connected && (
+              {connected ? (
                 <form action="/oauth/disconnect" method="post">
                   <button className="disconnect" type="submit">연결 해제</button>
                 </form>
+              ) : (
+                <a className="connect" href="/oauth/connect">Spoon 계정 연결하기</a>
               )}
             </div>}
 
@@ -450,7 +424,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <p className="section-label">방송 구성원</p>
                   <h2 id="audience-title">청취자와 팬 랭킹</h2>
                 </div>
-                <Link href="/">목록 새로고침</Link>
+                <RefreshButton label="목록" />
               </div>
 
               <div className="audience-columns">
@@ -557,6 +531,19 @@ export default async function Home({ searchParams }: HomeProps) {
                       <strong>{settingsNotice.text}</strong>
                     </div>
                   )}
+
+                  <form className="dj-name-form" action="/bot/settings" method="post">
+                    <input type="hidden" name="mode" value="dj_nickname" />
+                    <input type="hidden" name="automation" value={automationTab} />
+                    <div>
+                      <label htmlFor="dj-display-name">DJ 표시 이름 <span>선택</span></label>
+                      <p>Spoon API는 연결할 때 DJ 닉네임을 제공하지 않습니다. 비워두면 <strong>DJ</strong>로 표시하며, DJ가 채팅이나 퀵메시지를 보내면 실제 닉네임으로 자동 갱신됩니다.</p>
+                    </div>
+                    <div className="dj-name-field">
+                      <input id="dj-display-name" name="djNickname" defaultValue={botSettings.djNickname} maxLength={50} placeholder="DJ" />
+                      <button type="submit">저장</button>
+                    </div>
+                  </form>
 
                   <nav className="automation-tabs" aria-label="자동화 설정">
                     {automationTabs.map(([key, label]) => (
@@ -835,7 +822,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="event-feed">
                 <div className="event-feed-heading">
                   <h3>최근 이벤트</h3>
-                  <Link href="/?tab=bot">상태 새로고침</Link>
+                  <RefreshButton label="상태" />
                 </div>
                 {bot.events.length > 0 ? (
                   <ol>

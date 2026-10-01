@@ -94,6 +94,10 @@ export function getSpoonConfig() {
   };
 }
 
+export function buildApplicationUrl(path: string, fallbackUrl: string) {
+  return new URL(path, process.env.SPOON_REDIRECT_URI || fallbackUrl);
+}
+
 export function buildAuthorizationUrl(state: string) {
   const config = getSpoonConfig();
   const url = new URL("https://developers.spooncast.net/kr/oauth/authorize");

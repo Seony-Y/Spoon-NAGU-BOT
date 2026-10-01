@@ -11,11 +11,12 @@ import {
   updateBotSettings,
   upsertBotCommand,
 } from "@/lib/session-store";
+import { buildApplicationUrl } from "@/lib/spoon";
 
 export const runtime = "nodejs";
 
 function redirect(request: NextRequest, status: string, automation?: string) {
-  const target = new URL("/", request.url);
+  const target = buildApplicationUrl("/", request.url);
   target.searchParams.set("tab", "bot");
   target.searchParams.set("settings", status);
   if (automation) target.searchParams.set("automation", automation);
@@ -30,15 +31,24 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const mode = formData.get("mode");
 
+  if (mode === "dj_nickname") {
+    const djNickname = String(formData.get("djNickname") ?? "").trim();
+    const automation = String(formData.get("automation") ?? "ranking");
+    if (djNickname.length > 50) return redirect(request, "invalid_nickname", automation);
+
+    const settings = getBotSettings(sessionId);
+    updateBotSettings(sessionId, { ...settings, djNickname });
+    return redirect(request, "nickname_saved", automation);
+  }
+
   if (mode === "greeting") {
     const greetingMessage = String(formData.get("greetingMessage") ?? "").trim();
     if (!greetingMessage || greetingMessage.length > 200) return redirect(request, "invalid_greeting");
 
     const settings = getBotSettings(sessionId);
-    if (!settings.djNickname) return redirect(request, "invalid_nickname");
     updateBotSettings(sessionId, { ...settings, greetingMessage });
     const announcement = greetingMessage
-      .replaceAll("{name}", settings.djNickname)
+      .replaceAll("{name}", settings.djNickname || "DJ")
       .replaceAll("{nickname}", "여러분");
     const result = await sendChat(sessionId, announcement);
     return redirect(request, result.kind === "sent" ? "greeting_sent" : `greeting_saved_${result.kind}`);

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { startBot } from "@/lib/bot-runtime";
 import { SESSION_COOKIE } from "@/lib/session";
+import { buildApplicationUrl } from "@/lib/spoon";
 
 export const runtime = "nodejs";
 
@@ -10,19 +11,19 @@ export async function POST(request: NextRequest) {
   const session = await getAuthSession(sessionId);
 
   if (!sessionId || !session) {
-    return NextResponse.redirect(new URL("/?tab=bot&error=authentication_required", request.url), 303);
+    return NextResponse.redirect(buildApplicationUrl("/?tab=bot&error=authentication_required", request.url), 303);
   }
 
   const hasEventScope = session.scope
     .split(" ")
     .some((scope) => scope.startsWith("events."));
   if (!hasEventScope) {
-    return NextResponse.redirect(new URL("/?tab=bot&error=events_scope_required", request.url), 303);
+    return NextResponse.redirect(buildApplicationUrl("/?tab=bot&error=events_scope_required", request.url), 303);
   }
 
   if (!startBot(sessionId)) {
-    return NextResponse.redirect(new URL("/?tab=bot&error=bot_start_failed", request.url), 303);
+    return NextResponse.redirect(buildApplicationUrl("/?tab=bot&error=bot_start_failed", request.url), 303);
   }
 
-  return NextResponse.redirect(new URL("/?tab=bot&bot=started", request.url), 303);
+  return NextResponse.redirect(buildApplicationUrl("/?tab=bot&bot=started", request.url), 303);
 }

@@ -9,6 +9,7 @@ import {
 import {
   deleteAuthSession,
   deleteAuthSessionByKey,
+  deleteSession,
   getSession,
   getSessionByKey,
   getSessionKey,
@@ -75,8 +76,9 @@ export function invalidateAuthSession(sessionId: string) {
 
 export async function disconnectAuthSession(sessionId: string) {
   const current = getSession(sessionId);
-  if (!current) return;
-
-  await revokeToken(current.refresh_token);
-  deleteAuthSession(sessionId);
+  try {
+    if (current) await revokeToken(current.refresh_token);
+  } finally {
+    deleteSession(sessionId);
+  }
 }

@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { createAuthSession } from "@/lib/auth";
 import { SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
 import { isSessionBlocked } from "@/lib/session-store";
-import { exchangeCode, getSpoonConfig } from "@/lib/spoon";
+import { buildApplicationUrl, exchangeCode } from "@/lib/spoon";
 
 export const runtime = "nodejs";
 
@@ -17,17 +17,9 @@ function statesMatch(expected: string | undefined, received: string | null) {
 }
 
 function redirectWithError(request: NextRequest, error: string) {
-  const response = NextResponse.redirect(buildAppUrl(`/?error=${encodeURIComponent(error)}`, request));
+  const response = NextResponse.redirect(buildApplicationUrl(`/?error=${encodeURIComponent(error)}`, request.url));
   response.cookies.delete(STATE_COOKIE);
   return response;
-}
-
-function buildAppUrl(path: string, request: NextRequest) {
-  try {
-    return new URL(path, getSpoonConfig().redirectUri);
-  } catch {
-    return new URL(path, request.url);
-  }
 }
 
 export async function GET(request: NextRequest) {
@@ -54,7 +46,7 @@ export async function GET(request: NextRequest) {
   try {
     const token = await exchangeCode(code);
     const sessionId = createAuthSession(request.cookies.get(SESSION_COOKIE)?.value, token);
-    const response = NextResponse.redirect(buildAppUrl("/?status=connected", request));
+    const response = NextResponse.redirect(buildApplicationUrl("/?status=connected", request.url));
 
     response.cookies.delete(STATE_COOKIE);
     response.cookies.set(SESSION_COOKIE, sessionId, {

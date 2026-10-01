@@ -63,13 +63,13 @@ Spoon only sends presence events after the DJ makes the bot a manager. Until tho
 
 Before manager-only presence events are confirmed, a chat command receives a manager setup notice instead of running. This makes missing manager permission visible directly in the broadcast chat.
 
-The account banner stores the DJ nickname immediately after OAuth connection. Because Spoon does not expose a profile endpoint or nickname in the OAuth token, the nickname is entered directly and can also be learned when the connected DJ sends a chat event.
+Spoon does not expose a profile endpoint or nickname in the OAuth token. Message templates use `DJ` until the connected DJ sends a chat event, then the bot learns and stores that nickname automatically.
 
 The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, welcome messages, donation thanks, heart donations, repeat announcements, named counters, and chat commands. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
 Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. In chat, `!실드` displays the current value, `!실드 +2` adds two, and `!실드 -1` subtracts one without allowing a negative result. Names, initial values, current values, resets, and deletions are managed in the counter tab.
 
-Disconnecting revokes and removes OAuth credentials but retains bot settings under the long-lived browser session key. Reconnecting the same DJ from that browser restores messages, commands, and counters automatically. Spoon does not expose a stable account identifier, so clearing the browser cookie starts a new settings workspace.
+Disconnecting revokes OAuth credentials and removes the local browser session, bot settings, commands, and counters. A later connection starts a new settings workspace.
 
 ## Administration
 
