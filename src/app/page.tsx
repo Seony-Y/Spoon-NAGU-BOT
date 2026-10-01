@@ -20,6 +20,7 @@ type HomeProps = {
     settings?: string;
     tab?: string;
     automation?: string;
+    preview?: string;
   }>;
 };
 
@@ -132,17 +133,56 @@ function summarizeEvent(event: BotEvent) {
 
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
+  const previewConnected = process.env.NODE_ENV === "development" && params.preview === "connected";
   const isBotTab = params.tab === "bot";
   const automationTab = automationTabs.some(([key]) => key === params.automation)
     ? params.automation
     : "ranking";
   const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
-  const connectionBlocked = isSessionBlocked(sessionId);
-  let session = await getAuthSession(sessionId);
-  const liveResult = await loadLiveStatus(sessionId, session);
+  const sessionId = previewConnected ? "development-preview" : cookieStore.get(SESSION_COOKIE)?.value;
+  const connectionBlocked = previewConnected ? false : isSessionBlocked(sessionId);
+  let session = previewConnected ? {
+    access_token: "preview",
+    token_type: "Bearer" as const,
+    expires_in: 3600,
+    refresh_token: "preview",
+    scope: Object.keys(scopeLabels).join(" "),
+    expires_at: Date.now() + 3600_000,
+  } : await getAuthSession(sessionId);
+  const liveResult = previewConnected ? {
+    session,
+    status: {
+      kind: "live" as const,
+      live: {
+        liveId: 1,
+        title: "NAGU BOT 개발 화면",
+        startedAt: new Date().toISOString(),
+        closeAirTime: "",
+        listenerCount: 24,
+        totalListenerCount: 138,
+        welcomeMessage: "어서 오세요. 오늘도 편안하게 함께해요!",
+        isChatFrozen: false,
+        categories: ["소통"],
+        tags: ["나구봇", "개발미리보기"],
+      },
+    },
+    authenticationExpired: false,
+  } : await loadLiveStatus(sessionId, session);
   session = liveResult.session;
-  const audienceResult = await loadAudienceStatus(sessionId, session);
+  const audienceResult = previewConnected ? {
+    session,
+    listeners: { kind: "ready" as const, items: [
+      { id: "preview-listener-1", nickname: "첫번째 청취자" },
+      { id: "preview-listener-2", nickname: "나구 친구" },
+      { id: "preview-listener-3", nickname: "오늘의 게스트" },
+    ] },
+    fans: { kind: "ready" as const, items: [
+      { id: "preview-fan-1", nickname: "스푼 요정", rank: 1, spoonCount: 1250 },
+      { id: "preview-fan-2", nickname: "단골 청취자", rank: 2, spoonCount: 840 },
+      { id: "preview-fan-3", nickname: "응원단장", rank: 3, spoonCount: 520 },
+    ] },
+    authenticationExpired: false,
+  } : await loadAudienceStatus(sessionId, session);
   session = audienceResult.session;
   const connected = session !== null;
   const error = params.error
