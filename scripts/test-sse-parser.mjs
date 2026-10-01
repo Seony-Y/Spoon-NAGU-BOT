@@ -26,6 +26,12 @@ assert.equal(multiline?.data.message, "split");
 assert.equal(parseSseFrame("event: unknown\ndata: {}"), null);
 assert.equal(parseSseFrame("event: chat\ndata: not-json"), null);
 
+const donation = parseSseFrame(
+  'event: donation\nid: gift-1\ndata: {"user":{"id":"fan-1","nickname":"후원자"},"amount":20,"message":null,"time":"2026-10-01T00:00:00Z","gift":{"id":"item-20","name":"테스트 스푼"}}',
+);
+assert.equal(donation?.event, "donation");
+assert.deepEqual(donation?.data.gift, { id: "item-20", name: "테스트 스푼" });
+
 console.log(
-  "SSE parser checks passed: CRLF, heartbeat, fragmented, multiline, unknown, malformed",
+  "SSE parser checks passed: CRLF, heartbeat, fragmented, multiline, extra fields, unknown, malformed",
 );
