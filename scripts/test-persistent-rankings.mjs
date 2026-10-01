@@ -43,6 +43,20 @@ store.updateBotSettings(firstSessionId, {
 	repeatMessage: "저장된 반복 문구",
 });
 store.upsertBotCommand(firstSessionId, "!테스트", "영구 명령어");
+store.upsertBotCommand(firstSessionId, "!수정전", "이전 응답");
+assert.equal(store.updateBotCommand(firstSessionId, "!수정전", "!수정후", "수정된 응답"), true);
+assert.equal(store.findBotCommandResponse(firstSessionKey, "!수정전", null), null);
+assert.equal(store.findBotCommandResponse(firstSessionKey, "!수정후", null), "수정된 응답");
+assert.equal(store.updateBotCommand(firstSessionId, "!수정후", "!테스트", "충돌 응답"), false);
+assert.equal(store.findBotCommandResponse(firstSessionKey, "!수정후", null), "수정된 응답");
+const populatedCommandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey, true).join(" ");
+assert.match(populatedCommandReplies, /!테스트/);
+assert.match(populatedCommandReplies, /DJ 전용 명령어:/);
+assert.doesNotMatch(populatedCommandReplies, /영구 명령어|수정된 응답|실드 0개/);
+const shield = store.listBotCounters(firstSessionId).find((counter) => counter.name === "실드");
+assert.equal(store.saveBotCounter(firstSessionId, shield.id, shield.name, 5), true);
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드 +2", true), "실드 7개 남았습니다.");
+assert.equal(store.listBotCounters(firstSessionId).find((counter) => counter.id === shield.id).value, 7);
 assert.deepEqual(
 	store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A"),
 	["신청곡 목록이 비어 있습니다."],

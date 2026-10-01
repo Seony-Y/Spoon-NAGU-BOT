@@ -1448,6 +1448,8 @@ h1 {
 
 .command-group-title {
   margin: 20px 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
@@ -1494,6 +1496,35 @@ h1 {
   cursor: pointer;
 }
 
+.command-custom-item {
+  align-items: stretch;
+}
+
+.command-update-form {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(100px, 0.4fr) minmax(180px, 1fr) auto;
+  gap: 8px;
+}
+
+.command-update-form input {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.command-editor .command-update-form button {
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.command-delete-form {
+  display: flex;
+  align-items: center;
+}
+
 .command-form {
   display: grid;
   grid-template-columns: 72px minmax(100px, 0.5fr) 40px minmax(160px, 1fr) auto;
@@ -1537,9 +1568,12 @@ h1 {
 .counter-item > form,
 .counter-create-form {
   display: grid;
-  grid-template-columns: minmax(100px, 1fr) 120px 120px auto;
   align-items: end;
   gap: 8px;
+}
+
+.counter-item > form {
+  grid-template-columns: minmax(100px, 1fr) 120px auto;
 }
 
 .counter-item label {
@@ -1822,6 +1856,22 @@ h1 {
 
   .command-form {
     grid-template-columns: 1fr;
+  }
+
+  .command-custom-item {
+    flex-direction: column;
+  }
+
+  .command-update-form {
+    grid-template-columns: 1fr;
+  }
+
+  .command-update-form button {
+    min-height: 38px;
+  }
+
+  .command-delete-form {
+    justify-content: flex-end;
   }
 
   .admin-main {

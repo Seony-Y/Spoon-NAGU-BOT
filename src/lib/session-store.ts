@@ -63,7 +63,6 @@ export type BotCommand = {
 export type BotCounter = {
   id: number;
   name: string;
-  initialValue: number;
   value: number;
 };
 
@@ -756,6 +755,24 @@ export function upsertBotCommand(sessionId: string, command: string, response: s
   `).run(workspaceKey, command, response);
 }
 
+export function updateBotCommand(
+  sessionId: string,
+  originalCommand: string,
+  command: string,
+  response: string,
+) {
+  const { workspaceKey } = ensureBotSettings(getSessionKey(sessionId));
+  try {
+    const result = getDatabase().prepare(`
+      UPDATE bot_commands SET command = ?, response = ?
+      WHERE session_key = ? AND command = ?
+    `).run(command, response, workspaceKey, originalCommand);
+    return result.changes > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function deleteBotCommand(sessionId: string, command: string) {
   getDatabase().prepare("DELETE FROM bot_commands WHERE session_key = ? AND command = ?")
     .run(getWorkspaceKey(getSessionKey(sessionId)), command);
@@ -820,19 +837,17 @@ export function getAvailableCommandRepliesByKey(
 export function listBotCountersByKey(sessionKey: string): BotCounter[] {
   const workspaceKey = getWorkspaceKey(sessionKey);
   return (getDatabase().prepare(`
-    SELECT id, name, initial_value, value
+    SELECT id, name, value
     FROM bot_counters
     WHERE session_key = ?
     ORDER BY id
   `).all(workspaceKey) as Array<{
     id: number;
     name: string;
-    initial_value: number;
     value: number;
   }>).map((row) => ({
     id: row.id,
     name: row.name,
-    initialValue: row.initial_value,
     value: row.value,
   }));
 }
@@ -845,7 +860,6 @@ export function saveBotCounter(
   sessionId: string,
   id: number | null,
   name: string,
-  initialValue: number,
   value: number,
 ) {
   const database = getDatabase();
@@ -855,7 +869,7 @@ export function saveBotCounter(
       database.prepare(`
         INSERT INTO bot_counters (session_key, name, initial_value, value)
         VALUES (?, ?, ?, ?)
-      `).run(sessionKey, name, initialValue, value);
+      `).run(sessionKey, name, value, value);
       return true;
     }
 
@@ -868,18 +882,11 @@ export function saveBotCounter(
       UPDATE bot_counters
       SET name = ?, initial_value = ?, value = ?
       WHERE id = ? AND session_key = ?
-    `).run(savedName, initialValue, value, id, sessionKey);
+    `).run(savedName, value, value, id, sessionKey);
     return result.changes > 0;
   } catch {
     return false;
   }
-}
-
-export function resetBotCounter(sessionId: string, id: number) {
-  const result = getDatabase().prepare(`
-    UPDATE bot_counters SET value = initial_value WHERE id = ? AND session_key = ?
-  `).run(id, getWorkspaceKey(getSessionKey(sessionId)));
-  return result.changes > 0;
 }
 
 export function deleteBotCounter(sessionId: string, id: number) {

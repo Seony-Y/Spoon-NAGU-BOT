@@ -9,14 +9,20 @@ import {
   deleteBotCommand,
   deleteSongRequest,
   getBotSettings,
-  resetBotCounter,
   saveBotCounter,
   updateBotSettings,
+  updateBotCommand,
   upsertBotCommand,
 } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
 
 export const runtime = "nodejs";
+
+const RESERVED_COMMANDS = ["!실드", "!명령어", "!안녕", "!신청곡", ...AUDIENCE_RANKING_COMMANDS];
+
+function isReservedCommand(command: string) {
+  return RESERVED_COMMANDS.includes(command);
+}
 
 function redirect(request: NextRequest, status: string, automation?: string) {
   const target = buildApplicationUrl("/", request.url);
@@ -98,45 +104,46 @@ export async function POST(request: NextRequest) {
     const rawId = String(formData.get("id") ?? "");
     const id = rawId ? Number(rawId) : null;
     const name = String(formData.get("name") ?? "").trim();
-    const initialValue = Number(formData.get("initialValue"));
-    const value = id === null ? initialValue : Number(formData.get("value"));
+    const value = Number(formData.get("value"));
     if (
       (id !== null && (!Number.isInteger(id) || id < 1))
       || !/^[^\s!]{1,20}$/u.test(name)
-      || !Number.isInteger(initialValue)
-      || initialValue < 0
-      || initialValue > 1_000_000
       || !Number.isInteger(value)
       || value < 0
       || value > 1_000_000
     ) {
       return redirect(request, "invalid_counter", "counters");
     }
-    const saved = saveBotCounter(sessionId, id, name, initialValue, value);
+    const saved = saveBotCounter(sessionId, id, name, value);
     return redirect(request, saved ? "counter_saved" : "counter_conflict", "counters");
   }
 
-  if (mode === "reset_counter" || mode === "delete_counter") {
+  if (mode === "delete_counter") {
     const id = Number(formData.get("id"));
     if (!Number.isInteger(id) || id < 1) return redirect(request, "invalid_counter", "counters");
-    const changed = mode === "reset_counter"
-      ? resetBotCounter(sessionId, id)
-      : deleteBotCounter(sessionId, id);
+    const changed = deleteBotCounter(sessionId, id);
     return redirect(
       request,
-      changed ? (mode === "reset_counter" ? "counter_reset" : "counter_deleted") : "invalid_counter",
+      changed ? "counter_deleted" : "invalid_counter",
       "counters",
     );
   }
 
-  if (mode === "upsert_command") {
+  if (mode === "upsert_command" || mode === "update_command") {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
     const response = String(formData.get("response") ?? "").trim();
-    if (["!실드", "!명령어", "!신청곡", ...AUDIENCE_RANKING_COMMANDS].includes(command)) {
+    if (isReservedCommand(command)) {
       return redirect(request, "reserved_command", "commands");
     }
     if (!/^![^\s]{1,19}$/.test(command) || !response || response.length > 200) {
       return redirect(request, "invalid_command");
+    }
+    if (mode === "update_command") {
+      const originalCommand = String(formData.get("originalCommand") ?? "").trim().toLocaleLowerCase("ko-KR");
+      if (isReservedCommand(originalCommand)) return redirect(request, "reserved_command", "commands");
+      if (!/^![^\s]{1,19}$/.test(originalCommand)) return redirect(request, "invalid_command", "commands");
+      const updated = updateBotCommand(sessionId, originalCommand, command, response);
+      return redirect(request, updated ? "command_updated" : "command_conflict", "commands");
     }
     upsertBotCommand(sessionId, command, response);
     return redirect(request, "command_saved", "commands");
@@ -144,6 +151,7 @@ export async function POST(request: NextRequest) {
 
   if (mode === "delete_command") {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
+    if (isReservedCommand(command)) return redirect(request, "reserved_command", "commands");
     if (command) deleteBotCommand(sessionId, command);
     return redirect(request, "command_deleted", "commands");
   }

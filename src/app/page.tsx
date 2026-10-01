@@ -18,7 +18,7 @@ import {
   type AudienceRankingEntry,
   type AudienceRankingPeriod,
 } from "@/lib/session-store";
-import { RefreshButton, RefreshLiveButton } from "./refresh-live-button";
+import { AutoRefresh, RefreshButton, RefreshLiveButton } from "./refresh-live-button";
 
 type HomeProps = {
   searchParams: Promise<{
@@ -102,16 +102,17 @@ const settingsNotices: Record<string, { tone: "success" | "error"; text: string 
   greeting_sent: { tone: "success", text: "인사말을 저장하고 현재 방송 채팅에 바로 보냈습니다." },
   feature_saved: { tone: "success", text: "자동화 설정을 저장했습니다. 다음 이벤트부터 적용됩니다." },
   nickname_saved: { tone: "success", text: "DJ 표시 이름을 저장했습니다." },
-  command_saved: { tone: "success", text: "명령어를 저장했습니다. 같은 명령어는 새 응답으로 교체됩니다." },
+  command_saved: { tone: "success", text: "명령어를 추가했습니다." },
+  command_updated: { tone: "success", text: "명령어를 수정했습니다." },
   command_deleted: { tone: "success", text: "명령어를 삭제했습니다." },
   invalid_greeting: { tone: "error", text: "인사말은 1자 이상 200자 이하로 입력해 주세요." },
   invalid_nickname: { tone: "error", text: "DJ 표시 이름은 50자 이하로 입력해 주세요." },
   invalid_command: { tone: "error", text: "명령어는 !로 시작해 20자 이하, 응답은 200자 이하로 입력해 주세요." },
-  reserved_command: { tone: "error", text: "!실드는 기본 실드 개수 명령어로 항상 유지됩니다." },
+  reserved_command: { tone: "error", text: "기본 명령어는 추가하거나 수정할 수 없습니다." },
+  command_conflict: { tone: "error", text: "같은 이름의 명령어가 있거나 수정할 명령어를 찾지 못했습니다." },
   invalid_message: { tone: "error", text: "메시지는 1자 이상 200자 이하로 입력해 주세요." },
   invalid_interval: { tone: "error", text: "반복 간격은 1분 이상 1440분 이하로 입력해 주세요." },
   counter_saved: { tone: "success", text: "실드 설정을 저장했습니다." },
-  counter_reset: { tone: "success", text: "현재 개수를 초기 개수로 되돌렸습니다." },
   counter_deleted: { tone: "success", text: "실드 설정을 삭제했습니다." },
   counter_conflict: { tone: "error", text: "같은 이름의 실드 설정이 이미 있습니다." },
   invalid_counter: { tone: "error", text: "이름은 공백 없이 20자 이하, 개수는 0~1,000,000으로 입력해 주세요." },
@@ -577,7 +578,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="bot-heading">
                 <div>
                   <p className="section-label">봇 운영</p>
-                  <h2 id="bot-title">방송 참여 제어</h2>
+                  <h2 id="bot-title">방송 관리</h2>
                 </div>
                 <span className={`bot-badge is-${bot.state}`}>
                   <span className="status-dot" aria-hidden="true" />
@@ -592,6 +593,91 @@ export default async function Home({ searchParams }: HomeProps) {
                     : "NAGU BOT이 실시간 이벤트 스트림을 유지하고 있습니다."
                   : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
               </p>
+
+              <dl className="activity-metrics">
+                <div>
+                  <dt>환영 인원</dt>
+                  <dd>{bot.activity.welcomedListeners.toLocaleString("ko-KR")}명</dd>
+                </div>
+                <div>
+                  <dt>누적 하트</dt>
+                  <dd>{bot.activity.hearts.toLocaleString("ko-KR")}개</dd>
+                </div>
+                <div>
+                  <dt>누적 후원</dt>
+                  <dd>{bot.activity.spoons.toLocaleString("ko-KR")}스푼</dd>
+                </div>
+              </dl>
+
+              {scopes.includes("events.presence") && (
+                <p className="manager-help">
+                  Spoon에서 봇을 매니저로 지정하면 최대 1분 이내 자동으로 반영됩니다.
+                </p>
+              )}
+
+              {params.bot === "started" && bot.enabled && (
+                <div className="notice success" role="status">
+                  <span className="notice-icon" aria-hidden="true">✓</span>
+                  <div>
+                    <strong>참여 요청 완료</strong>
+                    <span>방송 전이면 참여 대기 상태로 자동 연결합니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {params.bot === "stopped" && !bot.enabled && (
+                <div className="notice success" role="status">
+                  <span className="notice-icon" aria-hidden="true">✓</span>
+                  <div>
+                    <strong>봇 퇴장 완료</strong>
+                    <span>이벤트 연결을 종료했습니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {bot.state === "authentication_required" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>계정 재연결 필요</strong>
+                    <span>Spoon 인증이 만료되어 봇을 중지했습니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {bot.state === "permission_required" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>이벤트 권한 필요</strong>
+                    <span>계정을 다시 연결해 events 권한을 승인해 주세요.</span>
+                  </div>
+                </div>
+              )}
+
+              {bot.state === "blocked" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>방송 입장 차단</strong>
+                    <span>Spoon 방송 설정에서 봇 차단 상태를 확인해 주세요.</span>
+                  </div>
+                </div>
+              )}
+
+              <form action={bot.enabled ? "/bot/leave" : "/bot/join"} method="post">
+                <button
+                  className={bot.enabled ? "bot-leave" : "bot-join"}
+                  type="submit"
+                  disabled={!bot.enabled && !hasEventScope}
+                >
+                  {bot.enabled ? "봇 퇴장" : "봇 참여"}
+                </button>
+              </form>
+
+              {!hasEventScope && (
+                <p className="bot-help">실시간 이벤트 권한을 승인한 뒤 참여할 수 있습니다.</p>
+              )}
 
               <section className="live-ranking-section" aria-labelledby="live-ranking-title">
                 <div className="automation-heading">
@@ -722,8 +808,9 @@ export default async function Home({ searchParams }: HomeProps) {
                   )}
 
                   {automationTab === "counters" && <div className="counter-editor">
+                    <AutoRefresh />
                     <div className="counter-guide">
-                      <h4>실드 개수 관리</h4>
+                      <h4>카운터 개수 관리</h4>
                       <p><code>!실드</code> 조회는 누구나 사용할 수 있고, <code>!실드 +2</code> 또는 <code>!실드 -1</code> 증감은 DJ만 사용할 수 있습니다. 이 규칙은 추가한 모든 카운터에 동일하게 적용됩니다.</p>
                     </div>
                     {botCounters.length > 0 && <div className="counter-list">
@@ -731,20 +818,18 @@ export default async function Home({ searchParams }: HomeProps) {
                         <form action="/bot/settings" method="post">
                           <input type="hidden" name="mode" value="save_counter" /><input type="hidden" name="id" value={counter.id} />
                           <label>이름<input name="name" defaultValue={counter.name} maxLength={20} readOnly={counter.name === "실드"} required /></label>
-                          <label>초기 개수<input type="number" name="initialValue" min={0} max={1000000} defaultValue={counter.initialValue} required /></label>
-                          <label>현재 개수<input type="number" name="value" min={0} max={1000000} defaultValue={counter.value} required /></label>
+                          <label>개수<input type="number" name="value" min={0} max={1000000} defaultValue={counter.value} required /></label>
                           <button type="submit">수정</button>
                         </form>
-                        <div className="counter-actions">
-                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="reset_counter" /><input type="hidden" name="id" value={counter.id} /><button type="submit">초기화</button></form>
-                          {counter.name !== "실드" && <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><button className="is-danger" type="submit">삭제</button></form>}
-                        </div>
+                        {counter.name !== "실드" && <div className="counter-actions">
+                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><button className="is-danger" type="submit">삭제</button></form>
+                        </div>}
                       </section>)}
                     </div>}
                     <form className="counter-create-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="save_counter" />
                       <label htmlFor="counter-name">새 이름</label><input id="counter-name" name="name" placeholder="실드" maxLength={20} required />
-                      <label htmlFor="counter-initial">초기 개수</label><input id="counter-initial" type="number" name="initialValue" min={0} max={1000000} defaultValue={0} required />
+                      <label htmlFor="counter-value">개수</label><input id="counter-value" type="number" name="value" min={0} max={1000000} defaultValue={0} required />
                       <button type="submit">설정 추가</button>
                     </form>
                   </div>}
@@ -756,9 +841,10 @@ export default async function Home({ searchParams }: HomeProps) {
                       <button type="submit">사용 설정 저장</button>
                     </form>
                     <h4>명령어 관리</h4>
-                    <h5 className="command-group-title">전체 사용</h5>
+                    <h5 className="command-group-title">기본 명령어 · 전체 사용</h5>
                     <ul>
                       <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
+                      <li><div><strong>!안녕</strong><span>청취자 닉네임으로 인사 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!하트랭킹</strong><span>현재 방송 하트 상위 10명과 개수 조회</span></div></li>
                       <li><div><strong>!애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
                       <li><div><strong>!스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
@@ -767,23 +853,33 @@ export default async function Home({ searchParams }: HomeProps) {
                       <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
                     </ul>
                     {botCounters.length > 0 && (
-                      <ul>
-                        {botCounters.map((counter) => (
-                          <li key={`counter-${counter.id}`}>
-                            <div>
-                              <strong>!{counter.name}</strong>
-                              <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 조회 · 모두 사용 가능</span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
+                      <>
+                        <h5 className="command-group-title">카운터 명령어 · 조회는 전체 사용</h5>
+                        <ul>
+                          {botCounters.map((counter) => (
+                            <li key={`counter-${counter.id}`}>
+                              <div>
+                                <strong>!{counter.name}</strong>
+                                <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 조회 · 모두 사용 가능</span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
                     )}
-                    {botCommands.length > 0 && (
+                    <h5 className="command-group-title">사용자 정의 명령어 · 전체 사용</h5>
+                    {botCommands.some((item) => !["!명령어", "!안녕"].includes(item.command)) && (
                       <ul>
-                        {botCommands.filter((item) => item.command !== "!명령어").map((item) => (
-                          <li key={item.command}>
-                            <div><strong>{item.command}</strong><span>{item.response}</span></div>
-                            <form action="/bot/settings" method="post">
+                        {botCommands.filter((item) => !["!명령어", "!안녕"].includes(item.command)).map((item) => (
+                          <li className="command-custom-item" key={item.command}>
+                            <form className="command-update-form" action="/bot/settings" method="post">
+                              <input type="hidden" name="mode" value="update_command" />
+                              <input type="hidden" name="originalCommand" value={item.command} />
+                              <input name="command" defaultValue={item.command} maxLength={20} aria-label={`${item.command} 명령어 이름`} required />
+                              <input name="response" defaultValue={item.response} maxLength={200} aria-label={`${item.command} 응답`} required />
+                              <button type="submit">수정</button>
+                            </form>
+                            <form className="command-delete-form" action="/bot/settings" method="post">
                               <input type="hidden" name="mode" value="delete_command" />
                               <input type="hidden" name="command" value={item.command} />
                               <button type="submit" aria-label={`${item.command} 삭제`}>삭제</button>
@@ -792,6 +888,14 @@ export default async function Home({ searchParams }: HomeProps) {
                         ))}
                       </ul>
                     )}
+                    <form className="command-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="upsert_command" />
+                      <label htmlFor="command-name">명령어</label>
+                      <input id="command-name" name="command" placeholder="!공지" maxLength={20} required />
+                      <label htmlFor="command-response">응답 메시지</label>
+                      <input id="command-response" name="response" placeholder="추가할 응답 메시지" maxLength={200} required />
+                      <button type="submit">추가</button>
+                    </form>
                     <h5 className="command-group-title is-dj-only">DJ 전용</h5>
                     <ul>
                       {botCounters.map((counter) => (
@@ -801,14 +905,6 @@ export default async function Home({ searchParams }: HomeProps) {
                       ))}
                       <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
                     </ul>
-                    <form className="command-form" action="/bot/settings" method="post">
-                      <input type="hidden" name="mode" value="upsert_command" />
-                      <label htmlFor="command-name">명령어</label>
-                      <input id="command-name" name="command" placeholder="!공지" maxLength={20} required />
-                      <label htmlFor="command-response">응답</label>
-                      <input id="command-response" name="response" placeholder="응답 메시지" maxLength={200} required />
-                      <button type="submit">추가 또는 수정</button>
-                    </form>
                   </div>}
 
                   {automationTab === "requests" && <div className="song-request-editor">
@@ -833,91 +929,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     </form>}
                   </div>}
                 </section>
-              )}
-
-              <dl className="activity-metrics">
-                <div>
-                  <dt>환영 인원</dt>
-                  <dd>{bot.activity.welcomedListeners.toLocaleString("ko-KR")}명</dd>
-                </div>
-                <div>
-                  <dt>누적 하트</dt>
-                  <dd>{bot.activity.hearts.toLocaleString("ko-KR")}개</dd>
-                </div>
-                <div>
-                  <dt>누적 후원</dt>
-                  <dd>{bot.activity.spoons.toLocaleString("ko-KR")}스푼</dd>
-                </div>
-              </dl>
-
-              {scopes.includes("events.presence") && (
-                <p className="manager-help">
-                  Spoon에서 봇을 매니저로 지정하면 최대 1분 이내 자동으로 반영됩니다.
-                </p>
-              )}
-
-              {params.bot === "started" && bot.enabled && (
-                <div className="notice success" role="status">
-                  <span className="notice-icon" aria-hidden="true">✓</span>
-                  <div>
-                    <strong>참여 요청 완료</strong>
-                    <span>방송 전이면 참여 대기 상태로 자동 연결합니다.</span>
-                  </div>
-                </div>
-              )}
-
-              {params.bot === "stopped" && !bot.enabled && (
-                <div className="notice success" role="status">
-                  <span className="notice-icon" aria-hidden="true">✓</span>
-                  <div>
-                    <strong>봇 퇴장 완료</strong>
-                    <span>이벤트 연결을 종료했습니다.</span>
-                  </div>
-                </div>
-              )}
-
-              {bot.state === "authentication_required" && (
-                <div className="notice error" role="alert">
-                  <span className="notice-icon" aria-hidden="true">!</span>
-                  <div>
-                    <strong>계정 재연결 필요</strong>
-                    <span>Spoon 인증이 만료되어 봇을 중지했습니다.</span>
-                  </div>
-                </div>
-              )}
-
-              {bot.state === "permission_required" && (
-                <div className="notice error" role="alert">
-                  <span className="notice-icon" aria-hidden="true">!</span>
-                  <div>
-                    <strong>이벤트 권한 필요</strong>
-                    <span>계정을 다시 연결해 events 권한을 승인해 주세요.</span>
-                  </div>
-                </div>
-              )}
-
-              {bot.state === "blocked" && (
-                <div className="notice error" role="alert">
-                  <span className="notice-icon" aria-hidden="true">!</span>
-                  <div>
-                    <strong>방송 입장 차단</strong>
-                    <span>Spoon 방송 설정에서 봇 차단 상태를 확인해 주세요.</span>
-                  </div>
-                </div>
-              )}
-
-              <form action={bot.enabled ? "/bot/leave" : "/bot/join"} method="post">
-                <button
-                  className={bot.enabled ? "bot-leave" : "bot-join"}
-                  type="submit"
-                  disabled={!bot.enabled && !hasEventScope}
-                >
-                  {bot.enabled ? "봇 퇴장" : "봇 참여"}
-                </button>
-              </form>
-
-              {!hasEventScope && (
-                <p className="bot-help">실시간 이벤트 권한을 승인한 뒤 참여할 수 있습니다.</p>
               )}
 
               <div className="chat-console">

@@ -51,3 +51,16 @@ export function RefreshButton({ label, iconOnly = false }: RefreshButtonProps) {
 export function RefreshLiveButton() {
   return <RefreshButton label="방송 상태" iconOnly />;
 }
+
+export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs, router]);
+
+  return null;
+}
