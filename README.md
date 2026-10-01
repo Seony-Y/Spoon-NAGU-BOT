@@ -54,9 +54,12 @@ While the bot event stream is connected, these built-in commands reply automatic
 - `!애청온도랭킹` — show up to 10 listeners ranked by favorite temperature in the current broadcast
 - `!스푼랭킹` — show up to 10 listeners ranked by donations without exposing Spoon totals
 - `!내정보` — show the listener's heart, favorite-temperature, and Spoon ranks without exposing their Spoon total
+- `!가위바위보 가위|바위|보` — join the active DJ rock-paper-scissors round once; results are revealed when the DJ ends the round
 - `!신청곡 곡명-가수` — add a song request for any listener
 - `!신청곡 목록` — list every queued song request for any listener
 - `!신청곡 삭제 번호` — remove a numbered song request for the DJ only
+
+The Game dashboard retains rock-paper-scissors rounds by DJ workspace and shows the 10 most recent completed rounds. Each expandable record includes the DJ choice, participant count, win/draw/loss totals, and participant results.
 
 ## Audience and automation
 

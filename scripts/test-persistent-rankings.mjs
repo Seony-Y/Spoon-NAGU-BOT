@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
 process.env.SESSION_SECRET = "test-session-secret-that-is-at-least-32-characters";
 process.env.SESSION_STORE_PATH = join(tmpdir(), `nagu-ranking-test-${process.pid}.db`);
+rmSync(process.env.SESSION_STORE_PATH, { force: true });
 
 const legacyDatabase = new DatabaseSync(process.env.SESSION_STORE_PATH);
 legacyDatabase.exec(`
@@ -14,7 +16,15 @@ legacyDatabase.exec(`
 		requester_nickname TEXT NOT NULL,
 		title TEXT NOT NULL,
 		created_at INTEGER NOT NULL
-	)
+	);
+	CREATE TABLE rps_rounds (
+		workspace_key TEXT PRIMARY KEY,
+		round_id INTEGER NOT NULL,
+		dj_choice TEXT NOT NULL,
+		active INTEGER NOT NULL DEFAULT 1,
+		started_at INTEGER NOT NULL,
+		ended_at INTEGER
+	);
 `);
 legacyDatabase.close();
 
@@ -30,8 +40,33 @@ const token = {
 const now = new Date().toISOString();
 const firstSessionId = "first-session";
 store.saveSession(firstSessionId, token);
+const migratedDatabase = new DatabaseSync(process.env.SESSION_STORE_PATH);
+const migratedRpsColumns = migratedDatabase.prepare("PRAGMA table_info(rps_rounds)").all();
+assert.equal(migratedRpsColumns.find((column) => column.name === "workspace_key").pk, 1);
+assert.equal(migratedRpsColumns.find((column) => column.name === "round_id").pk, 2);
+migratedDatabase.close();
 const firstSessionKey = store.getSessionKey(firstSessionId);
 store.linkDjWorkspaceByKey(firstSessionKey, "dj-user-id", "DJ 나구");
+
+assert.equal(store.startRpsRound(firstSessionId, "바위"), true);
+assert.equal(store.startRpsRound(firstSessionId, "가위"), false);
+assert.match(
+	store.applyRpsCommand(firstSessionKey, "!가위바위보 보", false, "listener-game", "게임 참가자"),
+	/참여 완료/,
+);
+assert.match(
+	store.applyRpsCommand(firstSessionKey, "!가위바위보 가위", false, "listener-game", "게임 참가자"),
+	/^이미 참여하셨습니다\.$/,
+);
+const activeRpsRound = store.getRpsRound(firstSessionId);
+assert.equal(activeRpsRound.active, true);
+assert.equal(activeRpsRound.djChoice, "바위");
+assert.equal(activeRpsRound.entries[0].result, "win");
+const finishedRpsRound = store.finishRpsRound(firstSessionId);
+assert.equal(finishedRpsRound.active, false);
+assert.equal(typeof finishedRpsRound.endedAt, "number");
+assert.equal(store.finishRpsRound(firstSessionId), null);
+assert.deepEqual(store.listRpsRounds(firstSessionId).map((round) => round.roundId), [1]);
 
 const settings = store.getBotSettings(firstSessionId);
 const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey, settings.commandsEnabled);
@@ -124,7 +159,26 @@ store.deleteSession(firstSessionId);
 const secondSessionId = "second-session";
 store.saveSession(secondSessionId, token);
 const secondSessionKey = store.getSessionKey(secondSessionId);
+assert.equal(store.startRpsRound(secondSessionId, "가위"), true);
+store.applyRpsCommand(secondSessionKey, "!가위바위보 바위", false, "listener-reconnect", "재접속 참가자");
 store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
+
+const restoredActiveRpsRound = store.getRpsRound(secondSessionId);
+assert.equal(restoredActiveRpsRound.active, true);
+assert.equal(restoredActiveRpsRound.roundId, 2);
+assert.equal(restoredActiveRpsRound.entries[0].nickname, "재접속 참가자");
+assert.deepEqual(
+	store.listRpsRounds(secondSessionId).map((round) => [round.roundId, round.active]),
+	[[2, true], [1, false]],
+);
+assert.equal(store.finishRpsRound(secondSessionId).roundId, 2);
+assert.equal(store.startRpsRound(secondSessionId, "보"), true);
+store.applyRpsCommand(secondSessionKey, "!가위바위보 가위", false, "listener-third", "세 번째 참가자");
+assert.equal(store.finishRpsRound(secondSessionId).roundId, 3);
+const rpsHistory = store.listRpsRounds(secondSessionId);
+assert.deepEqual(rpsHistory.map((round) => round.roundId), [3, 2, 1]);
+assert.equal(rpsHistory[0].entries[0].nickname, "세 번째 참가자");
+assert.equal(rpsHistory.every((round) => !round.active && typeof round.endedAt === "number"), true);
 
 assert.equal(store.getBotSettings(secondSessionId).greetingMessage, "저장된 {nickname}님 환영 문구");
 assert.equal(store.getBotSettings(secondSessionId).repeatMessage, "저장된 반복 문구");

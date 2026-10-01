@@ -18,7 +18,14 @@ import { buildApplicationUrl } from "@/lib/spoon";
 
 export const runtime = "nodejs";
 
-const RESERVED_COMMANDS = ["!실드", "!명령어", "!안녕", "!신청곡", ...AUDIENCE_RANKING_COMMANDS];
+const RESERVED_COMMANDS = [
+  "!실드",
+  "!명령어",
+  "!안녕",
+  "!신청곡",
+  "!가위바위보",
+  ...AUDIENCE_RANKING_COMMANDS,
+];
 
 function isReservedCommand(command: string) {
   return RESERVED_COMMANDS.includes(command);

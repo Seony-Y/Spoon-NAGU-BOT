@@ -10,6 +10,7 @@ import {
 import { sendBotChat } from "./chat";
 import {
   applyBotCounterCommand,
+  applyRpsCommand,
   applySongRequestCommand,
   findBotCommandResponse,
   getAudienceRankingCommandRepliesByKey,
@@ -240,6 +241,13 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       for (const message of rankingReplies) void sendBotChat(sessionKey, message);
       return;
     }
+    const rpsReply = applyRpsCommand(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+      event.data.user.id,
+      event.data.user.nickname,
+    );
     const songRequestReply = applySongRequestCommand(
       sessionKey,
       event.data.message,
@@ -251,7 +259,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       return;
     }
     const counterReply = applyBotCounterCommand(sessionKey, event.data.message, event.data.isDj);
-    reply = songRequestReply ?? counterReply ?? (settings.commandsEnabled
+    reply = rpsReply ?? songRequestReply ?? counterReply ?? (settings.commandsEnabled
       ? event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
         ? MANAGER_REQUIRED_MESSAGE
         : findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)

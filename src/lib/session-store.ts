@@ -17,6 +17,12 @@ import {
 } from "./session";
 import { parseSongRequestCommand } from "./song-request-command";
 import type { ParsedSseEvent } from "./spoon-events";
+import {
+  getRpsResult,
+  parseRpsCommand,
+  type RpsChoice,
+  type RpsResult,
+} from "./rock-paper-scissors";
 
 type SessionRow = {
   id_hash: string;
@@ -72,6 +78,22 @@ export type SongRequest = {
   title: string;
   artist: string;
   createdAt: number;
+};
+
+export type RpsEntry = {
+  userId: string;
+  nickname: string;
+  choice: RpsChoice;
+  result: RpsResult;
+};
+
+export type RpsRound = {
+  roundId: number;
+  active: boolean;
+  djChoice: RpsChoice;
+  startedAt: number;
+  endedAt: number | null;
+  entries: RpsEntry[];
 };
 
 export type AudienceRankingPeriod = "current" | "daily" | "all";
@@ -200,6 +222,25 @@ function migrateDatabase(database: DatabaseSync) {
       stat_date TEXT NOT NULL,
       PRIMARY KEY (workspace_key, event_id)
     );
+    CREATE TABLE IF NOT EXISTS rps_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      dj_choice TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS rps_entries (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      choice TEXT NOT NULL,
+      result TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, round_id, user_id)
+    );
     CREATE INDEX IF NOT EXISTS audience_events_period_idx
       ON audience_events (workspace_key, stat_date, live_id, user_id);
     CREATE TABLE IF NOT EXISTS app_migrations (
@@ -214,6 +255,37 @@ function migrateDatabase(database: DatabaseSync) {
   if (!songRequestColumns.some((column) => column.name === "artist")) {
     database.exec("ALTER TABLE song_requests ADD COLUMN artist TEXT NOT NULL DEFAULT ''");
   }
+
+  const rpsRoundColumns = database.prepare("PRAGMA table_info(rps_rounds)").all() as Array<{
+    name: string;
+    pk: number;
+  }>;
+  if (rpsRoundColumns.find((column) => column.name === "round_id")?.pk === 0) {
+    database.exec(`
+      BEGIN;
+      CREATE TABLE rps_rounds_history (
+        workspace_key TEXT NOT NULL,
+        round_id INTEGER NOT NULL,
+        dj_choice TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        PRIMARY KEY (workspace_key, round_id)
+      );
+      INSERT INTO rps_rounds_history (
+        workspace_key, round_id, dj_choice, active, started_at, ended_at
+      )
+      SELECT workspace_key, round_id, dj_choice, active, started_at, ended_at
+      FROM rps_rounds;
+      DROP TABLE rps_rounds;
+      ALTER TABLE rps_rounds_history RENAME TO rps_rounds;
+      COMMIT;
+    `);
+  }
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS rps_rounds_active_idx
+    ON rps_rounds (workspace_key) WHERE active = 1
+  `);
 
   const settingsColumns = database.prepare("PRAGMA table_info(bot_settings)").all() as Array<{
     name: string;
@@ -474,6 +546,46 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
            spoons, hearts, favorite_temperature, occurred_at, stat_date
     FROM audience_events WHERE workspace_key = ?
   `).run(targetKey, sourceKey);
+  const sourceRpsRounds = database.prepare(`
+    SELECT round_id, dj_choice, active, started_at, ended_at
+    FROM rps_rounds WHERE workspace_key = ? ORDER BY round_id
+  `).all(sourceKey) as Array<{
+    round_id: number;
+    dj_choice: string;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+  }>;
+  const targetRpsState = database.prepare(`
+    SELECT COALESCE(MAX(round_id), 0) AS max_round_id, MAX(active) AS has_active
+    FROM rps_rounds WHERE workspace_key = ?
+  `).get(targetKey) as { max_round_id: number; has_active: number | null };
+  let nextRoundId = targetRpsState.max_round_id;
+  let targetHasActiveRound = targetRpsState.has_active === 1;
+  for (const sourceRpsRound of sourceRpsRounds) {
+    nextRoundId += 1;
+    const active = sourceRpsRound.active === 1 && !targetHasActiveRound ? 1 : 0;
+    if (active === 1) targetHasActiveRound = true;
+    database.prepare(`
+      INSERT INTO rps_rounds (
+        workspace_key, round_id, dj_choice, active, started_at, ended_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      targetKey,
+      nextRoundId,
+      sourceRpsRound.dj_choice,
+      active,
+      sourceRpsRound.started_at,
+      active === 1 ? null : (sourceRpsRound.ended_at ?? Date.now()),
+    );
+    database.prepare(`
+      INSERT OR IGNORE INTO rps_entries (
+        workspace_key, round_id, user_id, nickname, choice, result, created_at
+      )
+      SELECT ?, ?, user_id, nickname, choice, result, created_at
+      FROM rps_entries WHERE workspace_key = ? AND round_id = ?
+    `).run(targetKey, nextRoundId, sourceKey, sourceRpsRound.round_id);
+  }
 
   const profiles = database.prepare(`
     SELECT user_id, nickname, first_seen_at, last_seen_at
@@ -511,6 +623,8 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM bot_settings WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_events WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_profiles WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM rps_entries WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM rps_rounds WHERE workspace_key = ?").run(sourceKey);
 }
 
 export function linkDjWorkspaceByKey(sessionKey: string, djUserId: string, nickname: string) {
@@ -810,6 +924,7 @@ export function getAvailableCommandRepliesByKey(
     ...counters.map((counter) => `!${counter.name}`),
     "!신청곡 곡명-가수",
     "!신청곡 목록",
+    "!가위바위보 가위|바위|보",
   ].filter((label, index, items) => items.indexOf(label) === index);
   const djLabels = [
     ...counters.map((counter) => `!${counter.name} +N/-N`),
@@ -1020,6 +1135,152 @@ export function applySongRequestCommand(
     Date.now(),
   ) as { id: number };
   return `신청곡 #${row.id} ${command.title} - ${command.artist} 접수 완료!`;
+}
+
+export function getRpsRoundByKey(sessionKey: string): RpsRound | null {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const row = getDatabase().prepare(`
+    SELECT round_id, dj_choice, active, started_at, ended_at
+    FROM rps_rounds WHERE workspace_key = ?
+    ORDER BY active DESC, round_id DESC LIMIT 1
+  `).get(workspaceKey) as {
+    round_id: number;
+    dj_choice: RpsChoice;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+  } | undefined;
+  if (!row) return null;
+  const entries = getDatabase().prepare(`
+    SELECT user_id, nickname, choice, result
+    FROM rps_entries
+    WHERE workspace_key = ? AND round_id = ?
+    ORDER BY created_at, user_id
+  `).all(workspaceKey, row.round_id).map((entry) => {
+    const value = entry as {
+      user_id: string;
+      nickname: string;
+      choice: RpsChoice;
+      result: RpsResult;
+    };
+    return {
+      userId: value.user_id,
+      nickname: value.nickname,
+      choice: value.choice,
+      result: value.result,
+    };
+  });
+  return {
+    roundId: row.round_id,
+    active: row.active === 1,
+    djChoice: row.dj_choice,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    entries,
+  };
+}
+
+export function getRpsRound(sessionId: string) {
+  return getRpsRoundByKey(getSessionKey(sessionId));
+}
+
+export function listRpsRounds(sessionId: string, limit = 10) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const rows = getDatabase().prepare(`
+    SELECT round_id, dj_choice, active, started_at, ended_at
+    FROM rps_rounds WHERE workspace_key = ?
+    ORDER BY round_id DESC LIMIT ?
+  `).all(workspaceKey, Math.max(1, Math.min(limit, 50))) as Array<{
+    round_id: number;
+    dj_choice: RpsChoice;
+    active: number;
+    started_at: number;
+    ended_at: number | null;
+  }>;
+  const entriesStatement = getDatabase().prepare(`
+    SELECT user_id, nickname, choice, result
+    FROM rps_entries WHERE workspace_key = ? AND round_id = ?
+    ORDER BY created_at, user_id
+  `);
+  return rows.map((row) => ({
+    roundId: row.round_id,
+    active: row.active === 1,
+    djChoice: row.dj_choice,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    entries: entriesStatement.all(workspaceKey, row.round_id).map((entry) => {
+      const value = entry as {
+        user_id: string;
+        nickname: string;
+        choice: RpsChoice;
+        result: RpsResult;
+      };
+      return {
+        userId: value.user_id,
+        nickname: value.nickname,
+        choice: value.choice,
+        result: value.result,
+      };
+    }),
+  } satisfies RpsRound));
+}
+
+export function startRpsRound(sessionId: string, djChoice: RpsChoice) {
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const current = getRpsRoundByKey(sessionKey);
+  if (current?.active) return false;
+  const roundId = (current?.roundId ?? 0) + 1;
+  database.prepare(`
+    INSERT INTO rps_rounds (workspace_key, round_id, dj_choice, active, started_at, ended_at)
+    VALUES (?, ?, ?, 1, ?, NULL)
+  `).run(workspaceKey, roundId, djChoice, Date.now());
+  return true;
+}
+
+export function finishRpsRound(sessionId: string) {
+  const sessionKey = getSessionKey(sessionId);
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const result = getDatabase().prepare(`
+    UPDATE rps_rounds SET active = 0, ended_at = ?
+    WHERE workspace_key = ? AND active = 1
+  `).run(Date.now(), workspaceKey);
+  return result.changes > 0 ? getRpsRoundByKey(sessionKey) : null;
+}
+
+export function applyRpsCommand(
+  sessionKey: string,
+  message: string,
+  isDj: boolean,
+  userId: string,
+  nickname: string | null,
+) {
+  const choice = parseRpsCommand(message);
+  if (!choice) return null;
+  if (choice === "usage") return "사용법: !가위바위보 가위|바위|보";
+  if (isDj) return "DJ는 Game 화면에서 가위바위보를 시작하고 종료해 주세요.";
+
+  const round = getRpsRoundByKey(sessionKey);
+  if (!round?.active) return "현재 진행 중인 가위바위보가 없습니다.";
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const result = getRpsResult(choice, round.djChoice);
+  const inserted = getDatabase().prepare(`
+    INSERT OR IGNORE INTO rps_entries (
+      workspace_key, round_id, user_id, nickname, choice, result, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    workspaceKey,
+    round.roundId,
+    userId,
+    nickname?.trim().slice(0, 50) || "청취자",
+    choice,
+    result,
+    Date.now(),
+  );
+  return inserted.changes > 0
+    ? `${nickname?.trim() || "청취자"}님, 가위바위보 참여 완료! 결과는 라운드 종료 후 공개됩니다.`
+    : "이미 참여하셨습니다.";
 }
 
 export function isSessionBlockedByKey(sessionKey: string) {

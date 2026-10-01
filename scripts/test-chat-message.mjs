@@ -8,6 +8,11 @@ import {
 	parseCounterQuery,
 } from "../src/lib/counter-command.ts";
 import { parseSongRequestCommand } from "../src/lib/song-request-command.ts";
+import {
+	formatRpsResultMessages,
+	getRpsResult,
+	parseRpsCommand,
+} from "../src/lib/rock-paper-scissors.ts";
 
 assert.equal(validateChatMessage("   "), "invalid_message");
 assert.equal(validateChatMessage("가".repeat(200)), null);
@@ -57,5 +62,17 @@ assert.deepEqual(parseSongRequestCommand(" !신청곡 삭제 42 "), { kind: "del
 assert.deepEqual(parseSongRequestCommand("!신청곡"), { kind: "usage" });
 assert.deepEqual(parseSongRequestCommand(`!신청곡 ${"가".repeat(101)}`), { kind: "usage" });
 assert.equal(parseSongRequestCommand("신청곡 밤편지"), null);
+
+assert.equal(parseRpsCommand("!가위바위보 보"), "보");
+assert.equal(parseRpsCommand("!가위바위보"), "usage");
+assert.equal(parseRpsCommand("가위바위보 가위"), null);
+assert.equal(getRpsResult("보", "바위"), "win");
+assert.equal(getRpsResult("가위", "가위"), "draw");
+assert.equal(getRpsResult("가위", "바위"), "lose");
+assert.deepEqual(formatRpsResultMessages([
+	{ nickname: "승리 청취자", choice: "보", result: "win" },
+	{ nickname: "무승부 청취자", choice: "바위", result: "draw" },
+	{ nickname: "패배 청취자", choice: "가위", result: "lose" },
+]), ["가위바위보 결과: 승리 청취자 보(승), 무승부 청취자 바위(무), 패배 청취자 가위(패)"]);
 
 console.log("Chat checks passed: validation, replies, counters, and song requests");

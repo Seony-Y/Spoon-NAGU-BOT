@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { cookies } from "next/headers";
-import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
 import naguBot from "@/asset/NaGuBot.png";
 import { getAuthSession } from "@/lib/auth";
 import { loadAudienceStatus } from "@/lib/audience";
@@ -15,10 +14,12 @@ import {
   listBotCommands,
   listBotCounters,
   listSongRequests,
+  listRpsRounds,
   type AudienceRankingEntry,
   type AudienceRankingPeriod,
 } from "@/lib/session-store";
 import { AutoRefresh, RefreshButton, RefreshLiveButton } from "./refresh-live-button";
+import { SiteFooter, SiteHeader } from "./site-chrome";
 
 type HomeProps = {
   searchParams: Promise<{
@@ -30,6 +31,8 @@ type HomeProps = {
     tab?: string;
     automation?: string;
     ranking?: string;
+    game?: string;
+    rps?: string;
     preview?: string;
   }>;
 };
@@ -165,6 +168,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const previewConnected = process.env.NODE_ENV === "development" && params.preview === "connected";
   const isBotTab = params.tab === "bot";
+  const isGameTab = params.tab === "game";
+  const isDashboardTab = !isBotTab && !isGameTab;
+  const gameTab = params.game === "roulette" ? "roulette" : "rps";
   const automationTab = automationTabs.some(([key]) => key === params.automation)
     ? params.automation
     : "welcome";
@@ -242,7 +248,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const botCounters = isBotTab && connected && sessionId ? listBotCounters(sessionId) : [];
   const songRequests = isBotTab && connected && sessionId ? listSongRequests(sessionId) : [];
   const currentLiveId = liveStatus?.kind === "live" ? liveStatus.live.liveId : undefined;
-  const audienceRankings = isBotTab && connected && sessionId
+  const audienceRankings = isDashboardTab && connected && sessionId
     ? previewConnected
       ? [
           { userId: "preview-fan-1", nickname: "스푼 요정", spoons: 1250, hearts: 840, favoriteTemperature: 42.1 },
@@ -255,31 +261,21 @@ export default async function Home({ searchParams }: HomeProps) {
           currentLiveId,
         )
     : [];
+  const rpsRounds = isGameTab && connected && sessionId && !previewConnected
+    ? listRpsRounds(sessionId)
+    : [];
+  const rpsRound = rpsRounds.find((round) => round.active) ?? rpsRounds[0] ?? null;
+  const rpsHistory = rpsRounds.filter((round) => !round.active);
   const spoonRanking = topRanking(audienceRankings, (entry) => entry.spoons);
   const heartRanking = topRanking(audienceRankings, (entry) => entry.hearts);
   const favoriteRanking = topRanking(audienceRankings, (entry) => entry.favoriteTemperature);
 
   return (
     <div className="site-shell">
-      <header className="header">
-        <Link className="wordmark" href="/" aria-label="NAGU BOT 홈">
-          <Image
-            className="wordmark-symbol"
-            src={naguBotLogo}
-            alt=""
-            aria-hidden="true"
-            sizes="34px"
-          />
-          <span>NAGU BOT</span>
-        </Link>
-        <span className={`header-status ${connected ? "is-connected" : ""}`}>
-          <span className="status-dot" aria-hidden="true" />
-          {connected ? "연결됨" : "연결 대기"}
-        </span>
-      </header>
+      <SiteHeader connectionStatus={connected ? "connected" : "waiting"} />
 
       <main>
-        {!isBotTab && <section className="hero" aria-labelledby="page-title">
+        {isDashboardTab && <section className="hero" aria-labelledby="page-title">
           <div className="hero-inner">
             <div className="hero-copy">
               <p className="eyebrow">SPOON LIVE ASSISTANT</p>
@@ -371,15 +367,18 @@ export default async function Home({ searchParams }: HomeProps) {
           </div>
 
           {connected && <nav className="dashboard-tabs" aria-label="운영 메뉴">
-            <Link scroll={false} className={!isBotTab ? "is-active" : ""} href="/" aria-current={!isBotTab ? "page" : undefined}>
+            <Link scroll={false} className={isDashboardTab ? "is-active" : ""} href="/" aria-current={isDashboardTab ? "page" : undefined}>
               대시보드
             </Link>
             <Link scroll={false} className={isBotTab ? "is-active" : ""} href="/?tab=bot" aria-current={isBotTab ? "page" : undefined}>
               봇 운영
             </Link>
+            <Link scroll={false} className={isGameTab ? "is-active" : ""} href="/?tab=game&game=rps" aria-current={isGameTab ? "page" : undefined}>
+              Game
+            </Link>
           </nav>}
 
-          {!isBotTab && connected && liveStatus && (
+          {isDashboardTab && connected && liveStatus && (
             <article className="live-card" aria-labelledby="live-title">
               <div className="live-heading">
                 <div>
@@ -467,7 +466,81 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
-          {!isBotTab && connected && (
+          {isDashboardTab && connected && bot && (
+            <article className="broadcast-status-card" aria-labelledby="broadcast-status-title">
+              <div className="automation-heading">
+                <div>
+                  <p className="section-label">실시간 집계</p>
+                  <h2 id="broadcast-status-title">방송 현황</h2>
+                </div>
+              </div>
+
+              <dl className="activity-metrics">
+                <div>
+                  <dt>환영 인원</dt>
+                  <dd>{bot.activity.welcomedListeners.toLocaleString("ko-KR")}명</dd>
+                </div>
+                <div>
+                  <dt>누적 하트</dt>
+                  <dd>{bot.activity.hearts.toLocaleString("ko-KR")}개</dd>
+                </div>
+                <div>
+                  <dt>누적 후원</dt>
+                  <dd>{bot.activity.spoons.toLocaleString("ko-KR")}스푼</dd>
+                </div>
+              </dl>
+
+              <section className="live-ranking-section" aria-labelledby="live-ranking-title">
+                <div className="automation-heading">
+                  <div>
+                    <p className="section-label">방송 현황</p>
+                    <h3 id="live-ranking-title">실시간 랭킹</h3>
+                  </div>
+                  <RefreshButton label="실시간 랭킹" />
+                </div>
+                <nav className="ranking-period-tabs" aria-label="랭킹 기간">
+                  {rankingPeriods.map(([key, label]) => (
+                    <Link
+                      scroll={false}
+                      key={key}
+                      className={rankingPeriod === key ? "is-active" : ""}
+                      href={`/?ranking=${key}`}
+                    >
+                      {label}
+                    </Link>
+                  ))}
+                </nav>
+                <div className="ranking-columns persistent-ranking-columns">
+                  <section>
+                    <h4>후원 스푼</h4>
+                    {spoonRanking.length > 0 ? (
+                      <ol>{spoonRanking.map((listener, index) => (
+                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.spoons.toLocaleString("ko-KR")}스푼</em></li>
+                      ))}</ol>
+                    ) : <p>집계된 후원이 없습니다.</p>}
+                  </section>
+                  <section>
+                    <h4>하트</h4>
+                    {heartRanking.length > 0 ? (
+                      <ol>{heartRanking.map((listener, index) => (
+                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.hearts.toLocaleString("ko-KR")}개</em></li>
+                      ))}</ol>
+                    ) : <p>집계된 하트가 없습니다.</p>}
+                  </section>
+                  <section>
+                    <h4>애청온도</h4>
+                    {favoriteRanking.length > 0 ? (
+                      <ol>{favoriteRanking.map((listener, index) => (
+                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.favoriteTemperature?.toFixed(1)}°</em></li>
+                      ))}</ol>
+                    ) : <p>집계된 애청온도가 없습니다.</p>}
+                  </section>
+                </div>
+              </section>
+            </article>
+          )}
+
+          {isDashboardTab && connected && (
             <article className="audience-card" aria-labelledby="audience-title">
               <div className="audience-heading">
                 <div>
@@ -544,7 +617,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
-          {!isBotTab && connected && bot && (
+          {isDashboardTab && connected && bot && (
             <article className="event-card" aria-labelledby="recent-events-title">
               <div className="event-feed">
                 <div className="event-feed-heading">
@@ -573,6 +646,116 @@ export default async function Home({ searchParams }: HomeProps) {
             </article>
           )}
 
+          {isGameTab && connected && bot && (
+            <article className="game-card" aria-labelledby="game-title">
+              <div className="game-heading">
+                <div>
+                  <p className="section-label">방송 게임</p>
+                  <h2 id="game-title">Game</h2>
+                </div>
+              </div>
+
+              <nav className="game-tabs" aria-label="게임 선택">
+                <Link scroll={false} className={gameTab === "rps" ? "is-active" : ""} href="/?tab=game&game=rps">가위바위보</Link>
+                <Link scroll={false} className={gameTab === "roulette" ? "is-active" : ""} href="/?tab=game&game=roulette">룰렛</Link>
+              </nav>
+
+              {gameTab === "rps" && (
+                <section className="game-panel" aria-labelledby="rps-title">
+                  {rpsRound?.active && <AutoRefresh intervalMs={2000} />}
+                  <div className="game-panel-heading">
+                    <div>
+                      <h3 id="rps-title">DJ vs 청취자 가위바위보</h3>
+                      <p>DJ가 선택한 뒤 라운드를 시작하면 청취자는 방송 채팅에서 한 번 참여할 수 있습니다.</p>
+                    </div>
+                    <span className={`game-state ${rpsRound?.active ? "is-active" : ""}`}>
+                      {rpsRound?.active ? "진행 중" : "대기"}
+                    </span>
+                  </div>
+
+                  {params.rps === "started" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>가위바위보 라운드를 시작했습니다.</strong></div>}
+                  {params.rps === "finished" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>결과를 방송 채팅에 공개했습니다.</strong></div>}
+                  {params.rps === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 라운드를 먼저 종료해 주세요.</strong></div>}
+                  {params.rps === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 라운드가 없습니다.</strong></div>}
+                  {params.rps === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 참여시킨 뒤 시작해 주세요.</strong></div>}
+                  {params.rps === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
+
+                  {rpsRound?.active ? (
+                    <div className="rps-active-round">
+                      <div className="rps-round-number"><span>라운드</span><strong>#{rpsRound.roundId}</strong></div>
+                      <div className="rps-live-count" role="status" aria-live="polite" aria-atomic="true">
+                        <span>실시간 참여자</span>
+                        <strong>{rpsRound.entries.length.toLocaleString("ko-KR")}<small>명</small></strong>
+                      </div>
+                      <form action="/game/rps" method="post">
+                        <input type="hidden" name="action" value="finish" />
+                        <button className="rps-finish" type="submit">라운드 종료 및 결과 공개</button>
+                      </form>
+                    </div>
+                  ) : (
+                    <form className="rps-start-form" action="/game/rps" method="post">
+                      <input type="hidden" name="action" value="start" />
+                      <fieldset disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}>
+                        <legend>DJ 선택</legend>
+                        <div className="rps-choice-control">
+                          {(["가위", "바위", "보"] as const).map((choice) => (
+                            <label key={choice}><input type="radio" name="choice" value={choice} required /><span>{choice}</span></label>
+                          ))}
+                        </div>
+                        <button type="submit">라운드 시작</button>
+                      </fieldset>
+                    </form>
+                  )}
+
+                  {rpsHistory.length > 0 && (
+                    <section className="rps-history" aria-labelledby="rps-history-title">
+                      <div className="rps-history-heading">
+                        <h4 id="rps-history-title">라운드 기록</h4>
+                        <span>최근 {rpsHistory.length}개</span>
+                      </div>
+                      {rpsHistory.map((round, index) => {
+                        const wins = round.entries.filter((entry) => entry.result === "win").length;
+                        const draws = round.entries.filter((entry) => entry.result === "draw").length;
+                        const losses = round.entries.filter((entry) => entry.result === "lose").length;
+                        return (
+                          <details className="rps-history-round" key={round.roundId} open={index === 0}>
+                            <summary>
+                              <span><strong>라운드 #{round.roundId}</strong><small>{formatDateTime(round.endedAt ?? round.startedAt)}</small></span>
+                              <span>DJ {round.djChoice}</span>
+                              <span>참여 {round.entries.length}명 · 승 {wins} · 무 {draws} · 패 {losses}</span>
+                            </summary>
+                            {round.entries.length > 0 ? (
+                              <ol>
+                                {round.entries.map((entry) => (
+                                  <li key={entry.userId}>
+                                    <strong>{entry.nickname}</strong>
+                                    <span>{entry.choice}</span>
+                                    <em className={`is-${entry.result}`}>
+                                      {entry.result === "win" ? "승리" : entry.result === "draw" ? "무승부" : "패배"}
+                                    </em>
+                                  </li>
+                                ))}
+                              </ol>
+                            ) : <p>참가자가 없는 라운드입니다.</p>}
+                          </details>
+                        );
+                      })}
+                    </section>
+                  )}
+
+                  <p className="game-command"><code>!가위바위보 가위</code> <code>!가위바위보 바위</code> <code>!가위바위보 보</code></p>
+                </section>
+              )}
+
+              {gameTab === "roulette" && (
+                <section className="game-panel game-coming-soon" aria-labelledby="roulette-title">
+                  <p className="section-label">룰렛</p>
+                  <h3 id="roulette-title">준비중입니다.</h3>
+                </section>
+              )}
+            </article>
+          )}
+
           {isBotTab && connected && bot && (
             <article className="bot-card" aria-labelledby="bot-title">
               <div className="bot-heading">
@@ -593,21 +776,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     : "NAGU BOT이 실시간 이벤트 스트림을 유지하고 있습니다."
                   : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
               </p>
-
-              <dl className="activity-metrics">
-                <div>
-                  <dt>환영 인원</dt>
-                  <dd>{bot.activity.welcomedListeners.toLocaleString("ko-KR")}명</dd>
-                </div>
-                <div>
-                  <dt>누적 하트</dt>
-                  <dd>{bot.activity.hearts.toLocaleString("ko-KR")}개</dd>
-                </div>
-                <div>
-                  <dt>누적 후원</dt>
-                  <dd>{bot.activity.spoons.toLocaleString("ko-KR")}스푼</dd>
-                </div>
-              </dl>
 
               {scopes.includes("events.presence") && (
                 <p className="manager-help">
@@ -678,54 +846,6 @@ export default async function Home({ searchParams }: HomeProps) {
               {!hasEventScope && (
                 <p className="bot-help">실시간 이벤트 권한을 승인한 뒤 참여할 수 있습니다.</p>
               )}
-
-              <section className="live-ranking-section" aria-labelledby="live-ranking-title">
-                <div className="automation-heading">
-                  <div>
-                    <p className="section-label">방송 현황</p>
-                    <h3 id="live-ranking-title">실시간 랭킹</h3>
-                  </div>
-                  <RefreshButton label="실시간 랭킹" />
-                </div>
-                <nav className="ranking-period-tabs" aria-label="랭킹 기간">
-                  {rankingPeriods.map(([key, label]) => (
-                    <Link
-                      scroll={false}
-                      key={key}
-                      className={rankingPeriod === key ? "is-active" : ""}
-                      href={`/?tab=bot&automation=${automationTab}&ranking=${key}`}
-                    >
-                      {label}
-                    </Link>
-                  ))}
-                </nav>
-                <div className="ranking-columns persistent-ranking-columns">
-                  <section>
-                    <h4>후원 스푼</h4>
-                    {spoonRanking.length > 0 ? (
-                      <ol>{spoonRanking.map((listener, index) => (
-                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.spoons.toLocaleString("ko-KR")}스푼</em></li>
-                      ))}</ol>
-                    ) : <p>집계된 후원이 없습니다.</p>}
-                  </section>
-                  <section>
-                    <h4>하트</h4>
-                    {heartRanking.length > 0 ? (
-                      <ol>{heartRanking.map((listener, index) => (
-                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.hearts.toLocaleString("ko-KR")}개</em></li>
-                      ))}</ol>
-                    ) : <p>집계된 하트가 없습니다.</p>}
-                  </section>
-                  <section>
-                    <h4>애청온도</h4>
-                    {favoriteRanking.length > 0 ? (
-                      <ol>{favoriteRanking.map((listener, index) => (
-                        <li key={listener.userId}><span>{index + 1}</span><strong>{listener.nickname}</strong><em>{listener.favoriteTemperature?.toFixed(1)}°</em></li>
-                      ))}</ol>
-                    ) : <p>집계된 애청온도가 없습니다.</p>}
-                  </section>
-                </div>
-              </section>
 
               {botSettings && (
                 <section className="automation-settings" aria-labelledby="automation-title">
@@ -849,6 +969,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <li><div><strong>!애청온도랭킹</strong><span>현재 방송 애청온도 상위 10명 조회</span></div></li>
                       <li><div><strong>!스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
                       <li><div><strong>!내정보</strong><span>나의 현재 방송 하트·애청온도·스푼 순위 조회</span></div></li>
+                      <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
                     </ul>
@@ -984,10 +1105,7 @@ export default async function Home({ searchParams }: HomeProps) {
         </section>
       </main>
 
-      <footer className="footer">
-        <span>NAGU BOT v1.0.0</span>
-        <span>2026 © NAGU BOT</span>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
