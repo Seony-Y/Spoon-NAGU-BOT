@@ -619,7 +619,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "counters" && <div className="counter-editor">
                     <div className="counter-guide">
                       <h4>실드 개수 관리</h4>
-                      <p><code>!실드 +2</code> 또는 <code>!실드 -1</code>처럼 입력하면 현재 개수가 자동 변경됩니다.</p>
+                      <p><code>!실드</code> 조회는 누구나 사용할 수 있고, <code>!실드 +2</code> 또는 <code>!실드 -1</code> 증감은 DJ만 사용할 수 있습니다. 이 규칙은 추가한 모든 카운터에 동일하게 적용됩니다.</p>
                     </div>
                     {botCounters.length > 0 && <div className="counter-list">
                       {botCounters.map((counter) => <section key={counter.id} className="counter-item">
@@ -657,7 +657,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           <li key={`counter-${counter.id}`}>
                             <div>
                               <strong>!{counter.name}</strong>
-                              <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 · +N/-N으로 변경</span>
+                              <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 · 조회는 모두, +N/-N 변경은 DJ만</span>
                             </div>
                           </li>
                         ))}

@@ -67,7 +67,7 @@ Spoon does not expose a profile endpoint or nickname in the OAuth token. Message
 
 The **봇 운영** tab provides separate views for favorite-temperature/spoon rankings, welcome messages, donation thanks, heart donations, repeat announcements, named counters, and chat commands. Repeat announcements default to 10 minutes, accept a 1-1440 minute interval, and pick up changes within one minute. Each automation stores its own enabled state and editable message template and affects the next event without reconnecting. Favorite-temperature ranking uses presence events received during the current broadcast; spoon ranking uses Spoon's current top-30 fan API. Spoon's own `welcomeMessage` remains read-only because the Open API does not provide an update endpoint.
 
-Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. In chat, `!실드` displays the current value, `!실드 +2` adds two, and `!실드 -1` subtracts one without allowing a negative result. Names, initial values, current values, resets, and deletions are managed in the counter tab.
+Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. Anyone can use `!실드` to display the current value, while only the DJ can use `!실드 +2` or `!실드 -1` to change it. Values never become negative. The same permission rule applies to every named counter. Names, initial values, current values, resets, and deletions are managed in the counter tab.
 
 Disconnecting revokes OAuth credentials and removes the local browser session, bot settings, commands, and counters. A later connection starts a new settings workspace.
 

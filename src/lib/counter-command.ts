@@ -7,6 +7,10 @@ export type CounterAdjustment = {
   delta: number;
 };
 
+export type CounterCommand =
+  | { kind: "query"; name: string }
+  | { kind: "adjust" | "denied"; adjustment: CounterAdjustment };
+
 export function parseCounterAdjustment(message: string): CounterAdjustment | null {
   const match = COUNTER_COMMAND_PATTERN.exec(message.trim());
   if (!match) return null;
@@ -25,4 +29,12 @@ export function formatCounterAdjustment(name: string, value: number) {
 
 export function parseCounterQuery(message: string) {
   return COUNTER_QUERY_PATTERN.exec(message.trim())?.[1] ?? null;
+}
+
+export function parseCounterCommand(message: string, isDj: boolean): CounterCommand | null {
+  const adjustment = parseCounterAdjustment(message);
+  if (adjustment) return { kind: isDj ? "adjust" : "denied", adjustment };
+
+  const name = parseCounterQuery(message);
+  return name ? { kind: "query", name } : null;
 }

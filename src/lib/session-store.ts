@@ -6,8 +6,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   formatCounterAdjustment,
-  parseCounterAdjustment,
-  parseCounterQuery,
+  parseCounterCommand,
 } from "./counter-command";
 import type { SpoonToken } from "./spoon";
 import {
@@ -488,26 +487,31 @@ export function deleteBotCounter(sessionId: string, id: number) {
   return result.changes > 0;
 }
 
-export function applyBotCounterCommand(sessionKey: string, message: string) {
-  const adjustment = parseCounterAdjustment(message);
-  const queryName = adjustment ? null : parseCounterQuery(message);
-  if (!adjustment && !queryName) return null;
+export function applyBotCounterCommand(sessionKey: string, message: string, isDj: boolean) {
+  const command = parseCounterCommand(message, isDj);
+  if (!command) return null;
 
-  if (queryName) {
+  if (command.kind === "query") {
     const row = getDatabase().prepare(`
       SELECT name, value FROM bot_counters
       WHERE session_key = ? AND name = ? COLLATE NOCASE
-    `).get(sessionKey, queryName) as Pick<BotCounter, "name" | "value"> | undefined;
+    `).get(sessionKey, command.name) as Pick<BotCounter, "name" | "value"> | undefined;
     return row ? formatCounterAdjustment(row.name, row.value) : null;
   }
-  if (!adjustment) return null;
+
+  const counter = getDatabase().prepare(`
+    SELECT name FROM bot_counters
+    WHERE session_key = ? AND name = ? COLLATE NOCASE
+  `).get(sessionKey, command.adjustment.name) as Pick<BotCounter, "name"> | undefined;
+  if (!counter) return null;
+  if (command.kind === "denied") return `${counter.name} 변경은 DJ만 할 수 있습니다.`;
 
   const row = getDatabase().prepare(`
     UPDATE bot_counters
     SET value = MIN(1000000, MAX(0, value + ?))
     WHERE session_key = ? AND name = ? COLLATE NOCASE
     RETURNING name, value
-  `).get(adjustment.delta, sessionKey, adjustment.name) as Pick<BotCounter, "name" | "value"> | undefined;
+  `).get(command.adjustment.delta, sessionKey, command.adjustment.name) as Pick<BotCounter, "name" | "value"> | undefined;
   return row ? formatCounterAdjustment(row.name, row.value) : null;
 }
 

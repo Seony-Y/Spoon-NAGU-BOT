@@ -1696,6 +1696,18 @@ h1 {
   font-size: 12px;
 }
 
+.admin-table-wrap td.admin-session-name {
+  display: grid;
+  gap: 3px;
+  white-space: normal;
+}
+
+.admin-session-name small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .admin-block {
   background: var(--red-soft);
   color: var(--red);

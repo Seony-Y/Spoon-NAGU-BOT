@@ -211,14 +211,17 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
   }
 
   const settings = getBotSettingsByKey(sessionKey);
-  const reply = event.event === "chat"
-    ? settings.commandsEnabled
+  let reply: string | null;
+  if (event.event === "chat") {
+    const counterReply = applyBotCounterCommand(sessionKey, event.data.message, event.data.isDj);
+    reply = counterReply ?? (settings.commandsEnabled
       ? event.data.message.trim().startsWith("!") && !runtime.managerEventsConfirmed
         ? MANAGER_REQUIRED_MESSAGE
-        : applyBotCounterCommand(sessionKey, event.data.message)
-          ?? findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
-      : null
-    : processBotAutomation(runtime, event, settings);
+        : findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname)
+      : null);
+  } else {
+    reply = processBotAutomation(runtime, event, settings);
+  }
   if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
 }
 
