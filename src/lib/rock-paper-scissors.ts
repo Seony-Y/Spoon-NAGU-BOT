@@ -1,3 +1,5 @@
+import { formatMultilineMessages } from "./chat-message";
+
 export const RPS_CHOICES = ["가위", "바위", "보"] as const;
 
 export type RpsChoice = typeof RPS_CHOICES[number];
@@ -31,8 +33,13 @@ export function formatRpsResultMessages(entries: Array<{
   result: RpsResult;
 }>, djChoice: RpsChoice) {
   if (entries.length === 0) return [`DJ 선택: ${djChoice} / 이번 라운드에는 참가자가 없습니다.`];
-  return entries.map((entry) => {
+  const labels = entries.map((entry) => {
     const result = entry.result === "win" ? "승" : entry.result === "draw" ? "무" : "패";
-    return `DJ ${djChoice} / ${entry.nickname.slice(0, 50)} ${entry.choice} (${result})`;
+    return `${entry.nickname.slice(0, 50)} ${entry.choice} (${result})`;
   });
+  return formatMultilineMessages(
+    `[가위바위보] DJ 선택: ${djChoice}`,
+    "[가위바위보] 결과 계속:",
+    labels,
+  );
 }

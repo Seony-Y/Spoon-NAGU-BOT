@@ -6,6 +6,25 @@ export function validateChatMessage(message: string): ChatValidationError | null
   return null;
 }
 
+export function formatMultilineMessages(
+  heading: string,
+  continuationHeading: string,
+  lines: string[],
+) {
+  if (lines.length === 0) return [heading];
+  const messages: string[] = [];
+  for (const line of lines) {
+    const current = messages.at(-1);
+    if (current && `${current}\n${line}`.length <= 200) {
+      messages[messages.length - 1] = `${current}\n${line}`;
+      continue;
+    }
+    const messageHeading = messages.length === 0 ? heading : continuationHeading;
+    messages.push(`${messageHeading}\n${line}`);
+  }
+  return messages;
+}
+
 export function getCommandReply(message: string, nickname: string | null) {
   switch (message.trim().toLocaleLowerCase("ko-KR")) {
     case "!안녕": {

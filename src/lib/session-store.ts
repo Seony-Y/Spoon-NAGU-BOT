@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { formatMultilineMessages } from "./chat-message";
 import {
   formatCounterAdjustment,
   parseCounterCommand,
@@ -187,11 +188,6 @@ export type WorkspaceBackupValue = string | number | null;
 export type WorkspaceBackupData = {
   tables: Record<string, Array<Record<string, WorkspaceBackupValue>>>;
 };
-
-export const AUDIENCE_RANKING_COMMANDS = [
-  "!오늘의 스푼랭킹",
-  "!내정보",
-] as const;
 
 export type AdminSession = {
   sessionKey: string;
@@ -1388,67 +1384,6 @@ export function listAudienceRankings(
   return listAudienceRankingsByKey(getSessionKey(sessionId), period, liveId);
 }
 
-function rankAudienceEntries(
-  entries: AudienceRankingEntry[],
-  value: (entry: AudienceRankingEntry) => number | null,
-) {
-  return [...entries]
-    .filter((entry) => (value(entry) ?? 0) > 0)
-    .sort((left, right) => (
-      (value(right) ?? 0) - (value(left) ?? 0)
-      || left.nickname.localeCompare(right.nickname, "ko-KR")
-      || left.userId.localeCompare(right.userId)
-    ));
-}
-
-function formatRankingReplies(scope: string, title: string, labels: string[]) {
-  if (labels.length === 0) return [`[${scope} ${title}] 집계 데이터가 없습니다.`];
-  const lines = [`[${scope} ${title}]`];
-  for (const label of labels.slice(0, 10)) {
-    if ([...lines, label].join("\n").length > 200) break;
-    lines.push(label);
-  }
-  return [lines.join("\n")];
-}
-
-export function getAudienceRankingCommandRepliesByKey(
-  sessionKey: string,
-  liveId: number | undefined,
-  message: string,
-  userId: string,
-  nickname: string | null,
-) {
-  const command = message.trim().toLocaleLowerCase("ko-KR");
-  if (!AUDIENCE_RANKING_COMMANDS.includes(command as typeof AUDIENCE_RANKING_COMMANDS[number])) {
-    return null;
-  }
-  const isCurrentCommand = command.startsWith("!오늘의 ");
-  if (isCurrentCommand && liveId === undefined) return ["현재 방송 랭킹을 조회할 수 없습니다."];
-
-  const period: AudienceRankingPeriod = isCurrentCommand ? "current" : "all";
-  const scope = isCurrentCommand ? "현재 방송" : "누적";
-  const entries = listAudienceRankingsByKey(sessionKey, period, liveId);
-  const spoonRanking = rankAudienceEntries(entries, (entry) => entry.spoons);
-  if (command === "!오늘의 스푼랭킹") {
-    return formatRankingReplies(scope, "스푼 랭킹", spoonRanking.map((entry, index) => (
-      `${index + 1}위 ${entry.nickname.slice(0, 30)}`
-    )));
-  }
-
-  const rank = (ranking: AudienceRankingEntry[], targetUserId: string) => {
-    const index = ranking.findIndex((entry) => entry.userId === targetUserId);
-    return index < 0 ? null : { place: index + 1, entry: ranking[index] };
-  };
-  const currentEntries = liveId === undefined
-    ? []
-    : listAudienceRankingsByKey(sessionKey, "current", liveId);
-  const currentSpoon = rank(rankAudienceEntries(currentEntries, (entry) => entry.spoons), userId);
-  return [
-    `[${nickname?.trim() || "청취자"}님의 내정보]`,
-    `오늘의 스푼랭킹 ${liveId === undefined ? "조회 불가" : currentSpoon ? `${currentSpoon.place}위` : "순위 없음"}`,
-  ];
-}
-
 export function listBotCommandsByKey(sessionKey: string): BotCommand[] {
   const { workspaceKey } = ensureBotSettings(sessionKey);
   return getDatabase().prepare(
@@ -1513,7 +1448,6 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
   const counters = listBotCountersByKey(sessionKey);
   const publicLabels = [
     "!명령어",
-    ...AUDIENCE_RANKING_COMMANDS,
     ...commands,
     ...counters.map((counter) => `!${counter.name}`),
     "!신청곡 곡명-가수",
@@ -1528,22 +1462,11 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
     "!신청곡 삭제 번호",
   ];
 
-  const replies: string[] = [];
-  const appendGroup = (heading: string, continuation: string, labels: string[]) => {
-    let groupReplyIndex = -1;
-    for (const label of labels) {
-      const current = groupReplyIndex >= 0 ? replies[groupReplyIndex] : undefined;
-      if (!current || `${current}, ${label}`.length > 200) {
-        replies.push(`${groupReplyIndex < 0 ? heading : continuation}: ${label}`);
-        groupReplyIndex = replies.length - 1;
-      } else {
-        replies[groupReplyIndex] = `${current}, ${label}`;
-      }
-    }
-  };
-  appendGroup("전체 사용 명령어", "전체 명령어 계속", publicLabels);
-  appendGroup("DJ 전용 명령어", "DJ 명령어 계속", djLabels);
-  return replies;
+  return formatMultilineMessages(
+    "전체 사용 명령어:",
+    "명령어 계속:",
+    [...publicLabels, "DJ 전용 명령어:", ...djLabels],
+  );
 }
 
 export function listBotCountersByKey(sessionKey: string): BotCounter[] {
@@ -1697,18 +1620,10 @@ export function applySongRequestCommand(
     const requests = listSongRequestsByKey(sessionKey);
     if (requests.length === 0) return ["신청곡 목록이 비어 있습니다."];
 
-    const replies: string[] = [];
-    for (const request of requests) {
-      const label = `#${request.id} ${request.title}${request.artist ? ` - ${request.artist}` : ""}`;
-      const prefix = replies.length === 0 ? "신청곡 목록: " : "신청곡 계속: ";
-      const current = replies.at(-1);
-      if (!current || `${current}, ${label}`.length > 200) {
-        replies.push(`${prefix}${label}`);
-      } else {
-        replies[replies.length - 1] = `${current}, ${label}`;
-      }
-    }
-    return replies;
+    const labels = requests.map((request) => (
+      `#${request.id} ${request.title}${request.artist ? ` - ${request.artist}` : ""}`
+    ));
+    return formatMultilineMessages("신청곡 목록:", "신청곡 계속:", labels);
   }
   if (command.kind === "delete") {
     if (!isDj) return "신청곡 삭제는 DJ만 할 수 있습니다.";
@@ -1960,8 +1875,8 @@ export function applyRouletteDonation(
     WHERE workspace_key = ? ORDER BY created_at, id
   `).all(workspaceKey) as Array<{ id: number; label: string; weight: number }>;
   const itemWeight = items.reduce((total, item) => total + item.weight, 0);
-  const totalWeight = itemWeight + settings.missWeight;
-  if (totalWeight <= 0) return null;
+  const configuredTotal = itemWeight + settings.missWeight;
+  const totalWeight = configuredTotal > 0 ? configuredTotal : 10_000;
 
   let ticket = Math.min(Math.max(random(), 0), 0.9999999999999999) * totalWeight;
   let selected: { id: number; label: string } | null = null;
@@ -2047,18 +1962,11 @@ export function getRouletteKeepCommandRepliesByKey(
   `).all(workspaceKey, userId) as Array<{ item_label: string; count: number }>;
   if (keeps.length === 0) return [`${displayName}님의 킵 목록이 비어 있습니다.`];
 
-  const replies: string[] = [];
-  for (const keep of keeps) {
-    const label = `${keep.item_label} ${keep.count.toLocaleString("ko-KR")}개`;
-    const prefix = replies.length === 0 ? `${displayName}님의 킵: ` : "킵 계속: ";
-    const current = replies.at(-1);
-    if (!current || `${current}, ${label}`.length > 200) {
-      replies.push(`${prefix}${label}`);
-    } else {
-      replies[replies.length - 1] = `${current}, ${label}`;
-    }
-  }
-  return replies;
+  return formatMultilineMessages(
+    `${displayName}님의 킵:`,
+    "킵 계속:",
+    keeps.map((keep) => `${keep.item_label} ${keep.count.toLocaleString("ko-KR")}개`),
+  );
 }
 
 export function getRpsRoundByKey(sessionKey: string): RpsRound | null {
@@ -2482,40 +2390,31 @@ function formatQuizElapsedTime(elapsedMs: number) {
 }
 
 export function formatQuizResultMessages(round: QuizRound) {
-  const replies = [`퀴즈 종료! 정답: ${round.answer}`];
-  const appendLabels = (heading: string, continuation: string, labels: string[]) => {
-    let replyIndex = -1;
-    for (const label of labels) {
-      const current = replyIndex >= 0 ? replies[replyIndex] : undefined;
-      if (!current || `${current}, ${label}`.length > 200) {
-        replies.push(`${replyIndex < 0 ? heading : continuation}: ${label}`);
-        replyIndex = replies.length - 1;
-      } else {
-        replies[replyIndex] = `${current}, ${label}`;
-      }
-    }
-  };
   const correctSubmissions = round.submissions
     .filter((submission) => submission.correct)
     .sort((left, right) => (left.correctAt ?? 0) - (right.correctAt ?? 0));
   if (correctSubmissions.length === 0) {
-    replies.push("최초 정답자가 없습니다.");
-    replies.push("정답자가 없습니다.");
-    return replies;
+    return formatMultilineMessages(
+      `퀴즈 종료! 정답: ${round.answer}`,
+      "퀴즈 결과 계속:",
+      ["최초 정답자가 없습니다.", "정답자가 없습니다."],
+    );
   }
   const firstCorrectAt = correctSubmissions[0].correctAt ?? round.startedAt;
   const firstCorrectLabels = correctSubmissions
     .filter((submission) => submission.correctAt === firstCorrectAt)
     .map((submission) => (
-      `${submission.nickname.slice(0, 50)} (${formatQuizElapsedTime(Math.max(0, firstCorrectAt - round.startedAt))})`
+      `최초 정답: ${submission.nickname.slice(0, 50)} (${formatQuizElapsedTime(Math.max(0, firstCorrectAt - round.startedAt))})`
     ));
-  appendLabels("최초 정답", "최초 정답 계속", firstCorrectLabels);
   const correctLabels = correctSubmissions.map((submission) => {
     const elapsed = Math.max(0, (submission.correctAt ?? round.startedAt) - round.startedAt);
-    return `${submission.nickname.slice(0, 50)} (${formatQuizElapsedTime(elapsed)})`;
+    return `정답자: ${submission.nickname.slice(0, 50)} (${formatQuizElapsedTime(elapsed)})`;
   });
-  appendLabels("정답자", "정답자 계속", correctLabels);
-  return replies;
+  return formatMultilineMessages(
+    `퀴즈 종료! 정답: ${round.answer}`,
+    "퀴즈 결과 계속:",
+    [...firstCorrectLabels, ...correctLabels],
+  );
 }
 
 export function applyQuizCommand(

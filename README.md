@@ -57,8 +57,6 @@ While the bot event stream is connected, these built-in commands reply automatic
 
 - `!안녕` — greet the listener by nickname
 - `!명령어` — list the commands and named counters currently available, including live dashboard updates
-- `!오늘의 스푼랭킹` — show up to 10 listeners ranked by donations in the current broadcast without exposing Spoon totals
-- `!내정보` — show the listener's current-live Spoon rank without exposing Spoon totals
 - `!가위바위보 가위|바위|보` — join the active DJ rock-paper-scissors round once; results are revealed when the DJ ends the round
 - `!참여` — join the active raffle once per account; winner counts have no configured upper limit
 - `!정답 정답내용` — submit or replace an answer for the active quiz; correct submissions remain private until the DJ ends the quiz

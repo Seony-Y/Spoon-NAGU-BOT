@@ -46,7 +46,7 @@ export default function GuidePage() {
             <summary><span className="guide-number">02</span><strong>대시보드</strong><span>방송 현황과 청취자 데이터 확인</span><i aria-hidden="true" /></summary>
             <div className="guide-accordion-content">
               <div className="guide-topic"><h3>방송 현황</h3><p>현재 방송 제목과 상태, 청취자 수를 확인합니다. 새 정보가 필요하면 해당 영역의 새로고침 버튼을 누릅니다.</p></div>
-              <div className="guide-topic"><h3>청취자 및 팬 랭킹</h3><p>현재 청취자 목록과 Spoon API가 제공하는 현재 방송 후원 팬 랭킹을 확인합니다. 하트 합계는 봇 참여 이후 수신분만 집계합니다. 채팅에서 <code>!오늘의 스푼랭킹</code>은 현재 방송 후원 상위 10명을 보여줍니다. <code>!내정보</code>는 오늘의 스푼 순위만 보여주며 스푼 수치는 노출하지 않습니다.</p></div>
+              <div className="guide-topic"><h3>청취자 및 팬 랭킹</h3><p>현재 청취자 목록과 Spoon API가 제공하는 현재 방송 후원 팬 랭킹을 확인합니다. 하트 합계는 봇 참여 이후 수신분만 집계합니다.</p></div>
               <div className="guide-topic"><h3>최근 이벤트</h3><p>입장, 채팅, 하트, 후원 등 BOT이 실시간으로 수신한 방송 이벤트를 최근 순서로 확인합니다.</p></div>
               <div className="guide-topic"><h3>로컬 백업</h3><p>상단 데이터 백업 탭에서 DJ 표시 이름, 자동화 설정, 명령어, 카운터, 신청곡, 가위바위보·추첨·퀴즈·룰렛 데이터를 서명된 JSON 파일로 저장하고 복원할 수 있습니다. 청취자 ID·닉네임, 입장·하트·스푼 이벤트와 스푼 랭킹 스냅샷은 청취자 기록 포함 다운로드에서만 추가됩니다. OAuth 토큰, 로그인 쿠키, 관리자 정보, 봇 참여 상태와 최근 이벤트 목록은 백업하지 않습니다.</p></div>
             </div>

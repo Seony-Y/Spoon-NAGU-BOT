@@ -19,7 +19,6 @@ import {
   applyRouletteDonation,
   applySongRequestCommand,
   findBotCommandResponse,
-  getAudienceRankingCommandRepliesByKey,
   getAvailableCommandRepliesByKey,
   getBotSettingsByKey,
   getCurrentLiveIdByKey,
@@ -38,11 +37,9 @@ import {
   linkDjWorkspaceByKey,
   recordAudienceEvent,
   setCurrentLiveIdByKey,
-  syncLiveFanSpoonRanking,
 } from "./session-store";
 import {
   getCurrentLive,
-  getLiveFans,
   getLiveListenersPage,
   getSpoonConfig,
   SpoonApiErrorResponse,
@@ -311,21 +308,6 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       }
       return;
     }
-    if (command === "!오늘의 스푼랭킹" || command === "!내정보") {
-      void sendSpoonRankingReplies(sessionKey, runtime, event);
-      return;
-    }
-    const rankingReplies = getAudienceRankingCommandRepliesByKey(
-      sessionKey,
-      runtime.currentLiveId,
-      event.data.message,
-      event.data.user.id,
-      event.data.user.nickname,
-    );
-    if (rankingReplies) {
-      for (const message of rankingReplies) void sendBotChat(sessionKey, message);
-      return;
-    }
     const keepReplies = getRouletteKeepCommandRepliesByKey(
       sessionKey,
       event.data.message,
@@ -390,34 +372,6 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       void sendBotChat(sessionKey, result.slice(0, 200));
     }
   }
-}
-
-async function sendSpoonRankingReplies(
-  sessionKey: string,
-  runtime: BotRuntime,
-  event: Extract<ParsedSseEvent, { event: "chat" }>,
-) {
-  if (runtime.currentLiveId !== undefined) {
-    try {
-      const session = await getBotAuthSession(sessionKey);
-      if (session?.scope.split(" ").includes("fans.read")) {
-        const { fans } = await getLiveFans(session.access_token);
-        syncLiveFanSpoonRanking(sessionKey, runtime.currentLiveId, fans);
-      }
-    } catch {
-      // Existing persisted rankings remain available when the live fan API is unavailable.
-    }
-  }
-
-  const replies = getAudienceRankingCommandRepliesByKey(
-    sessionKey,
-    runtime.currentLiveId,
-    event.data.message,
-    event.data.user.id,
-    event.data.user.nickname,
-  );
-  if (!replies) return;
-  for (const message of replies) void sendBotChat(sessionKey, message);
 }
 
 export async function consumeEventStream(

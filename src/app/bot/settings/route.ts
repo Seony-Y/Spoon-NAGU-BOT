@@ -5,7 +5,6 @@ import { ensureBotRunning } from "@/lib/bot-runtime";
 import { sendChat } from "@/lib/chat";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
-  AUDIENCE_RANKING_COMMANDS,
   clearSongRequests,
   deleteBotCounter,
   deleteBotCommand,
@@ -28,7 +27,6 @@ const RESERVED_COMMANDS = [
   "!가위바위보",
   "!참여",
   "!정답",
-  ...AUDIENCE_RANKING_COMMANDS,
 ];
 
 function isReservedCommand(command: string) {

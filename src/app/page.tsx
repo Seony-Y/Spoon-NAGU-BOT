@@ -1287,8 +1287,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     <ul>
                       <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
                       <li><div><strong>!안녕</strong><span>청취자 닉네임으로 인사 · 모두 사용 가능</span></div></li>
-                      <li><div><strong>!오늘의 스푼랭킹</strong><span>현재 방송 후원 상위 10명 조회 · 스푼 수 비공개</span></div></li>
-                      <li><div><strong>!내정보</strong><span>오늘의 스푼 순위 조회 · 스푼 수 비공개</span></div></li>
                       <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!참여</strong><span>진행 중인 추첨에 계정당 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!정답 정답내용</strong><span>진행 중인 퀴즈에 답안 제출 · 다른 답안으로 다시 제출 가능</span></div></li>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+	formatMultilineMessages,
 	getCommandReply,
 	resolveCommandFallback,
 	validateChatMessage,
@@ -27,6 +28,11 @@ assert.equal(validateChatMessage("가".repeat(200)), null);
 assert.equal(validateChatMessage("가".repeat(201)), "message_too_long");
 assert.equal(validateChatMessage("😀".repeat(100)), null);
 assert.equal(validateChatMessage("😀".repeat(101)), "message_too_long");
+assert.deepEqual(formatMultilineMessages("결과:", "결과 계속:", ["첫째", "둘째"]), ["결과:\n첫째\n둘째"]);
+assert.deepEqual(
+	formatMultilineMessages("결과:", "결과 계속:", ["가".repeat(196), "둘째"]),
+	[`${"결과:\n"}${"가".repeat(196)}`, "결과 계속:\n둘째"],
+);
 
 assert.equal(getCommandReply(" !안녕 ", "나구"), "나구님, 반가워요!");
 assert.equal(getCommandReply("!안녕", null), "청취자님, 반가워요!");
@@ -67,7 +73,7 @@ const raffleParticipants = [
 assert.deepEqual(selectRaffleWinners(raffleParticipants, 2, () => 0), raffleParticipants.slice(0, 2));
 assert.equal(new Set(selectRaffleWinners(raffleParticipants, 3, (maximum) => maximum - 1).map((entry) => entry.userId)).size, 3);
 assert.deepEqual(formatRaffleResultMessages([]), ["[추첨] 참가자가 없어 당첨자 없이 종료했습니다."]);
-assert.match(formatRaffleResultMessages(raffleParticipants)[0], /^\[추첨\] 당첨자: 1\. 첫 번째/);
+assert.equal(formatRaffleResultMessages(raffleParticipants)[0], "[추첨] 당첨자:\n1. 첫 번째\n2. 두 번째\n3. 세 번째");
 assert.ok(formatRaffleResultMessages(Array.from({ length: 20 }, (_, index) => ({
 	userId: String(index),
 	nickname: `긴닉네임-${index}-${"가".repeat(40)}`,
@@ -103,9 +109,7 @@ assert.deepEqual(formatRpsResultMessages([
 	{ nickname: "무승부 청취자", choice: "바위", result: "draw" },
 	{ nickname: "패배 청취자", choice: "가위", result: "lose" },
 ], "바위"), [
-	"DJ 바위 / 승리 청취자 보 (승)",
-	"DJ 바위 / 무승부 청취자 바위 (무)",
-	"DJ 바위 / 패배 청취자 가위 (패)",
+	"[가위바위보] DJ 선택: 바위\n승리 청취자 보 (승)\n무승부 청취자 바위 (무)\n패배 청취자 가위 (패)",
 ]);
 
 console.log("Chat checks passed: validation, replies, counters, and song requests");
