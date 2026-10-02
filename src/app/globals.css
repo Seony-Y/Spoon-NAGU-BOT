@@ -931,22 +931,6 @@ h1 {
   margin-top: 26px;
 }
 
-.roulette-distribution-view {
-  margin-top: 26px;
-}
-
-.roulette-edit-button {
-  flex: 0 0 auto;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px 13px;
-  color: var(--text);
-  background: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  text-decoration: none;
-}
-
 .roulette-editor-heading-actions {
   flex: 0 0 auto;
   display: flex;
@@ -1023,12 +1007,12 @@ h1 {
   padding: 12px 0;
 }
 
-.roulette-percentage-list.is-readonly .roulette-percentage-row {
+.roulette-percentage-row.is-existing-readonly {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
 
-.roulette-percentage-list.is-readonly .roulette-percentage-row > strong {
+.roulette-percentage-row.is-existing-readonly > strong {
   overflow-wrap: anywhere;
   font-size: 13px;
 }
@@ -2528,11 +2512,11 @@ h1 {
     justify-content: flex-end;
   }
 
-  .roulette-percentage-list.is-readonly .roulette-percentage-row {
+  .roulette-percentage-row.is-existing-readonly {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .roulette-percentage-list.is-readonly .roulette-percentage-row > span {
+  .roulette-percentage-row.is-existing-readonly > span {
     grid-column: 2;
     min-height: 40px;
     justify-content: flex-end;

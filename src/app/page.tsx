@@ -1035,26 +1035,14 @@ export default async function Home({ searchParams }: HomeProps) {
                     </form>
                   )}
 
-                  {params.rouletteEdit === "1" ? (
-                    <RouletteDistributionEditor items={rouletteItems.map((item) => ({
+                  <RouletteDistributionEditor
+                    editing={params.rouletteEdit === "1"}
+                    items={rouletteItems.map((item) => ({
                       id: item.id,
                       label: item.label,
                       percentage: roulettePercentages.get(String(item.id)) ?? "0",
-                    }))} />
-                  ) : (
-                    <section className="roulette-distribution-view" aria-labelledby="roulette-items-title">
-                      <div className="roulette-section-heading">
-                        <div><h4 id="roulette-items-title">룰렛 설정</h4><p>꽝 확률은 당첨 확률을 제외한 남은 비율로 자동 설정됩니다.</p></div>
-                        <Link className="roulette-edit-button" href="/?tab=game&game=roulette&rouletteEdit=1">수정</Link>
-                      </div>
-                      <div className="roulette-percentage-list is-readonly">
-                        {rouletteItems.map((item) => <div className="roulette-percentage-row" key={item.id}>
-                          <strong>{item.label}</strong><span><b>{roulettePercentages.get(String(item.id))}%</b></span>
-                        </div>)}
-                        <div className="roulette-percentage-row is-miss"><strong>꽝</strong><span><b>{roulettePercentages.get("miss")}%</b><small>(자동 설정)</small></span></div>
-                      </div>
-                    </section>
-                  )}
+                    }))}
+                  />
 
                   <div className="roulette-records">
                     <section aria-labelledby="roulette-history-title">

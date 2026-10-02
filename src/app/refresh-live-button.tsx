@@ -57,7 +57,9 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
+      const activeElement = document.activeElement;
+      const isUsingForm = activeElement instanceof HTMLElement && activeElement.closest("form");
+      if (document.visibilityState === "visible" && !isUsingForm) router.refresh();
     }, intervalMs);
     return () => window.clearInterval(timer);
   }, [intervalMs, router]);
