@@ -101,8 +101,51 @@ assert.equal(
 	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!룰렛팬 킵", "roulette-user", "룰렛팬"),
 	null,
 );
-assert.equal(store.listRouletteResults(firstSessionId).length, 5);
-assert.equal(store.listRouletteResults(firstSessionId)[0].isMiss, true);
+assert.equal(store.updateRouletteKeeps(firstSessionId, [
+	{ userId: "roulette-user", itemLabel: "커피 쿠폰", count: 5 },
+	{ userId: "roulette-user", itemLabel: "노래 신청권", count: 3 },
+]), true);
+assert.deepEqual(
+	store.listRouletteKeeps(firstSessionId).map((keep) => [keep.itemLabel, keep.count]),
+	[["노래 신청권", 3], ["커피 쿠폰", 5]],
+);
+assert.equal(store.updateRouletteKeeps(firstSessionId, [
+	{ userId: "roulette-user", itemLabel: "커피 쿠폰", count: 0 },
+]), false);
+assert.equal(
+	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰", false),
+	"킵 삭제는 DJ만 할 수 있습니다.",
+);
+assert.equal(
+	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰 / 0", true),
+	"차감 수량은 1개 이상 입력해야합니다.",
+);
+assert.equal(
+	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 없는 경품", true),
+	"존재하는 킵이 아닙니다.",
+);
+assert.equal(
+	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰", true),
+	"룰렛팬님의 커피 쿠폰 킵 1개를 삭제했습니다. (4개 남음)",
+);
+assert.equal(
+	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰 / 3", true),
+	"룰렛팬님의 커피 쿠폰 킵 3개를 삭제했습니다. (1개 남음)",
+);
+assert.equal(store.deleteRouletteKeeps(firstSessionId, [
+	{ userId: "roulette-user", itemLabel: "커피 쿠폰" },
+	{ userId: "roulette-user", itemLabel: "노래 신청권" },
+]), true);
+assert.deepEqual(store.listRouletteKeeps(firstSessionId), []);
+assert.deepEqual(
+	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!내 킵", "roulette-user", "룰렛팬"),
+	["룰렛팬님의 킵 목록이 비어 있습니다."],
+);
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-restore-coffee-1"), () => 0).itemLabel, "커피 쿠폰");
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-restore-coffee-2"), () => 0).itemLabel, "커피 쿠폰");
+assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-restore-song"), () => 0.4).itemLabel, "노래 신청권");
+assert.equal(store.listRouletteResults(firstSessionId).length, 8);
+assert.equal(store.listRouletteResults(firstSessionId).some((result) => result.isMiss), true);
 assert.equal(store.saveRouletteItem(firstSessionId, rouletteItems[1].id, "노래 신청권 플러스", 4), true);
 assert.equal(store.deleteRouletteItem(firstSessionId, rouletteItems[0].id), true);
 assert.equal(store.updateRouletteDistribution(firstSessionId, 2500, [
@@ -199,6 +242,7 @@ assert.doesNotMatch(commandReplies.join(" "), /!애청온도랭킹/);
 assert.doesNotMatch(commandReplies.join(" "), /!오늘의 애청온도랭킹/);
 assert.doesNotMatch(commandReplies.join(" "), /스푼랭킹|!내정보/);
 assert.match(commandReplies.join(" "), /!참여/);
+assert.match(commandReplies.join(" "), /!킵 삭제 닉네임 \/ 항목명 \/ 수량/);
 store.updateBotSettings(firstSessionId, {
 	...settings,
 	greetingMessage: "저장된 {nickname}님 환영 문구",

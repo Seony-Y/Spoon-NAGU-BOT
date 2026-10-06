@@ -2,9 +2,11 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
+  deleteRouletteKeeps,
   deleteRouletteDistributionItem,
   getRouletteSettings,
   updateRouletteDistribution,
+  updateRouletteKeeps,
   updateRouletteSettings,
 } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
@@ -36,6 +38,32 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const action = String(formData.get("action") ?? "");
   const deleteId = formData.get("deleteId");
+
+  if (action === "keeps") {
+    const operation = String(formData.get("operation") ?? "");
+    const selections = formData.getAll(operation === "delete" ? "selection" : "item").map(String);
+    if (
+      !["update", "delete"].includes(operation)
+      || selections.length === 0
+      || new Set(selections).size !== selections.length
+      || selections.some((selection) => !/^\d+$/u.test(selection))
+    ) {
+      return redirect(request, "invalid_keeps");
+    }
+    const items = selections.map((selection) => ({
+      userId: String(formData.get(`userId:${selection}`) ?? ""),
+      itemLabel: String(formData.get(`itemLabel:${selection}`) ?? ""),
+      count: Number(formData.get(`count:${selection}`)),
+    }));
+    if (operation === "delete") {
+      return redirect(request, deleteRouletteKeeps(sessionId, items)
+        ? "keeps_deleted"
+        : "invalid_keeps");
+    }
+    return redirect(request, updateRouletteKeeps(sessionId, items)
+      ? "keeps_updated"
+      : "invalid_keeps");
+  }
 
   if (deleteId !== null) {
     const id = Number(deleteId);

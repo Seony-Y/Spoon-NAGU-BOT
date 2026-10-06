@@ -24,7 +24,7 @@ import {
   type RpsChoice,
   type RpsResult,
 } from "./rock-paper-scissors";
-import { selectRaffleWinners } from "./raffle";
+import { parseRouletteKeepCommand, selectRaffleWinners } from "./raffle";
 
 type SessionRow = {
   id_hash: string;
@@ -1460,6 +1460,7 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
   const djLabels = [
     ...counters.map((counter) => `!${counter.name} +N/-N`),
     "!신청곡 삭제 번호",
+    "!킵 삭제 닉네임 / 항목명 / 수량",
   ];
 
   return formatMultilineMessages(
@@ -1851,6 +1852,149 @@ export function listRouletteKeeps(sessionId: string): RouletteKeep[] {
       updatedAt: keep.updated_at,
     };
   });
+}
+
+export function updateRouletteKeeps(
+  sessionId: string,
+  items: Array<{ userId: string; itemLabel: string; count: number }>,
+) {
+  if (
+    items.length === 0
+    || items.some((item) => (
+      !item.userId
+      || !item.itemLabel
+      || !Number.isSafeInteger(item.count)
+      || item.count < 1
+      || item.count > 1_000_000
+    ))
+    || new Set(items.map((item) => `${item.userId}\u0000${item.itemLabel}`)).size !== items.length
+  ) {
+    return false;
+  }
+
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const database = getDatabase();
+  const findKeep = database.prepare(`
+    SELECT count FROM roulette_keeps
+    WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+  `);
+  const updateKeep = database.prepare(`
+    UPDATE roulette_keeps SET count = ?, updated_at = ?
+    WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+  `);
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const keeps = items.map((item) => ({
+      ...item,
+      currentCount: (findKeep.get(
+        workspaceKey,
+        item.userId,
+        item.itemLabel,
+      ) as { count: number } | undefined)?.count,
+    }));
+    if (keeps.some((keep) => keep.currentCount === undefined)) {
+      database.exec("ROLLBACK");
+      return false;
+    }
+
+    const now = Date.now();
+    for (const keep of keeps) {
+      updateKeep.run(keep.count, now, workspaceKey, keep.userId, keep.itemLabel);
+    }
+    database.exec("COMMIT");
+    return true;
+  } catch {
+    database.exec("ROLLBACK");
+    return false;
+  }
+}
+
+export function deleteRouletteKeeps(
+  sessionId: string,
+  items: Array<{ userId: string; itemLabel: string }>,
+) {
+  if (
+    items.length === 0
+    || items.some((item) => !item.userId || !item.itemLabel)
+    || new Set(items.map((item) => `${item.userId}\u0000${item.itemLabel}`)).size !== items.length
+  ) {
+    return false;
+  }
+
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const database = getDatabase();
+  const findKeep = database.prepare(`
+    SELECT 1 FROM roulette_keeps
+    WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+  `);
+  const deleteKeep = database.prepare(`
+    DELETE FROM roulette_keeps
+    WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+  `);
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    if (items.some((item) => !findKeep.get(workspaceKey, item.userId, item.itemLabel))) {
+      database.exec("ROLLBACK");
+      return false;
+    }
+    for (const item of items) deleteKeep.run(workspaceKey, item.userId, item.itemLabel);
+    database.exec("COMMIT");
+    return true;
+  } catch {
+    database.exec("ROLLBACK");
+    return false;
+  }
+}
+
+export function applyRouletteKeepCommand(
+  sessionKey: string,
+  message: string,
+  isDj: boolean,
+) {
+  const command = parseRouletteKeepCommand(message);
+  if (!command) return null;
+  if (command.kind === "invalid_count") return "차감 수량은 1개 이상 입력해야합니다.";
+  if (command.kind === "usage") {
+    return "사용법: !킵 삭제 닉네임 / 항목명 / 수량 (수량 생략 시 1개)";
+  }
+  if (!isDj) return "킵 삭제는 DJ만 할 수 있습니다.";
+
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  const keeps = database.prepare(`
+    SELECT user_id, nickname, item_label, count FROM roulette_keeps
+    WHERE workspace_key = ?
+      AND nickname = ? COLLATE NOCASE
+      AND item_label = ? COLLATE NOCASE
+  `).all(workspaceKey, command.nickname, command.itemLabel) as Array<{
+    user_id: string;
+    nickname: string;
+    item_label: string;
+    count: number;
+  }>;
+  if (keeps.length === 0) return "존재하는 킵이 아닙니다.";
+  if (new Set(keeps.map((keep) => keep.user_id)).size > 1) {
+    return "같은 닉네임의 사용자가 여러 명이라 킵을 구분할 수 없습니다. 화면에서 수정해 주세요.";
+  }
+  const keep = keeps[0];
+  if (keeps.length > 1) return "존재하는 킵을 하나로 구분할 수 없습니다. 화면에서 수정해 주세요.";
+  if (command.count > keep.count) {
+    return `${keep.nickname}님의 ${keep.item_label} 킵은 ${keep.count.toLocaleString("ko-KR")}개만 있습니다.`;
+  }
+
+  if (command.count === keep.count) {
+    database.prepare(`
+      DELETE FROM roulette_keeps
+      WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+    `).run(workspaceKey, keep.user_id, keep.item_label);
+    return `${keep.nickname}님의 ${keep.item_label} 킵을 모두 삭제했습니다.`;
+  }
+  const remaining = keep.count - command.count;
+  database.prepare(`
+    UPDATE roulette_keeps SET count = ?, updated_at = ?
+    WHERE workspace_key = ? AND user_id = ? AND item_label = ?
+  `).run(remaining, Date.now(), workspaceKey, keep.user_id, keep.item_label);
+  return `${keep.nickname}님의 ${keep.item_label} 킵 ${command.count.toLocaleString("ko-KR")}개를 삭제했습니다. (${remaining.toLocaleString("ko-KR")}개 남음)`;
 }
 
 export type RouletteDraw = {

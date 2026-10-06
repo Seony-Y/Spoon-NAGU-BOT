@@ -1151,7 +1151,7 @@ h1 {
 
 .roulette-records {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 32px;
   margin-top: 32px;
   border-top: 1px solid var(--line);
@@ -1228,12 +1228,25 @@ h1 {
   padding: 11px 0;
 }
 
-.roulette-keep-list > section > strong {
-  display: block;
+.roulette-keep-user-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.roulette-keep-user-heading strong {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+}
+
+.roulette-keep-edit-help {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .roulette-keep-list ul {
@@ -1252,6 +1265,100 @@ h1 {
 
 .roulette-keep-list li span {
   overflow-wrap: anywhere;
+}
+
+.roulette-keep-edit-toggle,
+.roulette-keep-actions button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.roulette-keep-edit-toggle:disabled,
+.roulette-keep-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.roulette-keep-edit-toggle {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.roulette-keep-list section.is-editing li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.roulette-keep-list section.is-editing li > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.roulette-keep-list section.is-editing li > label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.roulette-keep-list section.is-editing input[type="number"] {
+  width: 58px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 6px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+}
+
+.roulette-keep-list section.is-editing input[type="number"]:disabled {
+  background: #f5f5f7;
+  color: var(--muted);
+}
+
+.roulette-keep-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.roulette-keep-actions span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.roulette-keep-actions > div {
+  display: flex;
+  gap: 12px;
+}
+
+.roulette-keep-actions button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.roulette-keep-actions button.is-delete {
+  border-color: var(--red);
+  background: var(--red);
 }
 
 .roulette-keep-list li em {

@@ -27,6 +27,7 @@ const RESERVED_COMMANDS = [
   "!가위바위보",
   "!참여",
   "!정답",
+  "!킵",
 ];
 
 function isReservedCommand(command: string) {

@@ -17,6 +17,7 @@ import {
   applyRaffleCommand,
   applyRpsCommand,
   applyRouletteDonation,
+  applyRouletteKeepCommand,
   applySongRequestCommand,
   findBotCommandResponse,
   getAvailableCommandRepliesByKey,
@@ -318,6 +319,11 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       for (const message of keepReplies) void sendBotChat(sessionKey, message);
       return;
     }
+    const keepReply = applyRouletteKeepCommand(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+    );
     const rpsReply = applyRpsCommand(
       sessionKey,
       event.data.message,
@@ -358,7 +364,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.user.nickname,
       findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname),
     );
-    reply = quizReply ?? raffleReply ?? rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
+    reply = keepReply ?? quizReply ?? raffleReply ?? rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
   } else {
     reply = processBotAutomation(runtime, event, settings);
   }

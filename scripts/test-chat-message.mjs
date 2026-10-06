@@ -20,6 +20,7 @@ import {
 } from "../src/lib/rock-paper-scissors.ts";
 import {
 	formatRaffleResultMessages,
+	parseRouletteKeepCommand,
 	selectRaffleWinners,
 } from "../src/lib/raffle.ts";
 
@@ -78,6 +79,22 @@ assert.ok(formatRaffleResultMessages(Array.from({ length: 20 }, (_, index) => ({
 	userId: String(index),
 	nickname: `긴닉네임-${index}-${"가".repeat(40)}`,
 }))).every((message) => message.length <= 200));
+assert.deepEqual(parseRouletteKeepCommand("!킵 삭제 룰렛팬 / 커피 쿠폰"), {
+	kind: "delete",
+	nickname: "룰렛팬",
+	itemLabel: "커피 쿠폰",
+	count: 1,
+});
+assert.deepEqual(parseRouletteKeepCommand("!킵 삭제 룰렛팬 / 커피 쿠폰 / 3"), {
+	kind: "delete",
+	nickname: "룰렛팬",
+	itemLabel: "커피 쿠폰",
+	count: 3,
+});
+assert.deepEqual(parseRouletteKeepCommand("!킵 삭제 룰렛팬 / 커피 쿠폰 / 0"), { kind: "invalid_count" });
+assert.deepEqual(parseRouletteKeepCommand("!킵 삭제 룰렛팬 / 커피 쿠폰 / -1"), { kind: "invalid_count" });
+assert.deepEqual(parseRouletteKeepCommand("!킵"), { kind: "usage" });
+assert.equal(parseRouletteKeepCommand("킵 삭제 룰렛팬 / 커피 쿠폰"), null);
 
 assert.deepEqual(parseSongRequestCommand("!신청곡 밤편지-아이유"), {
 	kind: "add",

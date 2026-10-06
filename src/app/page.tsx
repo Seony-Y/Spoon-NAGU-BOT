@@ -26,6 +26,7 @@ import {
 import { AutoRefresh, RefreshButton, RefreshLiveButton } from "./refresh-live-button";
 import { AutomationToggle } from "./bot/automation-toggle";
 import { RouletteDistributionEditor } from "./game/roulette/roulette-distribution-editor";
+import { RouletteKeepEditor } from "./game/roulette/roulette-keep-editor";
 import { OAuthLoginGate } from "./oauth-login-gate";
 import { SiteFooter, SiteHeader } from "./site-chrome";
 
@@ -1023,6 +1024,9 @@ export default async function Home({ searchParams }: HomeProps) {
                   {params.roulette === "settings_saved" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>룰렛 설정을 저장했습니다.</strong></div>}
                   {params.roulette === "distribution_saved" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>룰렛 확률표를 저장했습니다.</strong></div>}
                   {params.roulette === "item_deleted" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>경품을 삭제하고 해당 확률을 꽝 확률에 반영했습니다.</strong></div>}
+                  {params.roulette === "keeps_updated" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>선택한 킵 수량을 수정했습니다.</strong></div>}
+                  {params.roulette === "keeps_deleted" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>선택한 킵을 삭제했습니다.</strong></div>}
+                  {params.roulette === "invalid_keeps" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>수정할 킵 항목과 수량을 다시 확인해 주세요.</strong></div>}
                   {params.roulette === "invalid_distribution" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>경품 당첨 확률 합계는 100% 이하여야 하며 같은 경품명은 한 번만 사용할 수 있습니다.</strong></div>}
                   {params.roulette === "invalid_settings" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>룰렛 입력값을 확인해 주세요.</strong></div>}
 
@@ -1057,13 +1061,9 @@ export default async function Home({ searchParams }: HomeProps) {
                     </section>
 
                     <section aria-labelledby="roulette-keeps-title">
-                      <div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">사용자별 킵</h4><p><code>!내 킵</code>으로 조회</p></div></div>
-                      {rouletteKeepUsers.length > 0 ? <div className="roulette-keep-list">
-                        {rouletteKeepUsers.map((user) => <section key={user.userId}>
-                          <strong>{user.nickname}</strong>
-                          <ul>{user.items.map((item) => <li key={item.label}><span>{item.label}</span><em>{item.count.toLocaleString("ko-KR")}개</em></li>)}</ul>
-                        </section>)}
-                      </div> : <p className="roulette-empty">저장된 킵이 없습니다.</p>}
+                      {rouletteKeepUsers.length > 0
+                        ? <RouletteKeepEditor users={rouletteKeepUsers} disabled={previewConnected} />
+                        : <><div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">사용자별 킵</h4><p><code>!내 킵</code>으로 조회</p></div></div><p className="roulette-empty">저장된 킵이 없습니다.</p></>}
                     </section>
                   </div>
                 </section>
@@ -1305,6 +1305,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </li>
                       ))}
                       <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
+                      <li><div><strong>!킵 삭제 닉네임 / 항목명 / 수량</strong><span>사용자 킵을 지정 수량만큼 삭제 · 수량 생략 시 1개</span></div></li>
                     </ul>
                     <h5 className="command-group-title">사용자 정의 명령어 · 전체 사용</h5>
                     {botCommands.some((item) => !["!명령어", "!안녕"].includes(item.command)) && (
