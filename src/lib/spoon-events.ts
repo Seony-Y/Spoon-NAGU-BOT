@@ -37,7 +37,7 @@ export type DonationEvent = {
 };
 
 export type StreamEndEvent = {
-  reason: "LIVE_ENDED" | "TOKEN_EXPIRED" | "RECONNECT";
+  reason: "LIVE_ENDED" | "TOKEN_EXPIRED" | "RECONNECT" | "DUPLICATE_CONNECTION";
 };
 
 export type SpoonEventData = {

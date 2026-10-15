@@ -12,7 +12,7 @@ export default function GuidePage() {
       eyebrow="GETTING STARTED"
       title="사용방법"
       summary="왼쪽 메뉴에서 필요한 기능을 선택해 Spoon DJ 연결부터 방송 운영과 게임 사용법까지 확인하세요."
-      updatedAt="2026년 10월 1일"
+      updatedAt="2026년 10월 15일"
     >
       <div className="guide-layout">
         <nav className="guide-nav" aria-label="사용방법 TAB 메뉴">
@@ -55,7 +55,20 @@ export default function GuidePage() {
           <details className="guide-accordion" id="bot-operations">
             <summary><span className="guide-number">03</span><strong>봇 운영</strong><span>자동화, 명령어, 카운터와 신청곡 관리</span><i aria-hidden="true" /></summary>
             <div className="guide-accordion-content">
-              <div className="guide-topic"><h3>BOT 참여</h3><p>방송 참여와 퇴장을 관리합니다. Spoon에서 BOT을 매니저로 지정하면 채팅 명령어를 안정적으로 처리할 수 있습니다.</p></div>
+              <div className="guide-topic">
+                <h3>BOT 참여</h3>
+                <p>방송 참여와 퇴장을 관리합니다. 이벤트 스트림은 같은 앱 기준 DJ당 1개만 유지되며, 새 연결이 열리면 이전 연결은 <code>end / DUPLICATE_CONNECTION</code>으로 종료됩니다.</p>
+                <p>스트림 재연결만으로 기존 입장 이벤트가 다시 재생되지는 않습니다. 재입장 등으로 Spoon이 새 <code>presence</code> 이벤트를 보낼 때만 입장 메시지가 다시 보입니다.</p>
+                <p>상주 봇은 약 1시간 단위로 <code>TOKEN_EXPIRED</code> 종료를 받을 수 있으며, 이 경우 토큰을 갱신하고 바로 재연결하면 됩니다. 토큰은 만료 5분 전에 선갱신하는 것을 권장합니다.</p>
+                <p>방송 중 BOT 매니저 지정/해제는 재연결 없이도 보통 몇 초 안에 반영됩니다.</p>
+              </div>
+              <div className="guide-topic">
+                <h3>고정 매니저 지정 순서</h3>
+                <ol>
+                  <li>방송 중 BOT 계정이 DJ를 먼저 팔로우합니다. (<code>dj.follow</code>, <code>POST /v1/live/follow</code>)</li>
+                  <li>방송이 끝난 뒤 Spoon에서 BOT을 고정 매니저로 지정합니다.</li>
+                </ol>
+              </div>
               <div className="guide-topic"><h3>자동화</h3><p>입장 환영, 후원·하트 감사, 반복 멘트를 각각 설정합니다. 각 기능의 ON/OFF 토글은 클릭 즉시 다음 이벤트부터 반영되며, 메시지와 설정은 DJ 워크스페이스에 저장되어 재연결 후에도 복원됩니다.</p></div>
               <div className="guide-topic"><h3>채팅 명령어와 카운터</h3><p>채팅 명령어는 별도 사용 설정 없이 항상 활성화됩니다. 기본 명령어와 사용자 정의 명령어를 관리하고 <code>!명령어</code>로 현재 사용 가능한 명령어를 확인합니다. 카운터 조회는 모두 사용할 수 있고 증감은 DJ만 사용할 수 있습니다.</p></div>
               <div className="guide-topic"><h3>신청곡</h3><p>청취자는 <code>!신청곡 곡명-가수</code>로 신청하고 <code>!신청곡 목록</code>으로 대기 목록을 확인합니다. DJ는 화면이나 <code>!신청곡 삭제 번호</code>로 항목을 삭제합니다.</p></div>

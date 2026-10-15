@@ -41,7 +41,20 @@ Persistent DJ workspace data survives browser refreshes, broadcast endings, Rail
 
 ## Bot participation
 
-The dashboard's **봇 참여** button persists the desired participation state and opens Spoon's live event stream. If the DJ is offline, the worker waits and joins automatically when a broadcast starts. Temporary network failures reconnect with exponential backoff, and expired access tokens are refreshed once before reconnecting.
+The dashboard's **봇 참여** button persists the desired participation state and opens Spoon's live event stream. If the DJ is offline, the worker waits and joins automatically when a broadcast starts. Temporary network failures reconnect with exponential backoff, and access tokens are refreshed once before reconnecting when the token is near expiry.
+
+The app now requests `dj.follow` and can call `POST /v1/live/follow` so the bot account can follow the DJ before manager setup.
+
+Spoon keeps one live-event-stream connection per app and DJ. If a second connection is opened, the previous stream closes with `event: end` and `reason: DUPLICATE_CONNECTION`.
+
+A simple reconnect does not replay prior join (`presence`) events. Join messages appear again only when Spoon emits new join events, such as:
+
+- a listener actually re-enters and Spoon emits a new `presence` event
+- the bot reconnects after manager-state changes that cause fresh presence delivery for this broadcast
+
+For long-running resident bots, Spoon can emit `event: end` with `reason: TOKEN_EXPIRED` around one-hour token boundaries. The worker should refresh OAuth and reconnect immediately.
+
+If the DJ marks or unmarks the bot as a manager during the broadcast, Spoon reflects that in a few seconds without requiring a manual leave/join.
 
 **봇 퇴장** closes the event stream and disables restart restoration. Spoon may keep the listener presence visible for a short time after the stream closes.
 
@@ -78,6 +91,11 @@ While participating, the bot also:
 
 Spoon only sends presence events after the DJ makes the bot a manager. Until those events are confirmed, the worker refreshes its event stream every minute, so a manager promotion made during a broadcast is picked up automatically without a manual bot leave/join. Automation totals are held in process memory and reset when the broadcast ends or the process restarts.
 
+Recommended manager setup order for fixed manager assignment:
+
+1. While live, have the bot account follow the DJ (`dj.follow` / `POST /v1/live/follow`).
+2. After the broadcast ends, assign the bot as a fixed manager in Spoon.
+
 Before manager-only presence events are confirmed, a custom chat command receives a manager setup notice instead of running. Counters, the command list, and song requests remain available to their documented roles.
 
 Spoon does not expose a profile endpoint or nickname in the OAuth token. Message templates use `DJ` until the connected DJ sends a chat event, then the bot learns and stores that nickname automatically.
@@ -87,6 +105,14 @@ The **봇 운영** tab provides welcome messages, donation thanks, heart donatio
 Named counters support multiple independent values such as `실드`, `펀딩`, or `이벤트`. Every DJ starts with `!실드` at 0. Anyone can use `!실드` to display the current value, while only the DJ can use `!실드 +2` or `!실드 -1` to change it. Values never become negative. The same permission rule applies to every named counter. Names, initial values, current values, resets, and deletions are managed in the counter tab.
 
 Disconnecting revokes OAuth credentials but keeps the opaque browser session and local workspace link. Reconnecting from the same browser restores that DJ's automation messages, commands, counters, song requests, current broadcast context, and enabled bot state without waiting for a DJ chat event. Clearing the browser cookie still requires a later DJ chat event to identify and relink the workspace because Spoon OAuth does not expose the DJ user ID.
+
+## Token refresh timing
+
+Use proactive refresh with a margin of 5 minutes before access-token expiry.
+
+## Error codes
+
+- `OAPI_MNGR_0211` is handled as a Spoon manager/follow-flow error and should be surfaced in operator guidance when follow/manager prerequisites are not met.
 
 ## Administration
 

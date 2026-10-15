@@ -1,6 +1,7 @@
 const DEFAULT_BASE_URL = "https://kr-openapi.spooncast.net";
 export const REQUIRED_SCOPES = [
   "live.read",
+  "dj.follow",
   "events.chat",
   "events.presence",
   "events.like",
@@ -218,6 +219,22 @@ async function requestSpoonApi<T>(accessToken: string, path: string): Promise<T>
   }
 
   return (await response.json()) as T;
+}
+
+export async function followCurrentDj(accessToken: string): Promise<void> {
+  const { baseUrl } = getSpoonConfig();
+  const response = await fetch(`${baseUrl}/v1/live/follow`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (response.status === 204) return;
+
+  const error = (await response.json().catch(() => ({}))) as { detailCode?: string };
+  throw new SpoonApiErrorResponse(response.status, error.detailCode);
 }
 
 export function getLiveListenersPage(accessToken: string, cursor?: string) {

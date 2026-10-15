@@ -68,6 +68,7 @@ const errorMessages: Record<string, string> = {
 
 const scopeLabels: Record<string, string> = {
   "live.read": "방송 정보",
+  "dj.follow": "DJ 팔로우",
   "events.chat": "실시간 채팅",
   "events.presence": "청취자 입장",
   "events.like": "좋아요",
