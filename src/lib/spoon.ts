@@ -1,7 +1,6 @@
 const DEFAULT_BASE_URL = "https://kr-openapi.spooncast.net";
 export const REQUIRED_SCOPES = [
   "live.read",
-  "dj.follow",
   "events.chat",
   "events.presence",
   "events.like",

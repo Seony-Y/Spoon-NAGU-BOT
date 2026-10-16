@@ -43,8 +43,6 @@ Persistent DJ workspace data survives browser refreshes, broadcast endings, Rail
 
 The dashboard's **봇 참여** button persists the desired participation state and opens Spoon's live event stream. If the DJ is offline, the worker waits and joins automatically when a broadcast starts. Temporary network failures reconnect with exponential backoff, and access tokens are refreshed once before reconnecting when the token is near expiry.
 
-The app now requests `dj.follow` and can call `POST /v1/live/follow` so the bot account can follow the DJ before manager setup.
-
 Spoon keeps one live-event-stream connection per app and DJ. If a second connection is opened, the previous stream closes with `event: end` and `reason: DUPLICATE_CONNECTION`.
 
 A simple reconnect does not replay prior join (`presence`) events. Join messages appear again only when Spoon emits new join events, such as:
@@ -93,7 +91,7 @@ Spoon only sends presence events after the DJ makes the bot a manager. Until tho
 
 Recommended manager setup order for fixed manager assignment:
 
-1. While live, have the bot account follow the DJ (`dj.follow` / `POST /v1/live/follow`).
+1. While live, ensure the bot account can participate normally in the broadcast.
 2. After the broadcast ends, assign the bot as a fixed manager in Spoon.
 
 Before manager-only presence events are confirmed, a custom chat command receives a manager setup notice instead of running. Counters, the command list, and song requests remain available to their documented roles.

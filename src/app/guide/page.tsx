@@ -65,7 +65,7 @@ export default function GuidePage() {
               <div className="guide-topic">
                 <h3>고정 매니저 지정 순서</h3>
                 <ol>
-                  <li>방송 중 BOT 계정이 DJ를 먼저 팔로우합니다. (<code>dj.follow</code>, <code>POST /v1/live/follow</code>)</li>
+                  <li>방송 중 BOT 계정이 방송 참여/채팅이 정상 동작하는지 먼저 확인합니다.</li>
                   <li>방송이 끝난 뒤 Spoon에서 BOT을 고정 매니저로 지정합니다.</li>
                 </ol>
               </div>
