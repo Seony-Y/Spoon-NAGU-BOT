@@ -45,7 +45,7 @@ export function selectRaffleWinners(
 }
 
 export function formatRaffleResultMessages(winners: RaffleParticipant[]) {
-  if (winners.length === 0) return ["[추첨] 참가자가 없어 당첨자 없이 종료했습니다."];
+  if (winners.length === 0) return ["[추첨] 응모한 분이 없어 당첨자 없이 끝났어요."];
   const labels = winners.map((winner, index) => `${index + 1}. ${winner.nickname.slice(0, 50)}`);
-  return formatMultilineMessages("[추첨] 당첨자:", "[추첨] 당첨자 계속:", labels);
+  return formatMultilineMessages("[추첨] 당첨자:", "[추첨] 당첨자 (이어서)", labels);
 }

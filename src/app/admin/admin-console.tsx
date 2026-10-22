@@ -38,7 +38,7 @@ export function AdminConsole({ configured }: AdminConsoleProps) {
       });
       if (!response.ok) {
         setSessions(null);
-        setError(response.status === 401 ? "관리자 코드가 올바르지 않습니다." : "요청을 처리하지 못했습니다.");
+        setError(response.status === 401 ? "관리자 코드가 올바르지 않습니다." : response.status === 429 ? "시도 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요." : "요청을 처리하지 못했습니다.");
         return;
       }
       const body = await response.json() as { sessions: AdminSession[] };

@@ -10,8 +10,10 @@ import {
   getSession,
   getSessionByKey,
   getSessionKey,
+  getTokenGroupKey,
   isSessionBlockedByKey,
   invalidateAuthSessionByKey,
+  invalidateDjSessionsByKey,
   invalidateStoredAuthSession,
   saveSession,
   updateSessionByKey,
@@ -33,6 +35,9 @@ async function refreshSessionByKey(sessionKey: string, force = false) {
     return updateSessionByKey(sessionKey, refreshed) ? getSessionByKey(sessionKey) : null;
   } catch (error) {
     if (error instanceof SpoonOAuthErrorResponse && error.code === "invalid_grant") {
+      // Another session of this DJ may have rotated the shared refresh token.
+      const latest = getSessionByKey(sessionKey);
+      if (latest && latest.refresh_token !== current.refresh_token) return latest;
       invalidateAuthSessionByKey(sessionKey);
       return null;
     }
@@ -47,12 +52,16 @@ async function getAuthSessionByKey(sessionKey: string, force = false) {
   const current = getSessionByKey(sessionKey);
   if (!current || (!force && current.expires_at - Date.now() > REFRESH_MARGIN_MS)) return current;
 
-  const activeRefresh = refreshes.get(sessionKey);
-  if (activeRefresh) return activeRefresh;
+  const groupKey = getTokenGroupKey(sessionKey);
+  const activeRefresh = refreshes.get(groupKey);
+  if (activeRefresh) {
+    await activeRefresh.catch(() => null);
+    return getSessionByKey(sessionKey);
+  }
 
   const refresh = refreshSessionByKey(sessionKey, force)
-    .finally(() => refreshes.delete(sessionKey));
-  refreshes.set(sessionKey, refresh);
+    .finally(() => refreshes.delete(groupKey));
+  refreshes.set(groupKey, refresh);
   return refresh;
 }
 
@@ -78,6 +87,6 @@ export async function disconnectAuthSession(sessionId: string) {
   try {
     if (current) await revokeToken(current.refresh_token);
   } finally {
-    invalidateStoredAuthSession(sessionId);
+    invalidateDjSessionsByKey(getSessionKey(sessionId));
   }
 }

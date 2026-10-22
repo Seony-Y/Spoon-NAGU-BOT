@@ -21,12 +21,12 @@ export function SiteHeader({ connectionStatus }: SiteHeaderProps) {
       </Link>
       <div className="header-side">
         <nav className="header-links" aria-label="서비스 안내">
-          <Link href="/guide">사용방법</Link>
+          <Link href="/guide">사용 방법</Link>
         </nav>
         {connectionStatus && (
           <span className={`header-status ${connectionStatus === "connected" ? "is-connected" : ""}`}>
             <span className="status-dot" aria-hidden="true" />
-            {connectionStatus === "connected" ? "연결됨" : "연결 대기"}
+            {connectionStatus === "connected" ? "로그인됨" : "로그인 전"}
           </span>
         )}
       </div>

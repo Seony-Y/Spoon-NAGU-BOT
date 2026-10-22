@@ -1,0 +1,418 @@
+import "server-only";
+
+import { createHash } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+export type SessionRow = {
+  id_hash: string;
+  token_payload: string;
+  bot_enabled: number;
+  blocked: number;
+  auth_valid: number;
+  workspace_key: string | null;
+  current_live_id: number | null;
+  dj_user_id: string | null;
+};
+
+const globalForDatabase = globalThis as typeof globalThis & {
+  naguSessionDatabase?: DatabaseSync;
+};
+
+function migrateDatabase(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS oauth_sessions (
+      id_hash TEXT PRIMARY KEY,
+      token_payload TEXT NOT NULL,
+      bot_enabled INTEGER NOT NULL DEFAULT 0,
+      blocked INTEGER NOT NULL DEFAULT 0,
+      auth_valid INTEGER NOT NULL DEFAULT 1,
+      workspace_key TEXT,
+      current_live_id INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+  const columns = database.prepare("PRAGMA table_info(oauth_sessions)").all() as Array<{
+    name: string;
+  }>;
+  if (!columns.some((column) => column.name === "bot_enabled")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN bot_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.some((column) => column.name === "blocked")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.some((column) => column.name === "auth_valid")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN auth_valid INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!columns.some((column) => column.name === "workspace_key")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN workspace_key TEXT");
+  }
+  if (!columns.some((column) => column.name === "current_live_id")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN current_live_id INTEGER");
+  }
+  if (!columns.some((column) => column.name === "dj_user_id")) {
+    database.exec("ALTER TABLE oauth_sessions ADD COLUMN dj_user_id TEXT");
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS bot_settings (
+      session_key TEXT PRIMARY KEY,
+      dj_nickname TEXT NOT NULL DEFAULT '',
+      greeting_message TEXT NOT NULL DEFAULT '안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!',
+      donation_message TEXT NOT NULL DEFAULT '{nickname}님, {amount}스푼 후원 감사합니다!',
+      heart_message TEXT NOT NULL DEFAULT '{nickname}님, 하트 {milestone}개 감사합니다!',
+      hourly_enabled INTEGER NOT NULL DEFAULT 0,
+      hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!',
+      repeat_interval_minutes INTEGER NOT NULL DEFAULT 10,
+      commands_enabled INTEGER NOT NULL DEFAULT 1,
+      welcome_enabled INTEGER NOT NULL DEFAULT 1,
+      donation_enabled INTEGER NOT NULL DEFAULT 1,
+      heart_enabled INTEGER NOT NULL DEFAULT 1,
+      commands_initialized INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS bot_commands (
+      session_key TEXT NOT NULL,
+      command TEXT NOT NULL,
+      response TEXT NOT NULL,
+      PRIMARY KEY (session_key, command)
+    );
+    CREATE TABLE IF NOT EXISTS bot_counters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL,
+      name TEXT NOT NULL COLLATE NOCASE,
+      initial_value INTEGER NOT NULL DEFAULT 0,
+      value INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (session_key, name)
+    );
+    CREATE TABLE IF NOT EXISTS song_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL,
+      requester_nickname TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS dj_workspaces (
+      dj_user_id TEXT PRIMARY KEY,
+      workspace_key TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS audience_profiles (
+      workspace_key TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT,
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS audience_events (
+      workspace_key TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      spoons INTEGER NOT NULL DEFAULT 0,
+      hearts INTEGER NOT NULL DEFAULT 0,
+      favorite_temperature REAL,
+      occurred_at INTEGER NOT NULL,
+      stat_date TEXT NOT NULL,
+      PRIMARY KEY (workspace_key, event_id)
+    );
+    CREATE TABLE IF NOT EXISTS audience_spoon_snapshots (
+      workspace_key TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      spoons INTEGER NOT NULL,
+      stat_date TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, live_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS recent_bot_events (
+      workspace_key TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      received_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, event_id)
+    );
+    CREATE TABLE IF NOT EXISTS rps_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      dj_choice TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS rps_entries (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      choice TEXT NOT NULL,
+      result TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, round_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS raffle_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      winner_count INTEGER NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS raffle_entries (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      winner INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, round_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS quiz_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      answer_normalized TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      winner_user_id TEXT,
+      winner_nickname TEXT,
+      elapsed_ms INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS quiz_submissions (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      answer_normalized TEXT NOT NULL,
+      submitted_at INTEGER NOT NULL,
+      correct INTEGER NOT NULL DEFAULT 0,
+      correct_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id, user_id)
+    );
+    -- Kept out of bot_settings so older backups (fixed bot_settings columns) still restore.
+    CREATE TABLE IF NOT EXISTS follow_settings (
+      workspace_key TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      message TEXT NOT NULL DEFAULT '{nickname}님, 팔로우 감사합니다!'
+    );
+    CREATE TABLE IF NOT EXISTS quiz_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_key TEXT NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS quiz_queue_workspace_idx
+      ON quiz_queue (workspace_key, created_at, id);
+    CREATE TABLE IF NOT EXISTS roulette_settings (
+      workspace_key TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      cost INTEGER NOT NULL DEFAULT 20,
+      miss_weight INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS roulette_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_key TEXT NOT NULL,
+      label TEXT NOT NULL COLLATE NOCASE,
+      weight INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (workspace_key, label)
+    );
+    CREATE TABLE IF NOT EXISTS roulette_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_key TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      event_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      item_label TEXT,
+      is_miss INTEGER NOT NULL,
+      spoons INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (workspace_key, event_id)
+    );
+    CREATE TABLE IF NOT EXISTS roulette_keeps (
+      workspace_key TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      item_label TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, user_id, item_label)
+    );
+    CREATE INDEX IF NOT EXISTS audience_events_period_idx
+      ON audience_events (workspace_key, stat_date, live_id, user_id);
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      key TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+  `);
+
+  const songRequestColumns = database.prepare("PRAGMA table_info(song_requests)").all() as Array<{
+    name: string;
+  }>;
+  if (!songRequestColumns.some((column) => column.name === "artist")) {
+    database.exec("ALTER TABLE song_requests ADD COLUMN artist TEXT NOT NULL DEFAULT ''");
+  }
+
+  const rpsRoundColumns = database.prepare("PRAGMA table_info(rps_rounds)").all() as Array<{
+    name: string;
+    pk: number;
+  }>;
+  if (rpsRoundColumns.find((column) => column.name === "round_id")?.pk === 0) {
+    database.exec("BEGIN");
+    try {
+      database.exec(`
+      CREATE TABLE rps_rounds_history (
+        workspace_key TEXT NOT NULL,
+        round_id INTEGER NOT NULL,
+        dj_choice TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        PRIMARY KEY (workspace_key, round_id)
+      );
+      INSERT INTO rps_rounds_history (
+        workspace_key, round_id, dj_choice, active, started_at, ended_at
+      )
+      SELECT workspace_key, round_id, dj_choice, active, started_at, ended_at
+      FROM rps_rounds;
+      DROP TABLE rps_rounds;
+      ALTER TABLE rps_rounds_history RENAME TO rps_rounds;
+    `);
+      database.exec("COMMIT");
+    } catch (error) {
+      // Never leave the shared connection inside an open transaction.
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS rps_rounds_active_idx
+    ON rps_rounds (workspace_key) WHERE active = 1
+  `);
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS raffle_rounds_active_idx
+    ON raffle_rounds (workspace_key) WHERE active = 1
+  `);
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS quiz_rounds_active_idx
+    ON quiz_rounds (workspace_key) WHERE active = 1
+  `);
+  const quizSubmissionColumns = database.prepare("PRAGMA table_info(quiz_submissions)").all() as Array<{
+    name: string;
+  }>;
+  if (!quizSubmissionColumns.some((column) => column.name === "correct")) {
+    database.exec("ALTER TABLE quiz_submissions ADD COLUMN correct INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!quizSubmissionColumns.some((column) => column.name === "correct_at")) {
+    database.exec("ALTER TABLE quiz_submissions ADD COLUMN correct_at INTEGER");
+  }
+
+  const settingsColumns = database.prepare("PRAGMA table_info(bot_settings)").all() as Array<{
+    name: string;
+  }>;
+  if (!settingsColumns.some((column) => column.name === "dj_nickname")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN dj_nickname TEXT NOT NULL DEFAULT ''");
+    database.prepare(`
+      UPDATE bot_settings SET greeting_message = ? WHERE greeting_message = ?
+    `).run(
+      "안녕하세요. DJ {name}입니다. {nickname}님, 반가워요!",
+      "{nickname}님, 어서 오세요!",
+    );
+  }
+  if (!settingsColumns.some((column) => column.name === "donation_message")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN donation_message TEXT NOT NULL DEFAULT '{nickname}님, {amount}스푼 후원 감사합니다!'");
+  }
+  if (!settingsColumns.some((column) => column.name === "heart_message")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN heart_message TEXT NOT NULL DEFAULT '{nickname}님, 하트 {milestone}개 감사합니다!'");
+  }
+  if (!settingsColumns.some((column) => column.name === "hourly_enabled")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!settingsColumns.some((column) => column.name === "hourly_message")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN hourly_message TEXT NOT NULL DEFAULT 'DJ {name}의 방송과 함께해 주셔서 감사합니다!'");
+  }
+  if (!settingsColumns.some((column) => column.name === "repeat_interval_minutes")) {
+    database.exec("ALTER TABLE bot_settings ADD COLUMN repeat_interval_minutes INTEGER NOT NULL DEFAULT 10");
+  }
+  const repeatDefaultMigration = database.prepare(
+    "INSERT OR IGNORE INTO app_migrations (key, applied_at) VALUES (?, ?)",
+  ).run("repeat_default_10", Date.now());
+  if (repeatDefaultMigration.changes > 0) {
+    database.exec("UPDATE bot_settings SET repeat_interval_minutes = 10 WHERE repeat_interval_minutes = 60");
+  }
+  database.prepare("UPDATE bot_settings SET heart_message = ? WHERE heart_message = ?").run(
+    "{nickname}님, 하트 {milestone}개 감사합니다!",
+    "하트 {milestone}개를 달성했어요! 감사합니다!",
+  );
+}
+
+// Module-scoped so migrations run once per process, yet rerun when this module
+// is re-evaluated by dev HMR while the connection itself is reused.
+let migratedDatabase: DatabaseSync | undefined;
+
+export function getDatabase() {
+  if (globalForDatabase.naguSessionDatabase) {
+    if (migratedDatabase !== globalForDatabase.naguSessionDatabase) {
+      migrateDatabase(globalForDatabase.naguSessionDatabase);
+      migratedDatabase = globalForDatabase.naguSessionDatabase;
+    }
+    return globalForDatabase.naguSessionDatabase;
+  }
+
+  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
+  const databasePath = resolve(
+    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH
+      || (isRailway ? "/data/nagu.db" : ".data/nagu.db"),
+  );
+  mkdirSync(dirname(databasePath), { recursive: true });
+
+  // Wait briefly instead of failing at once if another process (a deploy
+  // overlap, the sqlite CLI, a backup) holds the write lock.
+  const database = new DatabaseSync(databasePath, { timeout: 5_000 });
+  database.exec("PRAGMA journal_mode = WAL");
+  database.exec("PRAGMA synchronous = NORMAL");
+  migrateDatabase(database);
+  migratedDatabase = database;
+
+  globalForDatabase.naguSessionDatabase = database;
+  return database;
+}
+
+export function getSessionKey(sessionId: string) {
+  return createHash("sha256").update(sessionId).digest("hex");
+}
+
+export function getWorkspaceKey(sessionKey: string) {
+  const row = getDatabase().prepare(
+    "SELECT workspace_key FROM oauth_sessions WHERE id_hash = ?",
+  ).get(sessionKey) as Pick<SessionRow, "workspace_key"> | undefined;
+  return row?.workspace_key || sessionKey;
+}
+
+// Folds the WAL into the main database file; best effort at shutdown.
+export function checkpointDatabase() {
+  try {
+    getDatabase().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch {
+    // The WAL is durable on its own; a failed checkpoint only costs startup time.
+  }
+}
+
+export function checkDatabase() {
+  getDatabase().prepare("SELECT 1").get();
+}

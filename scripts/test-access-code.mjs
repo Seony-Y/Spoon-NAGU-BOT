@@ -20,6 +20,11 @@ assert.equal(typeof proof, "string");
 assert.equal(verifyOAuthAccessProof(proof), true);
 assert.equal(verifyOAuthAccessProof(`${proof}x`), false);
 
+const issuedAt = Date.now() - 11 * 60 * 1000;
+assert.equal(verifyOAuthAccessProof(createOAuthAccessProof(issuedAt)), false);
+assert.equal(verifyOAuthAccessProof(createOAuthAccessProof(issuedAt), issuedAt + 1000), true);
+assert.equal(verifyOAuthAccessProof(proof.replace(/^\d+/u, String(Date.now() + 1))), false);
+
 process.env.ACCESS_CODE = "changed-entry-code";
 assert.equal(verifyOAuthAccessProof(proof), false);
 

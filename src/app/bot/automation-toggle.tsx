@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-type AutomationFeature = "welcome" | "donation" | "heart" | "repeat";
+type AutomationFeature = "welcome" | "donation" | "heart" | "repeat" | "follow";
 
 export function AutomationToggle({
   feature,
@@ -40,7 +40,7 @@ export function AutomationToggle({
       startTransition(() => router.refresh());
     } catch {
       setEnabled(!nextEnabled);
-      setError("설정을 반영하지 못했습니다.");
+      setError("반영하지 못했습니다. 잠시 후 다시 눌러 주세요.");
     } finally {
       setIsSaving(false);
     }

@@ -83,7 +83,9 @@ export async function loadAudienceStatus(
   const unauthorized = sections.listeners.kind === "unauthorized" || sections.fans.kind === "unauthorized";
   if (!unauthorized) return { session, ...sections, authenticationExpired: false };
 
-  const refreshed = await forceRefreshAuthSession(sessionId);
+  // Spoon OAuth being down must not turn the whole dashboard into an error page.
+  const refreshed = await forceRefreshAuthSession(sessionId).catch(() => undefined);
+  if (refreshed === undefined) return { session, ...sections, authenticationExpired: false };
   if (!refreshed) return { session: null, ...empty, authenticationExpired: true };
 
   sections = await loadWithToken(refreshed);

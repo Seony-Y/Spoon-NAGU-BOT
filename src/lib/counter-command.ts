@@ -24,7 +24,7 @@ export function parseCounterAdjustment(message: string): CounterAdjustment | nul
 }
 
 export function formatCounterAdjustment(name: string, value: number) {
-  return `${name} ${value.toLocaleString("ko-KR")}개 남았습니다.`;
+  return `${name} ${value.toLocaleString("ko-KR")}개 남았어요.`;
 }
 
 export function parseCounterQuery(message: string) {

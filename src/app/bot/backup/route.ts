@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   if (contentLength > MAX_BACKUP_BYTES) return redirect(request, "backup_too_large");
 
   try {
-    const formData = await request.formData();
+    const formData = await request.formData().catch(() => new FormData());
     const file = formData.get("backup");
     if (!(file instanceof File) || file.size === 0 || file.size > MAX_BACKUP_BYTES) {
       return redirect(request, file instanceof File && file.size > MAX_BACKUP_BYTES

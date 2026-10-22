@@ -1,8 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
-import { normalizeDjNickname } from "@/lib/bot-automation";
+import { fillDjName, normalizeDjNickname } from "@/lib/bot-automation";
 import { ensureBotRunning } from "@/lib/bot-runtime";
 import { sendChat } from "@/lib/chat";
+import type { AutomationFeature } from "@/lib/dj-command";
+import { setAutomationEnabled } from "@/lib/live-actions";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
   clearSongRequests,
@@ -10,6 +12,9 @@ import {
   deleteBotCommand,
   deleteSongRequest,
   getBotSettings,
+  getSessionKey,
+  listBotCommands,
+  listBotCounters,
   saveBotCounter,
   updateBotSettings,
   updateBotCommand,
@@ -28,10 +33,18 @@ const RESERVED_COMMANDS = [
   "!참여",
   "!정답",
   "!킵",
+  "!봇",
 ];
 
 function isReservedCommand(command: string) {
   return RESERVED_COMMANDS.includes(command);
+}
+
+// Counters answer to `!name`, so a counter must not shadow a built-in command.
+// `!실드` is reserved as a custom command precisely because it is the default counter.
+function isReservedCounterName(name: string) {
+  const command = `!${name.toLocaleLowerCase("ko-KR")}`;
+  return command !== "!실드" && isReservedCommand(command);
 }
 
 function redirect(request: NextRequest, status: string, automation?: string) {
@@ -43,7 +56,7 @@ function redirect(request: NextRequest, status: string, automation?: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const formData = await request.formData();
+  const formData = await request.formData().catch(() => new FormData());
   const mode = formData.get("mode");
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);
@@ -56,16 +69,12 @@ export async function POST(request: NextRequest) {
   if (mode === "automation_toggle") {
     const feature = String(formData.get("feature") ?? "");
     const enabledValue = String(formData.get("enabled") ?? "");
-    if (!["welcome", "donation", "heart", "repeat"].includes(feature)
+    if (!["welcome", "donation", "heart", "repeat", "follow"].includes(feature)
       || !["true", "false"].includes(enabledValue)) {
       return NextResponse.json({ error: "invalid_request" }, { status: 400 });
     }
     const enabled = enabledValue === "true";
-    const current = getBotSettings(sessionId);
-    if (feature === "welcome") updateBotSettings(sessionId, { ...current, welcomeEnabled: enabled });
-    if (feature === "donation") updateBotSettings(sessionId, { ...current, donationEnabled: enabled });
-    if (feature === "heart") updateBotSettings(sessionId, { ...current, heartEnabled: enabled });
-    if (feature === "repeat") updateBotSettings(sessionId, { ...current, repeatEnabled: enabled });
+    setAutomationEnabled(getSessionKey(sessionId), feature as AutomationFeature, enabled);
     ensureBotRunning(sessionId);
     return NextResponse.json({ enabled });
   }
@@ -86,8 +95,7 @@ export async function POST(request: NextRequest) {
 
     const settings = getBotSettings(sessionId);
     updateBotSettings(sessionId, { ...settings, greetingMessage });
-    const announcement = greetingMessage
-      .replaceAll("{name}", normalizeDjNickname(settings.djNickname) || "DJ")
+    const announcement = fillDjName(greetingMessage, settings.djNickname)
       .replaceAll("{nickname}", "여러분");
     const result = await sendChat(sessionId, announcement);
     return redirect(request, result.kind === "sent" ? "greeting_sent" : `greeting_saved_${result.kind}`);
@@ -95,7 +103,7 @@ export async function POST(request: NextRequest) {
 
   if (mode === "automation_feature") {
     const feature = String(formData.get("feature") ?? "");
-    if (!["welcome", "donation", "heart", "repeat", "commands"].includes(feature)) {
+    if (!["welcome", "donation", "heart", "repeat", "follow"].includes(feature)) {
       return redirect(request, "invalid_request");
     }
 
@@ -108,11 +116,11 @@ export async function POST(request: NextRequest) {
           ? current.donationEnabled
           : feature === "heart"
             ? current.heartEnabled
-            : feature === "repeat"
-              ? current.repeatEnabled
-              : true;
+            : feature === "follow"
+              ? current.followEnabled
+              : current.repeatEnabled;
     const message = String(formData.get("message") ?? "").trim();
-    if (feature !== "commands" && (!message || message.length > 200)) {
+    if (!message || message.length > 200) {
       return redirect(request, "invalid_message", feature);
     }
 
@@ -122,7 +130,9 @@ export async function POST(request: NextRequest) {
       updateBotSettings(sessionId, { ...current, donationEnabled: enabled, donationMessage: message });
     } else if (feature === "heart") {
       updateBotSettings(sessionId, { ...current, heartEnabled: enabled, heartMessage: message });
-    } else if (feature === "repeat") {
+    } else if (feature === "follow") {
+      updateBotSettings(sessionId, { ...current, followEnabled: enabled, followMessage: message });
+    } else {
       const intervalMinutes = Number(formData.get("intervalMinutes"));
       if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 1440) {
         return redirect(request, "invalid_interval", feature);
@@ -133,8 +143,6 @@ export async function POST(request: NextRequest) {
         repeatMessage: message,
         repeatIntervalMinutes: intervalMinutes,
       });
-    } else {
-      updateBotSettings(sessionId, { ...current, commandsEnabled: enabled });
     }
 
     ensureBotRunning(sessionId);
@@ -154,6 +162,12 @@ export async function POST(request: NextRequest) {
       || value > 1_000_000
     ) {
       return redirect(request, "invalid_counter", "counters");
+    }
+    if (
+      isReservedCounterName(name)
+      || listBotCommands(sessionId).some(({ command }) => command === `!${name.toLocaleLowerCase("ko-KR")}`)
+    ) {
+      return redirect(request, "counter_name_taken", "counters");
     }
     const saved = saveBotCounter(sessionId, id, name, value);
     return redirect(request, saved ? "counter_saved" : "counter_conflict", "counters");
@@ -178,6 +192,9 @@ export async function POST(request: NextRequest) {
     }
     if (!/^![^\s]{1,19}$/.test(command) || !response || response.length > 200) {
       return redirect(request, "invalid_command");
+    }
+    if (listBotCounters(sessionId).some(({ name }) => `!${name.toLocaleLowerCase("ko-KR")}` === command)) {
+      return redirect(request, "command_counter_conflict", "commands");
     }
     if (mode === "update_command") {
       const originalCommand = String(formData.get("originalCommand") ?? "").trim().toLocaleLowerCase("ko-KR");

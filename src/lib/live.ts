@@ -56,7 +56,11 @@ export async function loadLiveStatus(
     }
   }
 
-  const refreshed = await forceRefreshAuthSession(sessionId);
+  // Spoon OAuth being down must not turn the whole dashboard into an error page.
+  const refreshed = await forceRefreshAuthSession(sessionId).catch(() => undefined);
+  if (refreshed === undefined) {
+    return { session, status: { kind: "unavailable" }, authenticationExpired: false };
+  }
   if (!refreshed) {
     return { session: null, status: null, authenticationExpired: true };
   }

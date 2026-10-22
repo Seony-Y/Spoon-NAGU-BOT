@@ -4,8 +4,11 @@ import {
 	formatMultilineMessages,
 	getCommandReply,
 	resolveCommandFallback,
+	truncateChatMessage,
 	validateChatMessage,
 } from "../src/lib/chat-message.ts";
+import { parseDjCommand } from "../src/lib/dj-command.ts";
+import { parseRetryAfter } from "../src/lib/spoon.ts";
 import {
 	formatCounterAdjustment,
 	parseCounterCommand,
@@ -42,10 +45,8 @@ assert.equal(getCommandReply("안녕하세요", "나구"), null);
 assert.equal(getCommandReply("!안녕", "긴".repeat(200)), "반가워요!");
 assert.equal(resolveCommandFallback("!안녕", "나구", null), "나구님, 반가워요!");
 assert.equal(resolveCommandFallback("!공지", "나구", "저장된 공지"), "저장된 공지");
-assert.equal(
-	resolveCommandFallback("!없는명령어", "나구", null),
-	"등록되지 않은 명령어입니다. !명령어로 사용 가능한 명령어를 확인해 주세요.",
-);
+assert.equal(resolveCommandFallback("!없는명령어", "나구", null), null);
+assert.equal(resolveCommandFallback("!!!", "나구", null), null);
 assert.equal(resolveCommandFallback("일반 채팅", "나구", null), null);
 
 assert.deepEqual(parseCounterAdjustment(" !실드 -2 "), { name: "실드", delta: -2 });
@@ -64,7 +65,7 @@ assert.deepEqual(parseCounterCommand("!실드 -1", false), {
 	kind: "denied",
 	adjustment: { name: "실드", delta: -1 },
 });
-assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았습니다.");
+assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았어요.");
 
 const raffleParticipants = [
 	{ userId: "one", nickname: "첫 번째" },
@@ -73,7 +74,7 @@ const raffleParticipants = [
 ];
 assert.deepEqual(selectRaffleWinners(raffleParticipants, 2, () => 0), raffleParticipants.slice(0, 2));
 assert.equal(new Set(selectRaffleWinners(raffleParticipants, 3, (maximum) => maximum - 1).map((entry) => entry.userId)).size, 3);
-assert.deepEqual(formatRaffleResultMessages([]), ["[추첨] 참가자가 없어 당첨자 없이 종료했습니다."]);
+assert.deepEqual(formatRaffleResultMessages([]), ["[추첨] 응모한 분이 없어 당첨자 없이 끝났어요."]);
 assert.equal(formatRaffleResultMessages(raffleParticipants)[0], "[추첨] 당첨자:\n1. 첫 번째\n2. 두 번째\n3. 세 번째");
 assert.ok(formatRaffleResultMessages(Array.from({ length: 20 }, (_, index) => ({
 	userId: String(index),
@@ -126,7 +127,41 @@ assert.deepEqual(formatRpsResultMessages([
 	{ nickname: "무승부 청취자", choice: "바위", result: "draw" },
 	{ nickname: "패배 청취자", choice: "가위", result: "lose" },
 ], "바위"), [
-	"[가위바위보] DJ 선택: 바위\n승리 청취자 보 (승)\n무승부 청취자 바위 (무)\n패배 청취자 가위 (패)",
+	"[가위바위보] 종료! DJ는 바위를 냈어요.\n승리 청취자 보 (승)\n무승부 청취자 바위 (무)\n패배 청취자 가위 (패)",
 ]);
 
-console.log("Chat checks passed: validation, replies, counters, and song requests");
+assert.equal(truncateChatMessage("가".repeat(200)), "가".repeat(200));
+assert.equal(truncateChatMessage("가".repeat(201)).length, 200);
+assert.equal(truncateChatMessage(`${"가".repeat(199)}😀`), "가".repeat(199));
+assert.equal(truncateChatMessage(`${"가".repeat(198)}😀끝`), `${"가".repeat(198)}😀`);
+
+assert.equal(parseRetryAfter(new Response(null, { status: 429, headers: { "Retry-After": "3600" } })), 3_600_000);
+assert.equal(parseRetryAfter(new Response(null, { status: 429 })), undefined);
+assert.equal(parseRetryAfter(new Response(null, { status: 503, headers: { "Retry-After": "10" } })), undefined);
+
+assert.deepEqual(parseDjCommand("!봇"), { kind: "help" });
+assert.deepEqual(parseDjCommand("!봇 상태"), { kind: "status" });
+assert.deepEqual(parseDjCommand("!가위바위보 시작"), { kind: "rps_start" });
+assert.deepEqual(parseDjCommand(" !가위바위보   종료 "), { kind: "rps_finish" });
+assert.equal(parseDjCommand("!가위바위보 가위"), null);
+assert.equal(parseDjCommand("!가위바위보"), null);
+assert.deepEqual(parseDjCommand("!추첨 시작"), { kind: "raffle_start", winnerCount: 1 });
+assert.deepEqual(parseDjCommand("!추첨 시작 3"), { kind: "raffle_start", winnerCount: 3 });
+assert.deepEqual(parseDjCommand("!추첨 시작 5명"), { kind: "raffle_start", winnerCount: 5 });
+assert.equal(parseDjCommand("!추첨 시작 0").kind, "usage");
+assert.equal(parseDjCommand("!추첨 시작 abc").kind, "usage");
+assert.deepEqual(parseDjCommand("!추첨 마감"), { kind: "raffle_finish" });
+assert.deepEqual(parseDjCommand("!퀴즈 시작"), { kind: "quiz_start" });
+assert.deepEqual(parseDjCommand("!퀴즈 끝"), { kind: "quiz_finish" });
+assert.equal(parseDjCommand("!퀴즈 시작 서울"), null);
+assert.deepEqual(parseDjCommand("!룰렛 켜기"), { kind: "roulette_toggle", enabled: true });
+assert.deepEqual(parseDjCommand("!룰렛 OFF"), { kind: "roulette_toggle", enabled: false });
+assert.deepEqual(parseDjCommand("!환영 끄기"), { kind: "automation_toggle", feature: "welcome", enabled: false });
+assert.deepEqual(parseDjCommand("!공지 켜"), { kind: "automation_toggle", feature: "repeat", enabled: true });
+assert.equal(parseDjCommand("!공지"), null);
+assert.deepEqual(parseDjCommand("!팔로우 켜기"), { kind: "automation_toggle", feature: "follow", enabled: true });
+assert.equal(parseDjCommand("!실드 +1"), null);
+assert.equal(parseDjCommand("!참여"), null);
+assert.equal(parseDjCommand("안녕하세요"), null);
+
+console.log("Chat checks passed: validation, replies, counters, song requests, and DJ commands");

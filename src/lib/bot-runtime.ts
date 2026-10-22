@@ -3,14 +3,19 @@ import "server-only";
 import { getBotAuthSession } from "./auth";
 import {
   createBotAutomationState,
+  createHeartBatcher,
   diffListenerSnapshot,
-  normalizeDjNickname,
+  fillDjName,
+  formatHeartMessage,
   processBotAutomation,
   resetBotAutomationState,
   type BotActivity,
 } from "./bot-automation";
-import { sendBotChat } from "./chat";
-import { resolveCommandFallback } from "./chat-message";
+import { isRecentBotMessage, sendBotChat } from "./chat";
+import { clearGameAcks, flushAllGameAcks, queueGameAck } from "./chat-acks";
+import { formatMultilineMessages, resolveCommandFallback } from "./chat-message";
+import { parseDjCommand } from "./dj-command";
+import { runDjCommand } from "./live-actions";
 import {
   applyBotCounterCommand,
   applyQuizCommand,
@@ -27,8 +32,11 @@ import {
   getLiveAutomationStateByKey,
   getRouletteKeepCommandRepliesByKey,
   getSessionKey,
+  getWorkspaceBotSessionKey,
   isSessionBlockedByKey,
   isBotEnabled,
+  isBotEnabledByKey,
+  listOtherWorkspaceSessionKeys,
   clearRecentBotEventsByKey,
   listRecentBotEventsByKey,
   listEnabledBotSessions,
@@ -41,9 +49,12 @@ import {
 } from "./session-store";
 import {
   getCurrentLive,
+  getLiveDonationsPage,
   getLiveListenersPage,
+  hasScope,
   getSpoonConfig,
   SpoonApiErrorResponse,
+  type SpoonDonation,
   type SpoonListener,
 } from "./spoon";
 import {
@@ -59,6 +70,7 @@ const EVENT_SCOPES = [
   "events.presence",
   "events.like",
   "events.donation",
+  "events.follow",
 ];
 const OFFLINE_RETRY_MS = 10_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -66,6 +78,10 @@ const MAX_EVENTS = 50;
 const STREAM_PERMISSION_REFRESH_MS = 60_000;
 const REPEAT_CHECK_MS = 60 * 1000;
 const LISTENER_POLL_MS = 10_000;
+// Spoon sends a `:heartbeat` comment about every 15 seconds; this much silence
+// means a half-open connection that would otherwise look "connected".
+const STREAM_IDLE_MS = 45_000;
+const MAX_DAILY_LIMIT_WAIT_MS = 60 * 60 * 1000;
 
 export type BotConnectionState =
   | "stopped"
@@ -76,6 +92,7 @@ export type BotConnectionState =
   | "reconnecting"
   | "authentication_required"
   | "permission_required"
+  | "duplicate_connection"
   | "blocked"
   | "error";
 
@@ -116,8 +133,12 @@ type BotRuntime = BotSnapshot & {
   currentLiveId?: number;
   managerEventsConfirmed: boolean;
   listenerIds: Set<string> | null;
+  subscriberIds: Set<string>;
   repeatTimer?: ReturnType<typeof setTimeout>;
   lastRepeatAt?: number;
+  heartBatcher: ReturnType<typeof createHeartBatcher>;
+  // Set whenever the stream may have missed events (start, reconnect, new live).
+  needsDonationBackfill: boolean;
 };
 
 const globalForBots = globalThis as typeof globalThis & {
@@ -151,6 +172,9 @@ function clearBroadcastState(sessionKey: string, runtime: BotRuntime) {
   if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
   runtime.repeatTimer = undefined;
   runtime.lastRepeatAt = undefined;
+  runtime.heartBatcher.clear();
+  clearGameAcks(sessionKey);
+  runtime.needsDonationBackfill = true;
 }
 
 function scheduleRepeatAnnouncements(sessionKey: string, runtime: BotRuntime) {
@@ -159,20 +183,23 @@ function scheduleRepeatAnnouncements(sessionKey: string, runtime: BotRuntime) {
 
   const announce = () => {
     if (runtime.currentLiveId === undefined) return;
-    if (runtime.state === "connected") {
-      const settings = getBotSettingsByKey(sessionKey);
-      const interval = settings.repeatIntervalMinutes * 60 * 1000;
-      if (settings.repeatEnabled && Date.now() - (runtime.lastRepeatAt ?? 0) >= interval) {
-        const message = settings.repeatMessage.replaceAll(
-          "{name}",
-          normalizeDjNickname(settings.djNickname) || "DJ",
-        );
-        if (message) void sendBotChat(sessionKey, message.slice(0, 200));
-        runtime.lastRepeatAt = Date.now();
+    try {
+      if (runtime.state === "connected") {
+        const settings = getBotSettingsByKey(sessionKey);
+        const interval = settings.repeatIntervalMinutes * 60 * 1000;
+        if (settings.repeatEnabled && Date.now() - (runtime.lastRepeatAt ?? 0) >= interval) {
+          const message = fillDjName(settings.repeatMessage, settings.djNickname);
+          if (message) void sendBotChat(sessionKey, message);
+          runtime.lastRepeatAt = Date.now();
+        }
       }
+    } catch (error) {
+      console.error("Repeat announcement failed", error instanceof Error ? error.message : error);
+    } finally {
+      // Re-arm even after a failure, or announcements stop for the whole broadcast.
+      runtime.repeatTimer = setTimeout(announce, REPEAT_CHECK_MS);
+      runtime.repeatTimer.unref();
     }
-    runtime.repeatTimer = setTimeout(announce, REPEAT_CHECK_MS);
-    runtime.repeatTimer.unref();
   };
 
   runtime.repeatTimer = setTimeout(announce, REPEAT_CHECK_MS);
@@ -183,11 +210,15 @@ function abortableDelay(milliseconds: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     if (signal.aborted) return resolve();
 
-    const timeout = setTimeout(resolve, milliseconds);
-    signal.addEventListener("abort", () => {
+    const onAbort = () => {
       clearTimeout(timeout);
       resolve();
-    }, { once: true });
+    };
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -220,6 +251,7 @@ async function pollListenerJoins(
       const listeners = await getAllLiveListeners(accessToken);
       const { currentIds, joinedListeners } = diffListenerSnapshot(runtime.listenerIds, listeners);
       runtime.listenerIds = currentIds;
+      runtime.subscriberIds = new Set(listeners.filter((listener) => listener.subscription).map((listener) => listener.id));
       const settings = getBotSettingsByKey(sessionKey);
       for (const listener of joinedListeners) {
         const reply = processBotAutomation(runtime, {
@@ -231,15 +263,67 @@ async function pollListenerJoins(
             isManager: false,
             favoriteTemperature: null,
             time: new Date().toISOString(),
+            subscribed: Boolean(listener.subscription),
           },
         }, settings);
-        if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
+        if (reply) void sendBotChat(sessionKey, reply);
       }
-    } catch {
-      // The event stream remains active while listener snapshots retry independently.
+    } catch (error) {
+      // The event stream stays up while listener snapshots retry on their own;
+      // on Spoon's daily limit, pause polling until the reset.
+      if (error instanceof SpoonApiErrorResponse && error.retryAfterMs) {
+        await abortableDelay(Math.min(error.retryAfterMs, MAX_DAILY_LIMIT_WAIT_MS), signal);
+      }
     }
     await abortableDelay(LISTENER_POLL_MS, signal);
   }
+}
+
+async function getAllLiveDonations(accessToken: string) {
+  const donations: SpoonDonation[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await getLiveDonationsPage(accessToken, cursor);
+    donations.push(...page.donations);
+    if (!page.nextCursor || seenCursors.has(page.nextCursor)) break;
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return donations;
+}
+
+// Records donations received while the bot was away, runs the roulette for
+// them, and thanks those donors in one message instead of one per donation.
+async function backfillDonations(sessionKey: string, accessToken: string, liveId: number) {
+  const donations = await getAllLiveDonations(accessToken);
+  const runtime = runtimes.get(sessionKey);
+  if (!runtime || runtime.currentLiveId !== liveId) return;
+  const recovered: SpoonDonation[] = [];
+  for (const donation of donations) {
+    const event = {
+      event: "donation" as const,
+      id: `donation:${donation.user.id}:${donation.time}`,
+      data: { user: donation.user, amount: donation.amount, message: null, time: donation.time },
+    };
+    if (!recordAudienceEvent(sessionKey, liveId, event)) continue;
+    runtime.activity.spoons += donation.amount;
+    recovered.push(donation);
+    const draw = applyRouletteDonation(sessionKey, liveId, event);
+    if (draw) void sendBotChat(sessionKey, formatRouletteDraw(draw));
+  }
+  if (recovered.length === 0 || !getBotSettingsByKey(sessionKey).donationEnabled) return;
+  for (const message of formatMultilineMessages(
+    "[후원 감사] 봇이 잠시 자리를 비운 사이 후원해 주셔서 감사합니다!",
+    "[후원 감사] (이어서)",
+    recovered.map((donation) => `${donation.user.nickname.slice(0, 50)}님 ${donation.amount.toLocaleString("ko-KR")}스푼`),
+  )) void sendBotChat(sessionKey, message);
+}
+
+function formatRouletteDraw(draw: NonNullable<ReturnType<typeof applyRouletteDonation>>) {
+  return draw.isMiss
+    ? `[룰렛] ${draw.nickname}님 아쉽게 꽝! 다음에 또 도전해 주세요.`
+    : `[룰렛] ${draw.nickname}님 ${draw.itemLabel} 당첨! (보유 ${draw.keepCount}개)`;
 }
 
 function nextBackoff(attempt: number) {
@@ -295,13 +379,22 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     linkDjWorkspaceByKey(sessionKey, event.data.user.id, event.data.user.nickname);
   }
   recordRecentBotEventByKey(sessionKey, event, receivedAt);
-  if (runtime.currentLiveId !== undefined) {
-    recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
-  }
+  const isNewAudienceEvent = runtime.currentLiveId === undefined
+    || recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
+  // A donation replayed after a reconnect was already thanked (and drawn).
+  if (event.event === "donation" && !isNewAudienceEvent) return;
 
   const settings = getBotSettingsByKey(sessionKey);
   let reply: string | null;
   if (event.event === "chat") {
+    if (event.data.isDj && isRecentBotMessage(sessionKey, event.data.message)) return;
+    const djCommand = event.data.isDj ? parseDjCommand(event.data.message) : null;
+    if (djCommand) {
+      void runDjCommand(sessionKey, djCommand).catch((error: unknown) => {
+        console.error("DJ command failed", error instanceof Error ? error.message : error);
+      });
+      return;
+    }
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
     if (command === "!명령어") {
       for (const message of getAvailableCommandRepliesByKey(sessionKey)) {
@@ -330,6 +423,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.isDj,
       event.data.user.id,
       event.data.user.nickname,
+      (nickname) => queueGameAck(sessionKey, "rps", nickname),
     );
     const quizReply = applyQuizCommand(
       sessionKey,
@@ -340,6 +434,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       Number.isNaN(Date.parse(event.data.sentTime))
         ? Date.now()
         : Date.parse(event.data.sentTime),
+      (nickname) => queueGameAck(sessionKey, "quiz", nickname),
     );
     const raffleReply = applyRaffleCommand(
       sessionKey,
@@ -347,6 +442,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.isDj,
       event.data.user.id,
       event.data.user.nickname,
+      (nickname) => queueGameAck(sessionKey, "raffle", nickname),
     );
     const songRequestReply = applySongRequestCommand(
       sessionKey,
@@ -366,17 +462,19 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     );
     reply = keepReply ?? quizReply ?? raffleReply ?? rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
   } else {
-    reply = processBotAutomation(runtime, event, settings);
+    const enriched = event.event === "presence" && runtime.subscriberIds.has(event.data.user.id)
+      ? { ...event, data: { ...event.data, subscribed: true } }
+      : event;
+    reply = processBotAutomation(runtime, enriched, settings);
+    if (event.event === "like" && reply) {
+      runtime.heartBatcher.add(event.data.user.id, event.data.user.nickname, event.data.totalAmount);
+      reply = null;
+    }
   }
-  if (reply) void sendBotChat(sessionKey, reply.slice(0, 200));
+  if (reply) void sendBotChat(sessionKey, reply);
   if (event.event === "donation" && runtime.currentLiveId !== undefined) {
     const draw = applyRouletteDonation(sessionKey, runtime.currentLiveId, event);
-    if (draw) {
-      const result = draw.isMiss
-        ? `[룰렛] ${draw.nickname}님 결과: 꽝`
-        : `[룰렛] ${draw.nickname}님 당첨: ${draw.itemLabel}! (킵 ${draw.keepCount}개)`;
-      void sendBotChat(sessionKey, result.slice(0, 200));
-    }
+    if (draw) void sendBotChat(sessionKey, formatRouletteDraw(draw));
   }
 }
 
@@ -384,6 +482,7 @@ export async function consumeEventStream(
   stream: ReadableStream<Uint8Array>,
   signal: AbortSignal,
   onEvent: (event: ParsedSseEvent) => void,
+  onActivity?: () => void,
 ) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -396,6 +495,7 @@ export async function consumeEventStream(
         buffer += decoder.decode();
         return null;
       }
+      onActivity?.();
       buffer += decoder.decode(value, { stream: true });
 
       const extracted = extractSseFrames(buffer);
@@ -432,6 +532,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
     let session;
     try {
       session = await getBotAuthSession(sessionKey, forceRefresh);
+      if (signal.aborted) return;
     } catch {
       if (signal.aborted) return;
       setRuntimeState(sessionKey, "reconnecting");
@@ -462,23 +563,29 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         await abortableDelay(OFFLINE_RETRY_MS, signal);
         continue;
       }
+      if (signal.aborted) return;
       if (runtime && runtime.currentLiveId !== live.liveId) {
         clearBroadcastState(sessionKey, runtime);
         runtime.currentLiveId = live.liveId;
         setCurrentLiveIdByKey(sessionKey, live.liveId);
+        scheduleRepeatAnnouncements(sessionKey, runtime);
+      } else if (runtime && !runtime.repeatTimer) {
+        // Restored mid-broadcast (restart, deploy, leave/join): resume announcements.
         scheduleRepeatAnnouncements(sessionKey, runtime);
       }
 
       const streamSignal = runtime?.managerEventsConfirmed
         ? signal
         : AbortSignal.any([signal, AbortSignal.timeout(STREAM_PERMISSION_REFRESH_MS)]);
+      const idleController = new AbortController();
+      const connectionSignal = AbortSignal.any([streamSignal, idleController.signal]);
       const response = await fetch(`${getSpoonConfig().baseUrl}/v1/live/events`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
           Accept: "text/event-stream",
         },
         cache: "no-store",
-        signal: streamSignal,
+        signal: connectionSignal,
       });
 
       if (response.status === 401) {
@@ -515,6 +622,13 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (runtime) {
         runtime.state = "connected";
         runtime.connectedAt = new Date().toISOString();
+        if (runtime.needsDonationBackfill && hasScope(session.scope, "donations.read")) {
+          runtime.needsDonationBackfill = false;
+          void backfillDonations(sessionKey, session.access_token, live.liveId).catch((error: unknown) => {
+            runtime.needsDonationBackfill = true;
+            console.error("Donation backfill failed", error instanceof Error ? error.message : error);
+          });
+        }
       }
 
       const listenerPollingController = new AbortController();
@@ -523,14 +637,28 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         ? pollListenerJoins(sessionKey, session.access_token, listenerPollingSignal)
         : Promise.resolve();
       let reason;
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+      const resetIdle = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => idleController.abort(), STREAM_IDLE_MS);
+      };
+      resetIdle();
       try {
-        reason = await consumeEventStream(response.body, streamSignal, (event) => {
-          recordEvent(sessionKey, event);
-        });
+        reason = await consumeEventStream(response.body, connectionSignal, (event) => {
+          // A failure while handling one event must not tear down the stream.
+          try {
+            recordEvent(sessionKey, event);
+          } catch (error) {
+            console.error("Bot event handling failed", error instanceof Error ? error.message : error);
+          }
+        }, resetIdle);
       } finally {
+        clearTimeout(idleTimer);
         listenerPollingController.abort();
         await listenerPollingTask;
       }
+      // Only the periodic permission refresh reconnects without a gap.
+      if (runtime && !streamSignal.aborted) runtime.needsDonationBackfill = true;
 
       if (signal.aborted) return;
       if (streamSignal.aborted) continue;
@@ -538,6 +666,13 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (reason === "TOKEN_EXPIRED") {
         forceRefresh = true;
         continue;
+      }
+      if (reason === "DUPLICATE_CONNECTION") {
+        // Spoon allows one stream per app and DJ; a newer connection (another
+        // session for the same DJ) took over, so reconnecting would ping-pong.
+        setRuntimeState(sessionKey, "duplicate_connection");
+        setBotEnabledByKey(sessionKey, false);
+        return;
       }
 
       if (reason === "LIVE_ENDED") {
@@ -549,6 +684,8 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       }
     } catch (error) {
       if (signal.aborted) return;
+      const failedRuntime = runtimes.get(sessionKey);
+      if (failedRuntime) failedRuntime.needsDonationBackfill = true;
       if (error instanceof SpoonApiErrorResponse && error.status === 401) {
         if (retriedUnauthorized) {
           setRuntimeState(sessionKey, "authentication_required");
@@ -556,6 +693,14 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         }
         retriedUnauthorized = true;
         forceRefresh = true;
+        continue;
+      }
+      if (error instanceof SpoonApiErrorResponse && error.retryAfterMs) {
+        // Daily limit: checking the live status again before the reset only
+        // burns attempts. Re-check at most hourly in case the limit lifts.
+        console.error("Spoon daily API limit reached; waiting", Math.round(error.retryAfterMs / 1000), "s");
+        setRuntimeState(sessionKey, "reconnecting");
+        await abortableDelay(Math.min(error.retryAfterMs, MAX_DAILY_LIMIT_WAIT_MS), signal);
         continue;
       }
       if (error instanceof SpoonApiErrorResponse && error.status === 403) {
@@ -566,6 +711,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
         continue;
       }
+      console.error("Bot stream error; reconnecting", error instanceof Error ? error.message : error);
     }
 
     setRuntimeState(sessionKey, "reconnecting");
@@ -603,22 +749,57 @@ function startBotByKey(sessionKey: string) {
     currentLiveId,
     managerEventsConfirmed: false,
     listenerIds: null,
+    subscriberIds: new Set(),
     controller,
+    needsDonationBackfill: true,
+    heartBatcher: createHeartBatcher(({ nickname, amount }) => {
+      if (runtime.currentLiveId === undefined) return;
+      try {
+        const settings = getBotSettingsByKey(sessionKey);
+        if (settings.heartEnabled) void sendBotChat(sessionKey, formatHeartMessage(settings, nickname, amount));
+      } catch (error) {
+        console.error("Heart thanks failed", error instanceof Error ? error.message : error);
+      }
+    }),
   };
   runtimes.set(sessionKey, runtime);
 
-  runtime.task = runBot(sessionKey, controller.signal).finally(() => {
+  runtime.task = runBot(sessionKey, controller.signal).catch((error: unknown) => {
+    // e.g. a database error outside the reconnect loop's try: surface it instead
+    // of leaving the dashboard stuck on "connecting".
+    console.error("Bot worker stopped", error instanceof Error ? error.message : error);
+    runtime.state = "error";
+  }).finally(() => {
     if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
     runtime.repeatTimer = undefined;
+    runtime.heartBatcher.clear();
+    clearGameAcks(sessionKey);
     runtime.task = undefined;
     runtime.controller = undefined;
-    if (controller.signal.aborted) runtime.state = "stopped";
+    // stop/suspend/block set a specific state when aborting; keep it.
+    if (controller.signal.aborted && runtime.state !== "authentication_required" && runtime.state !== "blocked") {
+      runtime.state = "stopped";
+    }
   });
+}
+
+function stopBotByKey(sessionKey: string) {
+  setBotEnabledByKey(sessionKey, false);
+  const runtime = runtimes.get(sessionKey);
+  runtime?.controller?.abort();
+  if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
+  if (runtime) {
+    runtime.enabled = false;
+    runtime.state = "stopped";
+  }
 }
 
 export function startBot(sessionId: string) {
   const sessionKey = getSessionKey(sessionId);
   if (!setBotEnabled(sessionId, true)) return false;
+  // One bot per DJ: the device that presses join takes the bot over from the
+  // DJ's other sessions instead of fighting them for Spoon's single stream.
+  for (const otherKey of listOtherWorkspaceSessionKeys(sessionKey)) stopBotByKey(otherKey);
   startBotByKey(sessionKey);
   return true;
 }
@@ -628,15 +809,10 @@ export function ensureBotRunning(sessionId: string) {
   startBotByKey(getSessionKey(sessionId));
 }
 
+// Stops the DJ's bot even when another of the DJ's devices is running it.
 export function stopBot(sessionId: string) {
-  setBotEnabled(sessionId, false);
-  const runtime = runtimes.get(getSessionKey(sessionId));
-  runtime?.controller?.abort();
-  if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
-  if (runtime) {
-    runtime.enabled = false;
-    runtime.state = "stopped";
-  }
+  const sessionKey = getSessionKey(sessionId);
+  stopBotByKey(getWorkspaceBotSessionKey(sessionKey) ?? sessionKey);
 }
 
 export function suspendBotForAuthentication(sessionId: string) {
@@ -646,9 +822,12 @@ export function suspendBotForAuthentication(sessionId: string) {
   if (runtime) runtime.state = "authentication_required";
 }
 
+// Shows the DJ's bot even when another of the DJ's devices is running it.
 export function getBotSnapshot(sessionId: string): BotSnapshot {
-  const enabled = isBotEnabled(sessionId);
-  const runtime = runtimes.get(getSessionKey(sessionId));
+  const sessionKey = getSessionKey(sessionId);
+  const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
+  const enabled = isBotEnabledByKey(botKey);
+  const runtime = runtimes.get(botKey);
   return {
     enabled,
     state: runtime?.state ?? (enabled ? "starting" : "stopped"),
@@ -668,12 +847,37 @@ export function restoreEnabledBots() {
   if (globalForBots.naguBotRestoreStarted) return;
   globalForBots.naguBotRestoreStarted = true;
 
-  for (const { sessionKey, token } of listEnabledBotSessions()) {
-    if (!hasEventScope(token.scope)) {
-      setBotEnabledByKey(sessionKey, false);
-      continue;
+  let sessions: ReturnType<typeof listEnabledBotSessions>;
+  try {
+    sessions = listEnabledBotSessions();
+  } catch (error) {
+    // Allow a later request to retry instead of never restoring in this process.
+    globalForBots.naguBotRestoreStarted = false;
+    console.error("Could not restore bots", error instanceof Error ? error.message : error);
+    return;
+  }
+  for (const { sessionKey, token } of sessions) {
+    try {
+      if (!hasEventScope(token.scope)) {
+        setBotEnabledByKey(sessionKey, false);
+        continue;
+      }
+      startBotByKey(sessionKey);
+    } catch (error) {
+      console.error("Could not restore a bot", error instanceof Error ? error.message : error);
     }
-    startBotByKey(sessionKey);
+  }
+}
+
+// On SIGTERM/SIGINT (deploys, restarts): queue pending heart thanks and game
+// acknowledgements before the process exits, then close the streams. Bots stay
+// enabled in the database, so the next process restores them.
+export function shutdownBots() {
+  for (const runtime of runtimes.values()) runtime.heartBatcher.flush();
+  flushAllGameAcks();
+  for (const runtime of runtimes.values()) {
+    if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
+    runtime.controller?.abort();
   }
 }
 

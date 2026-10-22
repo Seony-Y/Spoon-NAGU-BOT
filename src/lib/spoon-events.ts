@@ -17,6 +17,9 @@ export type PresenceEvent = {
   isManager: boolean;
   favoriteTemperature: number | null;
   time: string;
+  // Not sent by Spoon: set by the bot from the latest listener list, which
+  // carries subscription info that presence events lack.
+  subscribed?: boolean;
 };
 
 export type LikeEvent = {
@@ -36,6 +39,11 @@ export type DonationEvent = {
   time: string;
 };
 
+export type FollowEvent = {
+  user: EventUser;
+  time: string;
+};
+
 export type StreamEndEvent = {
   reason: "LIVE_ENDED" | "TOKEN_EXPIRED" | "RECONNECT" | "DUPLICATE_CONNECTION";
 };
@@ -45,6 +53,7 @@ export type SpoonEventData = {
   presence: PresenceEvent;
   like: LikeEvent;
   donation: DonationEvent;
+  follow: FollowEvent;
   end: StreamEndEvent;
 };
 
@@ -63,6 +72,7 @@ const eventNames = new Set<SpoonEventName>([
   "presence",
   "like",
   "donation",
+  "follow",
   "end",
 ]);
 

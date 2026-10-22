@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   const session = await getAuthSession(sessionId);
   if (!sessionId || !session) return redirect(request, "authentication_required");
 
-  const formData = await request.formData();
+  const formData = await request.formData().catch(() => new FormData());
   const action = String(formData.get("action") ?? "");
   const deleteId = formData.get("deleteId");
 

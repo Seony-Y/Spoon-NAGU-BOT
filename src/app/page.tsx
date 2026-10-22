@@ -5,15 +5,19 @@ import naguBot from "@/asset/NaGuBot.png";
 import { getAuthSession } from "@/lib/auth";
 import { loadAudienceStatus } from "@/lib/audience";
 import { ensureBotRunning, getBotSnapshot, type BotConnectionState, type BotEvent } from "@/lib/bot-runtime";
+import { DJ_COMMAND_HELP, MAX_RAFFLE_WINNERS } from "@/lib/dj-command";
 import { loadLiveStatus } from "@/lib/live";
 import { SESSION_COOKIE } from "@/lib/session";
 import { getMissingRequiredScopes } from "@/lib/spoon";
 import {
   getBotSettings,
   getRouletteSettings,
+  getSessionKey,
+  isWorkspaceLinkedByKey,
   isSessionBlocked,
   listBotCommands,
   listBotCounters,
+  listQuizQueue,
   listQuizRounds,
   listRaffleRounds,
   listSongRequests,
@@ -25,6 +29,8 @@ import {
 } from "@/lib/session-store";
 import { AutoRefresh, RefreshButton, RefreshLiveButton } from "./refresh-live-button";
 import { AutomationToggle } from "./bot/automation-toggle";
+import { ClearStatusParams } from "./clear-status-params";
+import { ConfirmButton } from "./confirm-button";
 import { RouletteDistributionEditor } from "./game/roulette/roulette-distribution-editor";
 import { RouletteKeepEditor } from "./game/roulette/roulette-keep-editor";
 import { OAuthLoginGate } from "./oauth-login-gate";
@@ -42,6 +48,7 @@ type HomeProps = {
     automation?: string;
     game?: string;
     rps?: string;
+    follow?: string;
     raffle?: string;
     quiz?: string;
     roulette?: string;
@@ -52,18 +59,18 @@ type HomeProps = {
 
 const errorMessages: Record<string, string> = {
   access_denied: "연동 요청이 취소되었습니다.",
-  invalid_scope: "등록되지 않은 권한이 요청되었습니다.",
+  invalid_scope: "로그인 중 문제가 생겼습니다. 다시 로그인해 주세요.",
   all_scopes_required: "NAGU BOT에 필요한 모든 권한을 승인해야 연결할 수 있습니다.",
   access_code_required: "입장코드를 확인한 뒤 Spoon DJ 계정으로 로그인해 주세요.",
-  missing_code: "인증 코드가 전달되지 않았습니다.",
-  state_mismatch: "요청 검증에 실패했습니다. 다시 시작해 주세요.",
-  token_exchange_failed: "토큰 발급에 실패했습니다. 설정을 확인해 주세요.",
+  missing_code: "로그인 중 문제가 생겼습니다. 다시 로그인해 주세요.",
+  state_mismatch: "로그인 시간이 지났습니다. 처음부터 다시 로그인해 주세요.",
+  token_exchange_failed: "로그인을 완료하지 못했습니다. 다시 로그인해 주시고, 계속되면 운영자에게 문의해 주세요.",
   disconnect_failed: "연결 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.",
   authentication_required: "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요.",
   events_scope_required: "실시간 이벤트 권한을 먼저 승인해 주세요.",
-  bot_start_failed: "봇 참여를 시작하지 못했습니다. 다시 시도해 주세요.",
+  bot_start_failed: "봇을 입장시키지 못했습니다. 다시 시도해 주세요.",
   account_blocked: "관리자가 이 DJ 연결을 차단했습니다.",
-  server_configuration: "서버 환경 변수가 아직 준비되지 않았습니다.",
+  server_configuration: "서비스 준비 중입니다. 운영자에게 문의해 주세요.",
 };
 
 const scopeLabels: Record<string, string> = {
@@ -73,6 +80,9 @@ const scopeLabels: Record<string, string> = {
   "events.presence": "청취자 입장",
   "events.like": "좋아요",
   "events.donation": "후원 내역",
+  "events.follow": "팔로우",
+  "me.read": "DJ 식별",
+  "donations.read": "후원 기록 조회",
   "chat.send": "봇 채팅",
   "listeners.read": "청취자 목록",
   "fans.read": "팬 랭킹",
@@ -109,14 +119,15 @@ function getFirstCorrectAt(submissions: Array<{ correct: boolean; correctAt: num
 }
 
 const botStateLabels: Record<BotConnectionState, string> = {
-  stopped: "퇴장",
+  stopped: "꺼짐",
   starting: "시작 중",
   waiting: "방송 대기",
   connecting: "연결 중",
-  connected: "참여 중",
+  connected: "입장 중",
   reconnecting: "재연결 중",
   authentication_required: "재연결 필요",
   permission_required: "권한 필요",
+  duplicate_connection: "다른 곳에서 연결됨",
   blocked: "입장 차단",
   error: "연결 오류",
 };
@@ -124,13 +135,14 @@ const botStateLabels: Record<BotConnectionState, string> = {
 const chatNotices: Record<string, { tone: "success" | "error"; title: string; detail: string }> = {
   sent: { tone: "success", title: "채팅 전송 완료", detail: "Spoon 방송 채팅에 메시지를 보냈습니다." },
   invalid_message: { tone: "error", title: "메시지를 입력해 주세요", detail: "공백만 있는 메시지는 보낼 수 없습니다." },
-  message_too_long: { tone: "error", title: "메시지가 너무 깁니다", detail: "채팅은 UTF-16 기준 200자까지 보낼 수 있습니다." },
+  message_too_long: { tone: "error", title: "메시지가 너무 깁니다", detail: "채팅은 200자까지 보낼 수 있습니다. (이모지는 2자로 계산)" },
   authentication_required: { tone: "error", title: "계정 재연결 필요", detail: "Spoon 인증이 만료되었습니다." },
-  missing_scope: { tone: "error", title: "채팅 권한 필요", detail: "계정을 다시 연결해 chat.send 권한을 승인해 주세요." },
-  chat_blocked: { tone: "error", title: "채팅 전송 제한", detail: "채팅이 동결됐거나 봇이 채팅 금지 상태입니다." },
-  bot_blocked: { tone: "error", title: "방송 입장 차단", detail: "DJ가 Spoon에서 봇 차단 상태를 확인해야 합니다." },
+  missing_scope: { tone: "error", title: "채팅 권한 필요", detail: "다시 로그인해 '봇 채팅' 권한을 허용해 주세요." },
+  chat_blocked: { tone: "error", title: "채팅 전송 제한", detail: "채팅이 잠겨 있거나 봇이 채팅 금지 상태입니다. Spoon 방송 설정을 확인해 주세요." },
+  bot_blocked: { tone: "error", title: "방송 입장 차단", detail: "Spoon 방송 설정의 차단 목록에서 NAGU BOT을 해제해 주세요." },
   offline: { tone: "error", title: "방송 전입니다", detail: "방송을 시작한 뒤 다시 보내 주세요." },
   rate_limited: { tone: "error", title: "채팅이 혼잡합니다", detail: "잠시 기다린 뒤 다시 보내 주세요." },
+  daily_limited: { tone: "error", title: "오늘 채팅 한도 초과", detail: "Spoon이 정한 하루 사용량을 모두 썼습니다. 자정이 지나면 다시 보낼 수 있습니다." },
   unavailable: { tone: "error", title: "채팅 전송 실패", detail: "일시적인 오류입니다. 잠시 후 다시 시도해 주세요." },
 };
 
@@ -148,23 +160,35 @@ const settingsNotices: Record<string, { tone: "success" | "error"; text: string 
   command_conflict: { tone: "error", text: "같은 이름의 명령어가 있거나 수정할 명령어를 찾지 못했습니다." },
   invalid_message: { tone: "error", text: "메시지는 1자 이상 200자 이하로 입력해 주세요." },
   invalid_interval: { tone: "error", text: "반복 간격은 1분 이상 1440분 이하로 입력해 주세요." },
-  counter_saved: { tone: "success", text: "실드 설정을 저장했습니다." },
-  counter_deleted: { tone: "success", text: "실드 설정을 삭제했습니다." },
-  counter_conflict: { tone: "error", text: "같은 이름의 실드 설정이 이미 있습니다." },
+  counter_saved: { tone: "success", text: "카운터를 저장했습니다." },
+  counter_deleted: { tone: "success", text: "카운터를 삭제했습니다." },
+  counter_conflict: { tone: "error", text: "같은 이름의 카운터가 이미 있습니다." },
+  counter_name_taken: { tone: "error", text: "기본 명령어나 등록된 채팅 명령어와 같은 이름은 쓸 수 없습니다." },
+  command_counter_conflict: { tone: "error", text: "같은 이름의 카운터가 있어 명령어로 등록할 수 없습니다." },
   invalid_counter: { tone: "error", text: "이름은 공백 없이 20자 이하, 개수는 0~1,000,000으로 입력해 주세요." },
   song_request_deleted: { tone: "success", text: "신청곡을 삭제했습니다." },
   song_requests_cleared: { tone: "success", text: "신청곡 목록을 모두 비웠습니다." },
   backup_restored: { tone: "success", text: "로컬 백업을 복원했습니다." },
-  backup_invalid: { tone: "error", text: "백업 파일이 올바르지 않거나 서명을 확인할 수 없습니다." },
+  backup_invalid: { tone: "error", text: "백업 파일이 올바르지 않습니다. NAGU BOT에서 내려받은 백업 파일인지 확인해 주세요." },
   backup_too_large: { tone: "error", text: "백업 파일은 10MB 이하만 복원할 수 있습니다." },
+};
+
+const FOLLOW_NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
+  followed: { tone: "success", text: "봇이 DJ를 팔로우했습니다. 방송이 끝나면 Spoon에서 봇을 고정 매니저로 지정해 주세요." },
+  offline: { tone: "error", text: "방송 중에만 팔로우할 수 있습니다. 방송을 시작한 뒤 다시 눌러 주세요." },
+  follow_rejected: { tone: "error", text: "봇 계정이 이 DJ를 팔로우할 수 없습니다. Spoon에서 봇을 차단하지 않았는지 확인해 주세요." },
+  missing_scope: { tone: "error", text: "‘DJ 팔로우’ 권한이 없습니다. 다시 로그인해 권한을 허용해 주세요." },
+  authentication_required: { tone: "error", text: "로그인이 만료되었습니다. 다시 로그인해 주세요." },
+  unavailable: { tone: "error", text: "Spoon이 잠시 응답하지 않습니다. 잠시 후 다시 시도해 주세요." },
 };
 
 const automationTabs = [
   ["welcome", "입장 환영"],
   ["donation", "후원 감사"],
-  ["heart", "하트 후원"],
-  ["repeat", "반복 멘트"],
-  ["counters", "실드 설정"],
+  ["heart", "하트 감사"],
+  ["follow", "팔로우 감사"],
+  ["repeat", "반복 공지"],
+  ["counters", "카운터"],
   ["commands", "채팅 명령어"],
   ["requests", "신청곡"],
 ] as const;
@@ -222,6 +246,8 @@ function summarizeEvent(event: BotEvent) {
       return `${name}님이 하트 ${event.data.totalAmount.toLocaleString("ko-KR")}개를 보냈습니다.`;
     case "donation":
       return `${name}님이 ${event.data.amount.toLocaleString("ko-KR")}스푼을 후원했습니다.`;
+    case "follow":
+      return `${name}님이 DJ를 팔로우했습니다.`;
   }
 }
 
@@ -271,7 +297,11 @@ export default async function Home({ searchParams }: HomeProps) {
       },
     },
     authenticationExpired: false,
-  } : await loadLiveStatus(sessionId, session);
+  } : isDashboardTab
+    ? await loadLiveStatus(sessionId, session)
+    // Other tabs do not show live info; skipping the Spoon calls keeps their
+    // frequent auto-refresh cheap and well under the shared rate limit.
+    : { session, status: null, authenticationExpired: false };
   session = liveResult.session;
   const audienceResult = previewConnected ? {
     session,
@@ -286,7 +316,9 @@ export default async function Home({ searchParams }: HomeProps) {
       { id: "preview-fan-3", nickname: "응원단장", rank: 3, spoonCount: 520 },
     ] },
     authenticationExpired: false,
-  } : await loadAudienceStatus(sessionId, session);
+  } : isDashboardTab
+    ? await loadAudienceStatus(sessionId, session)
+    : { session, listeners: { kind: "missing_scope" as const }, fans: { kind: "missing_scope" as const }, authenticationExpired: false };
   session = audienceResult.session;
   const connected = session !== null;
   const error = params.error
@@ -304,6 +336,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const bot = connected && sessionId ? getBotSnapshot(sessionId) : null;
   const hasEventScope = scopes.some((scope) => scope.startsWith("events."));
   const hasChatScope = scopes.includes("chat.send");
+  const workspaceLinked = previewConnected || !connected || !sessionId
+    ? true
+    : isWorkspaceLinkedByKey(getSessionKey(sessionId));
   const chatNotice = params.chat ? chatNotices[params.chat] : null;
   const settingsNotice = params.settings
     ? settingsNotices[params.settings] ?? (params.settings.startsWith("greeting_saved_")
@@ -349,6 +384,9 @@ export default async function Home({ searchParams }: HomeProps) {
     : [];
   const quizRound = quizRounds.find((round) => round.active) ?? quizRounds[0] ?? null;
   const quizHistory = quizRounds.filter((round) => !round.active);
+  const quizQueue = isGameTab && gameTab === "quiz" && connected && sessionId && !previewConnected
+    ? listQuizQueue(sessionId)
+    : [];
   const isRoulettePage = isGameTab && gameTab === "roulette" && connected && sessionId;
   const rouletteSettings = isRoulettePage
     ? previewConnected
@@ -392,12 +430,12 @@ export default async function Home({ searchParams }: HomeProps) {
       <SiteHeader connectionStatus={connected ? "connected" : "waiting"} />
 
       <main>
-        {isDashboardTab && <section className="hero" aria-labelledby="page-title">
+        {isDashboardTab && !connected && <section className="hero" aria-labelledby="page-title">
           <div className="hero-inner">
             <div className="hero-copy">
               <p className="eyebrow">SPOON LIVE ASSISTANT</p>
               <h1 id="page-title">방송 운영을<br />더 편리하게</h1>
-              <p className="summary">NAGU BOT이 반복 안내와 채팅 명령을 도와드려요.</p>
+              <p className="summary">NAGU BOT이 반복 안내와 채팅 명령을 돕습니다.</p>
             </div>
             <div className="hero-visual">
               <Image
@@ -416,16 +454,16 @@ export default async function Home({ searchParams }: HomeProps) {
               <p className="section-label">DJ 로그인</p>
               <h2 id="connection-title">
                 {connected
-                  ? "Spoon DJ 계정으로 로그인했어요"
+                  ? "Spoon DJ 계정으로 로그인했습니다"
                   : connectionBlocked
-                    ? "관리자가 연결을 차단했어요"
+                    ? "관리자가 연결을 차단했습니다"
                     : "Spoon DJ 계정으로 로그인해 주세요"}
               </h2>
               <p>
                 {connected
-                  ? "NAGU BOT이 승인된 권한으로 방송을 도울 준비가 됐습니다."
+                  ? "NAGU BOT이 방송을 도울 준비가 됐습니다."
                   : connectionBlocked
-                    ? "차단 해제 전에는 계정 재연결과 봇 참여를 사용할 수 없습니다."
+                    ? "차단이 풀리기 전에는 다시 로그인하거나 봇을 입장시킬 수 없습니다."
                     : "방송에 사용하는 DJ 계정을 연결하고 NAGU BOT의 방송·채팅 권한에 동의해 주세요."}
               </p>
             </div>
@@ -435,7 +473,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <span className="notice-icon" aria-hidden="true">✓</span>
                 <div>
                   <strong>DJ 로그인 완료</strong>
-                  <span>승인된 권한 {scopes.length}개</span>
+                  <span>필요한 권한을 모두 허용했습니다.</span>
                 </div>
               </div>
             )}
@@ -445,7 +483,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <span className="notice-icon" aria-hidden="true">i</span>
                 <div>
                   <strong>일부 권한이 승인되지 않았습니다</strong>
-                  <span>{missingRequiredScopes.map((scope) => scopeLabels[scope]).join(", ")} 권한이 없어 관련 데이터가 표시되지 않습니다. 서비스 오류가 아닙니다.</span>
+                  <span>{missingRequiredScopes.map((scope) => scopeLabels[scope]).join(", ")} 권한이 없어 일부 정보가 표시되지 않습니다. 아래 [권한 다시 허용하기]를 눌러 주세요.</span>
                 </div>
               </div>
             )}
@@ -465,13 +503,13 @@ export default async function Home({ searchParams }: HomeProps) {
                 <span className="notice-icon" aria-hidden="true">✓</span>
                 <div>
                   <strong>연결 해제 완료</strong>
-                  <span>Spoon 토큰을 안전하게 폐기했습니다.</span>
+                  <span>Spoon 로그인 정보를 안전하게 삭제했습니다.</span>
                 </div>
               </div>
             )}
 
             {connected && scopes.length > 0 && (
-              <div className="permissions" aria-label="승인된 권한">
+              <div className="permissions" aria-label="허용된 권한">
                 {scopes.map((scope) => (
                   <span key={scope}>{scopeLabels[scope] ?? scope}</span>
                 ))}
@@ -481,13 +519,13 @@ export default async function Home({ searchParams }: HomeProps) {
             {!connectionBlocked && <div className="connection-actions">
               {connected ? (
                 <>
-                  {missingRequiredScopes.length > 0 && <OAuthLoginGate label="권한 다시 승인하기" />}
+                  {missingRequiredScopes.length > 0 && <OAuthLoginGate label="권한 다시 허용하기" />}
                   <form action="/oauth/disconnect" method="post">
-                    <button className="disconnect" type="submit">연결 해제</button>
+                    <ConfirmButton className="disconnect" type="submit" message="Spoon 연결을 해제할까요? 이 DJ 계정으로 로그인한 모든 기기에서 로그아웃되고, 봇도 방송에서 나갑니다.">연결 해제</ConfirmButton>
                   </form>
                 </>
               ) : (
-                <OAuthLoginGate label={allScopesRequired ? "권한 다시 승인하기" : "Spoon DJ 계정으로 로그인"} />
+                <OAuthLoginGate label={allScopesRequired ? "권한 다시 허용하기" : "Spoon DJ 계정으로 로그인"} />
               )}
             </div>}
 
@@ -496,6 +534,35 @@ export default async function Home({ searchParams }: HomeProps) {
             </p>
           </div>
 
+          {!workspaceLinked && (
+            <div className="notice link-notice" role="status">
+              <span className="notice-icon" aria-hidden="true">i</span>
+              <div>
+                <strong>이전에 저장한 설정을 아직 불러오지 않았습니다.</strong>
+                <span>이 브라우저에서 처음 로그인했다면, 방송 중 DJ 계정으로 채팅을 한 번 입력하면 저장된 설정과 기록을 자동으로 불러옵니다. 그 전에 바꾼 설정은 저장된 설정으로 덮어써질 수 있습니다.</span>
+              </div>
+            </div>
+          )}
+          {connected && bot && (
+            <div className="bot-bar">
+              <ClearStatusParams keys="rps raffle quiz roulette settings chat chatMessage bot status follow" />
+              <span className={`bot-bar-state${bot.state === "connected" ? " is-live" : ""}`}>
+                <span className="status-dot" aria-hidden="true" />
+                봇 {botStateLabels[bot.state]}
+              </span>
+              <form action={bot.enabled ? "/bot/leave" : "/bot/join"} method="post">
+                <ConfirmButton
+                  className={`bot-bar-button${bot.enabled ? " is-leave" : ""}`}
+                  type="submit"
+                  disabled={!bot.enabled && !hasEventScope}
+                  message={bot.enabled ? "봇을 방송에서 내보낼까요? 자동 인사와 게임이 멈춥니다." : ""}
+                >
+                  {bot.enabled ? "봇 퇴장" : "봇 입장"}
+                </ConfirmButton>
+              </form>
+              <Link className="bot-bar-link" href="/remote">휴대폰 리모컨</Link>
+            </div>
+          )}
           {connected && <nav className="dashboard-tabs" aria-label="운영 메뉴">
             <Link scroll={false} className={isDashboardTab ? "is-active" : ""} href="/" aria-current={isDashboardTab ? "page" : undefined}>
               대시보드
@@ -504,7 +571,7 @@ export default async function Home({ searchParams }: HomeProps) {
               봇 운영
             </Link>
             <Link scroll={false} className={isGameTab ? "is-active" : ""} href="/?tab=game&game=rps" aria-current={isGameTab ? "page" : undefined}>
-              Game
+              게임
             </Link>
             <Link scroll={false} className={isBackupTab ? "is-active" : ""} href="/?tab=backup" aria-current={isBackupTab ? "page" : undefined}>
               데이터 백업
@@ -547,7 +614,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <div>
                       <dt>채팅 상태</dt>
                       <dd className={liveStatus.live.isChatFrozen ? "is-frozen" : ""}>
-                        {liveStatus.live.isChatFrozen ? "채팅 동결" : "채팅 가능"}
+                        {liveStatus.live.isChatFrozen ? "채팅 잠김" : "채팅 가능"}
                       </dd>
                     </div>
                   </dl>
@@ -581,7 +648,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <span className="notice-icon" aria-hidden="true">i</span>
                   <div>
                     <strong>방송 정보가 표시되지 않습니다</strong>
-                    <span>live.read 권한이 승인되지 않았기 때문이며 서비스 오류가 아닙니다. 권한을 다시 승인해 주세요.</span>
+                    <span>‘방송 정보’ 권한이 없어 표시할 수 없습니다. <a className="permission-link" href="#connection-title">권한 다시 허용하기</a></span>
                   </div>
                 </div>
               )}
@@ -625,6 +692,7 @@ export default async function Home({ searchParams }: HomeProps) {
                             {listener.nickname.slice(0, 1) || "?"}
                           </span>
                           <strong>{listener.nickname}</strong>
+                          {listener.subscription && <span className="subscriber-badge">구독</span>}
                         </li>
                       ))}
                     </ol>
@@ -634,7 +702,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   )}
                   {audienceResult.listeners.kind === "offline" && <p className="audience-empty">방송 전입니다.</p>}
                   {audienceResult.listeners.kind === "missing_scope" && (
-                    <p className="audience-empty">listeners.read 권한이 승인되지 않아 청취자 목록이 표시되지 않습니다. 서비스 오류가 아닙니다.</p>
+                    <p className="audience-empty">‘청취자 목록’ 권한이 없어 표시할 수 없습니다. <a className="permission-link" href="#connection-title">권한 다시 허용하기</a></p>
                   )}
                   {(audienceResult.listeners.kind === "unavailable" || audienceResult.listeners.kind === "unauthorized") && (
                     <p className="audience-empty">청취자 목록을 불러오지 못했습니다.</p>
@@ -664,7 +732,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   )}
                   {audienceResult.fans.kind === "offline" && <p className="audience-empty">방송 전입니다.</p>}
                   {audienceResult.fans.kind === "missing_scope" && (
-                    <p className="audience-empty">fans.read 권한이 승인되지 않아 팬 랭킹이 표시되지 않습니다. 서비스 오류가 아닙니다.</p>
+                    <p className="audience-empty">‘팬 랭킹’ 권한이 없어 표시할 수 없습니다. <a className="permission-link" href="#connection-title">권한 다시 허용하기</a></p>
                   )}
                   {(audienceResult.fans.kind === "unavailable" || audienceResult.fans.kind === "unauthorized") && (
                     <p className="audience-empty">팬 랭킹을 불러오지 못했습니다.</p>
@@ -673,12 +741,12 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
 
               <div className="audience-heart-summary">
-                <span>하트 후원 랭킹</span>
+                <span>받은 하트</span>
                 <strong>{(bot?.activity.hearts ?? 0).toLocaleString("ko-KR")}개</strong>
-                <p>봇 참여 이후만 집계됩니다.</p>
+                <p>봇이 입장한 뒤부터 센 하트 수입니다.</p>
               </div>
 
-              <p className="audience-footnote">목록에는 이벤트 스트림으로 입장한 봇 계정도 포함될 수 있습니다.</p>
+              <p className="audience-footnote">청취자 목록에 NAGU BOT 계정이 함께 보일 수 있습니다.</p>
             </article>
           )}
 
@@ -688,7 +756,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <div className="event-feed-heading">
                   <div>
                     <p className="section-label">방송 활동</p>
-                    <h2 id="recent-events-title">최근 이벤트</h2>
+                    <h2 id="recent-events-title">최근 활동</h2>
                   </div>
                   <RefreshButton label="이벤트" />
                 </div>
@@ -705,7 +773,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     ))}
                   </ol>
                 ) : (
-                  <p className="event-empty">현재 방송에서 수신한 이벤트가 없습니다.</p>
+                  <p className="event-empty">아직 들어온 입장·채팅·하트·후원이 없습니다.</p>
                 )}
               </div>
             </article>
@@ -716,8 +784,9 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="game-heading">
                 <div>
                   <p className="section-label">방송 게임</p>
-                  <h2 id="game-title">Game</h2>
+                  <h2 id="game-title">게임</h2>
                 </div>
+                <Link className="remote-link" href="/remote">휴대폰 리모컨 열기</Link>
               </div>
 
               <nav className="game-tabs" aria-label="게임 선택">
@@ -727,13 +796,21 @@ export default async function Home({ searchParams }: HomeProps) {
                 <Link scroll={false} className={gameTab === "roulette" ? "is-active" : ""} href="/?tab=game&game=roulette">룰렛</Link>
               </nav>
 
+              <details className="dj-command-help">
+                <summary>방송 화면을 벗어나지 않고 채팅으로 진행하기 (DJ 전용 명령어)</summary>
+                <p>DJ 계정으로 방송 채팅에 입력하면 이 화면의 버튼과 똑같이 동작합니다. 봇이 방송에 입장해 있어야 합니다. PC로 방송한다면 휴대폰에서 <Link href="/remote">리모컨</Link>을 열어 써도 됩니다.</p>
+                <ul>
+                  {DJ_COMMAND_HELP.map((line) => <li key={line}><code>{line}</code></li>)}
+                </ul>
+              </details>
+
               {gameTab === "rps" && (
                 <section className="game-panel" aria-labelledby="rps-title">
                   {rpsRound?.active && <AutoRefresh intervalMs={2000} />}
                   <div className="game-panel-heading">
                     <div>
                       <h3 id="rps-title">DJ vs 청취자 가위바위보</h3>
-                      <p>DJ가 선택한 뒤 라운드를 시작하면 청취자는 방송 채팅에서 한 번 참여할 수 있습니다.</p>
+                      <p>DJ가 선택한 뒤 라운드를 시작하면 청취자는 방송 채팅에서 한 번 참여할 수 있습니다. 채팅의 <code>!가위바위보 시작</code>은 DJ 선택을 랜덤으로 정합니다.</p>
                     </div>
                     <span className={`game-state ${rpsRound?.active ? "is-active" : ""}`}>
                       {rpsRound?.active ? "진행 중" : "대기"}
@@ -744,7 +821,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {params.rps === "finished" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>결과를 방송 채팅에 공개했습니다.</strong></div>}
                   {params.rps === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 라운드를 먼저 종료해 주세요.</strong></div>}
                   {params.rps === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 라운드가 없습니다.</strong></div>}
-                  {params.rps === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 참여시킨 뒤 시작해 주세요.</strong></div>}
+                  {params.rps === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 입장시킨 뒤 시작해 주세요.</strong></div>}
                   {params.rps === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
 
                   {rpsRound?.active ? (
@@ -768,6 +845,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           {(["가위", "바위", "보"] as const).map((choice) => (
                             <label key={choice}><input type="radio" name="choice" value={choice} required /><span>{choice}</span></label>
                           ))}
+                          <label><input type="radio" name="choice" value="random" defaultChecked required /><span>랜덤</span></label>
                         </div>
                         <button type="submit">라운드 시작</button>
                       </fieldset>
@@ -820,7 +898,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <div className="game-panel-heading">
                     <div>
                       <h3 id="raffle-title">추첨</h3>
-                      <p>당첨 인원을 상한 없이 정해 시작하면 청취자가 방송 채팅에서 <code>!참여</code>로 한 번 참여할 수 있습니다.</p>
+                      <p>당첨 인원을 정해 시작하면 청취자가 방송 채팅에서 <code>!참여</code>로 한 번 참여할 수 있습니다.</p>
                     </div>
                     <span className={`game-state ${raffleRound?.active ? "is-active" : ""}`}>
                       {raffleRound?.active ? "진행 중" : "대기"}
@@ -831,8 +909,8 @@ export default async function Home({ searchParams }: HomeProps) {
                   {params.raffle === "finished" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>당첨자를 확정하고 방송 채팅에 공개했습니다.</strong></div>}
                   {params.raffle === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 추첨을 먼저 종료해 주세요.</strong></div>}
                   {params.raffle === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 추첨이 없습니다.</strong></div>}
-                  {params.raffle === "invalid_winner_count" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>당첨 인원은 1명 이상의 정수로 입력해 주세요.</strong></div>}
-                  {params.raffle === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 참여시킨 뒤 시작해 주세요.</strong></div>}
+                  {params.raffle === "invalid_winner_count" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>당첨 인원은 1명 이상 {MAX_RAFFLE_WINNERS.toLocaleString("ko-KR")}명 이하의 정수로 입력해 주세요.</strong></div>}
+                  {params.raffle === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 입장시킨 뒤 시작해 주세요.</strong></div>}
                   {params.raffle === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
 
                   {raffleRound?.active ? (
@@ -856,7 +934,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <fieldset disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}>
                         <legend>당첨 인원</legend>
                         <label className="raffle-winner-count">
-                          <input type="number" name="winnerCount" min={1} step={1} defaultValue={1} required />
+                          <input type="number" name="winnerCount" min={1} max={MAX_RAFFLE_WINNERS} step={1} defaultValue={1} required />
                           <span>명</span>
                         </label>
                         <button type="submit">추첨 시작</button>
@@ -906,7 +984,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <div className="game-panel-heading">
                     <div>
                       <h3 id="quiz-title">퀴즈</h3>
-                      <p>문제와 정답을 등록하면 <code>!정답 정답내용</code>으로 제출된 최초 정답을 자동 판정합니다.</p>
+                      <p>청취자가 <code>!정답 (답)</code>으로 답을 내면 가장 먼저 맞힌 사람을 자동으로 찾아 줍니다.</p>
                     </div>
                     <span className={`game-state ${quizRound?.active ? "is-active" : ""}`}>
                       {quizRound?.active ? "진행 중" : "대기"}
@@ -918,8 +996,12 @@ export default async function Home({ searchParams }: HomeProps) {
                   {params.quiz === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 퀴즈를 먼저 종료해 주세요.</strong></div>}
                   {params.quiz === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 퀴즈가 없습니다.</strong></div>}
                   {params.quiz === "invalid_quiz" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>문제는 180자 이하, 정답은 100자 이하로 입력해 주세요.</strong></div>}
-                  {params.quiz === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 참여시킨 뒤 시작해 주세요.</strong></div>}
+                  {params.quiz === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 입장시킨 뒤 시작해 주세요.</strong></div>}
                   {params.quiz === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
+                  {params.quiz === "queued" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>대기 문제에 추가했습니다. 방송 중 <code>!퀴즈 시작</code>으로 출제됩니다.</strong></div>}
+                  {params.quiz === "queue_deleted" && <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>대기 문제를 삭제했습니다.</strong></div>}
+                  {params.quiz === "queue_full" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>대기 문제는 최대 50개까지 등록할 수 있습니다.</strong></div>}
+                  {params.quiz === "queue_empty" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>등록된 대기 문제가 없습니다.</strong></div>}
 
                   {quizRound?.active ? (
                     <>
@@ -956,19 +1038,57 @@ export default async function Home({ searchParams }: HomeProps) {
                         </section>
                       )}
                     </>
-                  ) : (
-                    <form className="rps-start-form quiz-start-form" action="/game/quiz" method="post">
-                      <input type="hidden" name="action" value="start" />
-                      <fieldset disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}>
-                        <legend>새 문제 등록</legend>
-                        <div className="quiz-start-fields">
-                          <label>문제<input name="question" maxLength={180} placeholder="대한민국의 수도는?" required /></label>
-                          <label>정답<input name="answer" maxLength={100} placeholder="서울" required /></label>
-                        </div>
-                        <button type="submit">퀴즈 시작</button>
-                      </fieldset>
+                  ) : null}
+
+                  <section className="rps-history quiz-queue" aria-labelledby="quiz-queue-title">
+                    <div className="rps-history-heading">
+                      <h4 id="quiz-queue-title">대기 문제</h4>
+                      <span>방송 전에 등록해 두면 채팅의 <code>!퀴즈 시작</code>으로 위에서부터 출제됩니다. 정답은 채팅에 노출되지 않습니다.</span>
+                    </div>
+                    {quizQueue.length > 0 ? (
+                      <ol>
+                        {quizQueue.map((item) => (
+                          <li key={item.id}>
+                            <strong>{item.question}</strong>
+                            <span>정답: {item.answer}</span>
+                            <form action="/game/quiz" method="post">
+                              <input type="hidden" name="action" value="queue_delete" />
+                              <input type="hidden" name="id" value={item.id} />
+                              <ConfirmButton className="is-danger" type="submit" message="이 대기 문제를 삭제할까요?">삭제</ConfirmButton>
+                            </form>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : <p>등록된 대기 문제가 없습니다.</p>}
+                    {/* One form, two buttons: Enter (the first button) only queues, so a
+                        question meant for later is never published by accident. */}
+                    <form className="quiz-queue-form" action="/game/quiz" method="post">
+                      <label>문제<input name="question" maxLength={180} placeholder="대한민국의 수도는?" required /></label>
+                      <label>정답<input name="answer" maxLength={100} placeholder="서울" required /></label>
+                      <div className="quiz-queue-actions">
+                        <button type="submit" name="action" value="queue_add">대기 목록에 추가</button>
+                        {!quizRound?.active && (
+                          <button
+                            className="is-secondary"
+                            type="submit"
+                            name="action"
+                            value="start"
+                            disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}
+                          >
+                            지금 바로 출제
+                          </button>
+                        )}
+                      </div>
                     </form>
-                  )}
+                    {!quizRound?.active && quizQueue.length > 0 && (
+                      <form action="/game/quiz" method="post">
+                        <input type="hidden" name="action" value="start_next" />
+                        <button type="submit" disabled={!bot.enabled || !hasChatScope || !scopes.includes("events.chat")}>
+                          다음 대기 문제 출제
+                        </button>
+                      </form>
+                    )}
+                  </section>
 
                   {quizHistory.length > 0 && (
                     <section className="rps-history" aria-labelledby="quiz-history-title">
@@ -1015,10 +1135,10 @@ export default async function Home({ searchParams }: HomeProps) {
                   <div className="game-panel-heading">
                     <div>
                       <h3 id="roulette-title">룰렛</h3>
-                      <p>설정 비용 이상을 한 번에 후원하면 사용자당 해당 후원 건에서 룰렛을 한 번 자동 추첨합니다.</p>
+                      <p>청취자가 1회 비용 이상을 한 번에 후원하면 룰렛이 자동으로 한 번 돌아갑니다.</p>
                     </div>
                     <span className={`game-state ${rouletteSettings?.enabled ? "is-active" : ""}`}>
-                      {rouletteSettings?.enabled ? "자동 추첨 중" : "사용 안 함"}
+                      {rouletteSettings?.enabled ? "켜짐" : "꺼짐"}
                     </span>
                   </div>
 
@@ -1034,7 +1154,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {rouletteSettings && (
                     <form className="roulette-settings-form" action="/game/roulette" method="post">
                       <input type="hidden" name="action" value="settings" />
-                      <label className="feature-enabled roulette-enabled"><input type="checkbox" role="switch" name="enabled" defaultChecked={rouletteSettings.enabled} /> 후원 룰렛 시작</label>
+                      <label className="feature-enabled roulette-enabled"><input type="checkbox" role="switch" name="enabled" defaultChecked={rouletteSettings.enabled} /> 후원 룰렛 사용</label>
                       <label>1회 비용<input type="number" name="cost" min={1} max={1_000_000} defaultValue={rouletteSettings.cost} required /><span>스푼</span></label>
                       <button type="submit">설정</button>
                     </form>
@@ -1064,7 +1184,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <section aria-labelledby="roulette-keeps-title">
                       {rouletteKeepUsers.length > 0
                         ? <RouletteKeepEditor users={rouletteKeepUsers} disabled={previewConnected} />
-                        : <><div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">사용자별 킵</h4><p><code>!내 킵</code>으로 조회</p></div></div><p className="roulette-empty">저장된 킵이 없습니다.</p></>}
+                        : <><div className="roulette-section-heading"><div><h4 id="roulette-keeps-title">청취자별 킵</h4><p><code>!내 킵</code>으로 조회</p></div></div><p className="roulette-empty">저장된 킵이 없습니다.</p></>}
                     </section>
                   </div>
                 </section>
@@ -1088,14 +1208,14 @@ export default async function Home({ searchParams }: HomeProps) {
               <p className="bot-description">
                 {bot.enabled
                   ? bot.state === "waiting"
-                    ? "방송이 시작되면 NAGU BOT이 자동으로 참여합니다."
-                    : "NAGU BOT이 실시간 이벤트 스트림을 유지하고 있습니다."
-                  : "참여를 누르면 방송에 입장해 채팅·입장·하트·후원 이벤트를 받습니다."}
+                    ? "방송이 시작되면 NAGU BOT이 자동으로 입장합니다."
+                    : "NAGU BOT이 방송에 들어와 채팅을 지켜보고 있습니다."
+                  : "[봇 입장]을 누르면 봇이 방송에 들어가 인사, 감사 메시지, 게임을 진행합니다."}
               </p>
 
               {scopes.includes("events.presence") && (
                 <p className="manager-help">
-                  Spoon에서 봇을 매니저로 지정하면 최대 1분 이내 자동으로 반영됩니다.
+                  Spoon에서 NAGU BOT을 매니저로 지정하면 1분 안에 입장 환영이 켜집니다.
                 </p>
               )}
 
@@ -1104,7 +1224,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <span className="notice-icon" aria-hidden="true">✓</span>
                   <div>
                     <strong>참여 요청 완료</strong>
-                    <span>방송 전이면 참여 대기 상태로 자동 연결합니다.</span>
+                    <span>방송 전이라면 기다렸다가 방송이 시작되면 자동으로 들어갑니다.</span>
                   </div>
                 </div>
               )}
@@ -1114,7 +1234,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <span className="notice-icon" aria-hidden="true">✓</span>
                   <div>
                     <strong>봇 퇴장 완료</strong>
-                    <span>이벤트 연결을 종료했습니다.</span>
+                    <span>봇이 방송에서 나왔습니다.</span>
                   </div>
                 </div>
               )}
@@ -1128,13 +1248,22 @@ export default async function Home({ searchParams }: HomeProps) {
                   </div>
                 </div>
               )}
+              {bot.state === "duplicate_connection" && (
+                <div className="notice error" role="alert">
+                  <span className="notice-icon" aria-hidden="true">!</span>
+                  <div>
+                    <strong>다른 곳에서 봇이 연결됨</strong>
+                    <span>같은 DJ 계정으로 다른 곳에서 봇이 연결되어 이 연결은 꺼졌습니다. 이 화면에서 쓰려면 [봇 입장]을 다시 눌러 주세요.</span>
+                  </div>
+                </div>
+              )}
 
               {bot.state === "permission_required" && (
                 <div className="notice error" role="alert">
                   <span className="notice-icon" aria-hidden="true">!</span>
                   <div>
                     <strong>이벤트 권한 필요</strong>
-                    <span>계정을 다시 연결해 events 권한을 승인해 주세요.</span>
+                    <span>다시 로그인해 ‘실시간 채팅·입장·하트·후원’ 권한을 허용해 주세요. <a className="permission-link" href="#connection-title">권한 다시 허용하기</a></span>
                   </div>
                 </div>
               )}
@@ -1150,17 +1279,31 @@ export default async function Home({ searchParams }: HomeProps) {
               )}
 
               <form action={bot.enabled ? "/bot/leave" : "/bot/join"} method="post">
-                <button
+                <ConfirmButton
                   className={bot.enabled ? "bot-leave" : "bot-join"}
                   type="submit"
                   disabled={!bot.enabled && !hasEventScope}
+                  message={bot.enabled ? "봇을 방송에서 내보낼까요? 자동 인사와 게임이 멈춥니다." : ""}
                 >
-                  {bot.enabled ? "봇 퇴장" : "봇 참여"}
-                </button>
+                  {bot.enabled ? "봇 퇴장" : "봇 입장"}
+                </ConfirmButton>
               </form>
 
               {!hasEventScope && (
-                <p className="bot-help">실시간 이벤트 권한을 승인한 뒤 참여할 수 있습니다.</p>
+                <p className="bot-help">‘실시간 채팅·입장·하트·후원’ 권한을 허용한 뒤 입장할 수 있습니다.</p>
+              )}
+
+              {scopes.includes("dj.follow") && (
+                <section className="bot-follow" aria-labelledby="bot-follow-title">
+                  <h3 id="bot-follow-title">고정 매니저 준비</h3>
+                  <p>Spoon에서 봇을 고정 매니저로 지정하려면, 방송 중에 봇이 DJ를 먼저 팔로우해야 합니다. 팔로우한 뒤 방송이 끝나면 Spoon에서 봇을 고정 매니저로 지정해 주세요.</p>
+                  {params.follow && FOLLOW_NOTICES[params.follow] && (
+                    <p className={`bot-follow-notice is-${FOLLOW_NOTICES[params.follow].tone}`} role="status">{FOLLOW_NOTICES[params.follow].text}</p>
+                  )}
+                  <form action="/bot/follow" method="post">
+                    <button type="submit">봇이 DJ 팔로우하기</button>
+                  </form>
+                </section>
               )}
 
               {botSettings && (
@@ -1170,7 +1313,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <p className="section-label">운영 설정</p>
                       <h3 id="automation-title">방송 자동화 설정</h3>
                     </div>
-                    <span>수정 즉시 적용</span>
+                    <span>켜기·끄기는 바로 적용 · 문구는 [저장]을 눌러야 적용</span>
                   </div>
 
                   {settingsNotice && (
@@ -1185,7 +1328,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <input type="hidden" name="automation" value={automationTab} />
                     <div>
                       <label htmlFor="dj-display-name">DJ 표시 이름 <span>선택</span></label>
-                      <p>Spoon API는 연결할 때 DJ 닉네임을 제공하지 않습니다. 비워두면 <strong>DJ</strong>로 표시하며, DJ가 채팅이나 퀵메시지를 보내면 실제 닉네임으로 자동 갱신됩니다.</p>
+                      <p>봇 인사말에 쓸 DJ 이름입니다. 비워 두면 <strong>DJ</strong>로 표시하고, 방송에서 DJ가 처음 채팅하면 자동으로 채워집니다.</p>
                     </div>
                     <div className="dj-name-field">
                       <input id="dj-display-name" name="djNickname" defaultValue={botSettings.djNickname} maxLength={50} placeholder="DJ" />
@@ -1224,17 +1367,30 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "heart" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="heart" />
-                      <AutomationToggle feature="heart" initialEnabled={botSettings.heartEnabled} label="하트 후원 감사" />
+                      <AutomationToggle feature="heart" initialEnabled={botSettings.heartEnabled} label="하트 감사" />
                       <label htmlFor="heart-message">하트 감사말</label>
                       <textarea id="heart-message" name="message" defaultValue={botSettings.heartMessage} maxLength={200} rows={3} required />
                       <p><code>{"{nickname}"}</code>은 후원자, <code>{"{milestone}"}</code>은 보낸 하트 수입니다.</p><button type="submit">하트 후원 저장</button>
                     </form>
                   )}
 
+                  {automationTab === "follow" && (
+                    <form className="automation-feature-form" action="/bot/settings" method="post">
+                      <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="follow" />
+                      {!scopes.includes("events.follow") && (
+                        <p className="feature-unavailable">이 기능은 운영자가 Spoon에서 ‘팔로우’ 권한을 켠 뒤, 다시 로그인하면 사용할 수 있습니다.</p>
+                      )}
+                      <AutomationToggle feature="follow" initialEnabled={botSettings.followEnabled} label="팔로우 감사" />
+                      <label htmlFor="follow-message">팔로우 감사말</label>
+                      <textarea id="follow-message" name="message" defaultValue={botSettings.followMessage} maxLength={200} rows={3} required />
+                      <p><code>{"{nickname}"}</code>은 팔로우한 청취자입니다. 방송 중 처음 팔로우한 경우에만 인사하며, 봇이 매니저로 지정되어 있어야 합니다.</p><button type="submit">팔로우 감사 저장</button>
+                    </form>
+                  )}
+
                   {automationTab === "repeat" && (
                     <form className="automation-feature-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="automation_feature" /><input type="hidden" name="feature" value="repeat" />
-                      <AutomationToggle feature="repeat" initialEnabled={botSettings.repeatEnabled} label="반복 멘트" />
+                      <AutomationToggle feature="repeat" initialEnabled={botSettings.repeatEnabled} label="반복 공지" />
                       <label htmlFor="repeat-interval">반복 간격</label>
                       <div className="interval-field"><input id="repeat-interval" type="number" name="intervalMinutes" min={1} max={1440} defaultValue={botSettings.repeatIntervalMinutes} required /><span>분마다</span></div>
                       <label htmlFor="repeat-message">반복 멘트</label>
@@ -1246,7 +1402,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {automationTab === "counters" && <div className="counter-editor">
                     <AutoRefresh />
                     <div className="counter-guide">
-                      <h4>카운터 개수 관리</h4>
+                      <h4>카운터 관리</h4>
                       <p><code>!실드</code> 조회는 누구나 사용할 수 있고, <code>!실드 +2</code> 또는 <code>!실드 -1</code> 증감은 DJ만 사용할 수 있습니다. 이 규칙은 추가한 모든 카운터에 동일하게 적용됩니다.</p>
                     </div>
                     {botCounters.length > 0 && <div className="counter-list">
@@ -1258,7 +1414,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           <button type="submit">수정</button>
                         </form>
                         {counter.name !== "실드" && <div className="counter-actions">
-                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><button className="is-danger" type="submit">삭제</button></form>
+                          <form action="/bot/settings" method="post"><input type="hidden" name="mode" value="delete_counter" /><input type="hidden" name="id" value={counter.id} /><ConfirmButton className="is-danger" type="submit" message={`${counter.name} 카운터를 삭제할까요?`}>삭제</ConfirmButton></form>
                         </div>}
                       </section>)}
                     </div>}
@@ -1266,17 +1422,17 @@ export default async function Home({ searchParams }: HomeProps) {
                       <input type="hidden" name="mode" value="save_counter" />
                       <label htmlFor="counter-name">새 이름</label><input id="counter-name" name="name" placeholder="실드" maxLength={20} required />
                       <label htmlFor="counter-value">개수</label><input id="counter-value" type="number" name="value" min={0} max={1000000} defaultValue={0} required />
-                      <button type="submit">설정 추가</button>
+                      <button type="submit">카운터 추가</button>
                     </form>
                   </div>}
 
                   {automationTab === "commands" && <div className="command-editor">
                     <h4>명령어 관리</h4>
-                    <h5 className="command-group-title">기본 명령어 · 전체 사용</h5>
+                    <h5 className="command-group-title">기본 명령어 · 누구나 사용</h5>
                     <ul>
-                      <li><div><strong>!명령어</strong><span>현재 활성화된 명령어와 카운터를 실시간으로 조회</span></div></li>
+                      <li><div><strong>!명령어</strong><span>지금 쓸 수 있는 명령어 보기</span></div></li>
                       <li><div><strong>!안녕</strong><span>청취자 닉네임으로 인사 · 모두 사용 가능</span></div></li>
-                      <li><div><strong>!가위바위보 가위|바위|보</strong><span>진행 중인 DJ 라운드에 한 번 참여 · 모두 사용 가능</span></div></li>
+                      <li><div><strong>!가위바위보 가위·바위·보</strong><span>진행 중인 가위바위보에 한 번 참여</span></div></li>
                       <li><div><strong>!참여</strong><span>진행 중인 추첨에 계정당 한 번 참여 · 모두 사용 가능</span></div></li>
                       <li><div><strong>!정답 정답내용</strong><span>진행 중인 퀴즈에 답안 제출 · 다른 답안으로 다시 제출 가능</span></div></li>
                       <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
@@ -1285,13 +1441,13 @@ export default async function Home({ searchParams }: HomeProps) {
                     </ul>
                     {botCounters.length > 0 && (
                       <>
-                        <h5 className="command-group-title">카운터 명령어 · 조회는 전체 사용</h5>
+                        <h5 className="command-group-title">카운터 명령어 · 조회는 누구나</h5>
                         <ul>
                           {botCounters.map((counter) => (
                             <li key={`counter-${counter.id}`}>
                               <div>
                                 <strong>!{counter.name}</strong>
-                                <span>{counter.name} {counter.value.toLocaleString("ko-KR")}개 남음 조회 · 모두 사용 가능</span>
+                                <span>현재 {counter.name} 개수({counter.value.toLocaleString("ko-KR")}개) 보기 · 누구나</span>
                               </div>
                             </li>
                           ))}
@@ -1308,7 +1464,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
                       <li><div><strong>!킵 삭제 닉네임 / 항목명 / 수량</strong><span>사용자 킵을 지정 수량만큼 삭제 · 수량 생략 시 1개</span></div></li>
                     </ul>
-                    <h5 className="command-group-title">사용자 정의 명령어 · 전체 사용</h5>
+                    <h5 className="command-group-title">사용자 정의 명령어 · 누구나 사용</h5>
                     {botCommands.some((item) => !["!명령어", "!안녕"].includes(item.command)) && (
                       <ul>
                         {botCommands.filter((item) => !["!명령어", "!안녕"].includes(item.command)).map((item) => (
@@ -1323,7 +1479,7 @@ export default async function Home({ searchParams }: HomeProps) {
                             <form className="command-delete-form" action="/bot/settings" method="post">
                               <input type="hidden" name="mode" value="delete_command" />
                               <input type="hidden" name="command" value={item.command} />
-                              <button type="submit" aria-label={`${item.command} 삭제`}>삭제</button>
+                              <ConfirmButton type="submit" aria-label={`${item.command} 삭제`} message={`${item.command} 명령어를 삭제할까요?`}>삭제</ConfirmButton>
                             </form>
                           </li>
                         ))}
@@ -1331,7 +1487,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     )}
                     <form className="command-form" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="upsert_command" />
-                      <label htmlFor="command-name">명령어<input id="command-name" name="command" placeholder="!공지" maxLength={20} required /></label>
+                      <label htmlFor="command-name">명령어<input id="command-name" name="command" placeholder="!규칙" maxLength={20} required /></label>
                       <label htmlFor="command-response">응답 메시지<input id="command-response" name="response" placeholder="추가할 응답 메시지" maxLength={200} required /></label>
                       <button type="submit">추가</button>
                     </form>
@@ -1355,7 +1511,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     </ol> : <p className="song-request-empty">접수된 신청곡이 없습니다.</p>}
                     {songRequests.length > 0 && <form className="song-request-clear" action="/bot/settings" method="post">
                       <input type="hidden" name="mode" value="clear_song_requests" />
-                      <button type="submit">전체 비우기</button>
+                      <ConfirmButton type="submit" message={`신청곡 ${songRequests.length}개를 모두 지울까요?`}>전체 비우기</ConfirmButton>
                     </form>}
                   </div>}
                 </section>
@@ -1397,7 +1553,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 </form>
 
                 {!hasChatScope && (
-                  <p className="bot-help">계정을 다시 연결해 chat.send 권한을 승인해 주세요.</p>
+                  <p className="bot-help">다시 로그인해 ‘봇 채팅’ 권한을 허용해 주세요. <a className="permission-link" href="#connection-title">권한 다시 허용하기</a></p>
                 )}
 
                 {params.chat === "sent" && params.chatMessage && (
@@ -1409,7 +1565,7 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
 
               <p className="bot-footnote">
-                네트워크 연결을 끊어도 Spoon의 입장 기록은 일정 시간 남을 수 있습니다.
+                봇이 나간 뒤에도 Spoon 청취자 목록에 봇이 잠시 보일 수 있습니다.
               </p>
             </article>
           )}
@@ -1433,7 +1589,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <section className="backup-tools" aria-labelledby="backup-tools-title">
                 <div>
                   <h3 id="backup-tools-title">백업 다운로드 및 복원</h3>
-                  <p>OAuth 토큰과 로그인 세션은 포함하지 않습니다. 다운로드한 파일은 안전한 위치에 보관해 주세요.</p>
+                  <p>로그인 정보는 백업에 포함되지 않습니다. 내려받은 파일은 안전한 곳에 보관해 주세요.</p>
                 </div>
                 <div className="backup-scope" aria-label="백업 데이터 범위">
                   <section>
@@ -1442,7 +1598,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <li>DJ 표시 이름과 자동화 문구·사용 여부·반복 간격</li>
                       <li>사용자 명령어, 카운터, 신청곡 목록</li>
                       <li>가위바위보·추첨·퀴즈 라운드와 참여 기록</li>
-                      <li>룰렛 설정·상품·당첨·킵 기록</li>
+                      <li>룰렛 설정·경품·당첨·킵 기록</li>
                     </ul>
                   </section>
                   <section>
@@ -1456,9 +1612,9 @@ export default async function Home({ searchParams }: HomeProps) {
                   <section>
                     <h4>저장하지 않음</h4>
                     <ul>
-                      <li>OAuth 토큰, 로그인 쿠키, 관리자 정보</li>
-                      <li>봇 참여 상태와 현재 방송 연결 상태</li>
-                      <li>대시보드의 최근 이벤트 목록</li>
+                      <li>로그인 정보, 관리자 정보</li>
+                      <li>봇 입장 상태와 현재 방송 연결 상태</li>
+                      <li>대시보드의 최근 활동 목록</li>
                     </ul>
                   </section>
                 </div>
@@ -1473,7 +1629,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <input type="checkbox" required />
                     <span>현재 운영 데이터를 백업 파일 내용으로 교체합니다.</span>
                   </label>
-                  <button type="submit">백업 복원</button>
+                  <ConfirmButton type="submit" message="현재 운영 데이터를 백업 파일 내용으로 바꿀까요? 되돌릴 수 없습니다.">백업 복원</ConfirmButton>
                 </form>
                 <p className="backup-privacy">두 백업 모두 신청곡·게임·룰렛 참여 닉네임을 포함할 수 있습니다. 청취자 기록 포함 백업에는 청취자 프로필과 후원 이벤트가 추가됩니다.</p>
                 <p className="backup-privacy">복원하면 운영 데이터는 백업 시점 내용으로 교체됩니다. 운영 데이터 백업만 복원할 때는 서버의 기존 청취자 기록을 유지합니다.</p>

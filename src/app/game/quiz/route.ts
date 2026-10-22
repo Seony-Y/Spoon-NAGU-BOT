@@ -1,12 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
-import { sendChat } from "@/lib/chat";
+import { finishQuiz, startNextQuiz, startQuiz } from "@/lib/live-actions";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
-  finishQuizRound,
-  formatQuizResultMessages,
-  isBotEnabled,
-  startQuizRound,
+  addQuizQueueItem,
+  deleteQuizQueueItem,
+  getSessionKey,
 } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
 
@@ -24,31 +23,34 @@ export async function POST(request: NextRequest) {
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);
   if (!sessionId || !session) return redirect(request, "authentication_required");
+  const sessionKey = getSessionKey(sessionId);
 
-  const formData = await request.formData();
+  const formData = await request.formData().catch(() => new FormData());
   const action = String(formData.get("action") ?? "");
+  const question = String(formData.get("question") ?? "");
+  const answer = String(formData.get("answer") ?? "");
+
   if (action === "start") {
-    if (!isBotEnabled(sessionId)) return redirect(request, "bot_required");
-    const scopes = session.scope.split(" ");
-    if (!scopes.includes("events.chat") || !scopes.includes("chat.send")) {
-      return redirect(request, "missing_scope");
-    }
-    const question = String(formData.get("question") ?? "").trim();
-    const answer = String(formData.get("answer") ?? "").trim();
-    if (!question || question.length > 180 || !answer || answer.length > 100) {
-      return redirect(request, "invalid_quiz");
-    }
-    if (!startQuizRound(sessionId, question, answer)) return redirect(request, "already_active");
-    await sendChat(sessionId, `[퀴즈] ${question}`);
-    await sendChat(sessionId, "!정답 정답내용으로 답을 제출해 주세요. 답은 다시 제출할 수 있습니다.");
-    return redirect(request, "started");
+    return redirect(request, (await startQuiz(sessionKey, question, answer)).status);
+  }
+
+  if (action === "start_next") {
+    return redirect(request, (await startNextQuiz(sessionKey)).status);
   }
 
   if (action === "finish") {
-    const round = finishQuizRound(sessionId);
-    if (!round) return redirect(request, "not_active");
-    for (const message of formatQuizResultMessages(round)) await sendChat(sessionId, message);
-    return redirect(request, "finished");
+    return redirect(request, (await finishQuiz(sessionKey)).status);
+  }
+
+  if (action === "queue_add") {
+    const result = addQuizQueueItem(sessionId, question, answer);
+    return redirect(request, result === "added" ? "queued" : result === "full" ? "queue_full" : "invalid_quiz");
+  }
+
+  if (action === "queue_delete") {
+    const id = Number(formData.get("id"));
+    if (!Number.isSafeInteger(id) || id < 1) return redirect(request, "invalid_action");
+    return redirect(request, deleteQuizQueueItem(sessionId, id) ? "queue_deleted" : "invalid_action");
   }
 
   return redirect(request, "invalid_action");

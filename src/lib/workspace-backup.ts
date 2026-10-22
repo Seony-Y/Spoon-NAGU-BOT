@@ -11,7 +11,7 @@ import {
 
 const BACKUP_VERSION = 1;
 const MAX_ROWS_PER_TABLE = 50_000;
-const OPTIONAL_CORE_TABLES = new Set(["quiz_rounds", "quiz_submissions"]);
+const OPTIONAL_CORE_TABLES = new Set(["quiz_rounds", "quiz_submissions", "quiz_queue", "follow_settings"]);
 
 type BackupBody = {
   format: "nagu-bot-workspace";

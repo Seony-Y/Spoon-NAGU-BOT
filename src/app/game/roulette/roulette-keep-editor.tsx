@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfirmButton } from "../../confirm-button";
 import { useState } from "react";
 
 type KeepUser = {
@@ -32,7 +33,7 @@ export function RouletteKeepEditor({
       <input type="hidden" name="action" value="keeps" />
       <div className="roulette-section-heading">
         <div>
-          <h4 id="roulette-keeps-title">사용자별 킵</h4>
+          <h4 id="roulette-keeps-title">청취자별 킵</h4>
           <p><code>!내 킵</code>으로 조회</p>
         </div>
       </div>
@@ -103,7 +104,7 @@ export function RouletteKeepEditor({
                 <span>{selected.size.toLocaleString("ko-KR")}개 항목 선택</span>
                 <div>
                   <button type="submit" name="operation" value="update" disabled={disabled}>수정</button>
-                  <button className="is-delete" type="submit" name="operation" value="delete" disabled={disabled || selected.size === 0}>선택 삭제</button>
+                  <ConfirmButton className="is-delete" type="submit" name="operation" value="delete" disabled={disabled || selected.size === 0} message={`선택한 킵 ${selected.size}개를 삭제할까요?`}>선택 삭제</ConfirmButton>
                 </div>
               </div>
             )}

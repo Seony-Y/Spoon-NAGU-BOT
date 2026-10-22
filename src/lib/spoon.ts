@@ -11,6 +11,19 @@ export const REQUIRED_SCOPES = [
 ] as const;
 const DEFAULT_SCOPES = REQUIRED_SCOPES.join(" ");
 
+// Requested only when listed in SPOON_SCOPES, because requesting a scope the app
+// is not approved for in Spoon Developers blocks consent for every DJ. Features
+// that depend on them turn on only when the DJ actually granted the scope.
+export const OPTIONAL_SCOPES = ["me.read", "events.follow", "dj.follow", "donations.read"] as const;
+
+export function hasScope(scope: string | undefined, name: string) {
+  return (scope ?? "").split(/\s+/).includes(name);
+}
+
+// Spoon responses normally arrive in well under a second; a stalled request must
+// not hold the serial chat queue or a dashboard render for minutes.
+const API_TIMEOUT_MS = 10_000;
+
 export function getMissingRequiredScopes(scope: string) {
   const grantedScopes = new Set(scope.split(/\s+/).filter(Boolean));
   return REQUIRED_SCOPES.filter((requiredScope) => !grantedScopes.has(requiredScope));
@@ -40,6 +53,8 @@ export type SpoonLive = {
 export type SpoonListener = {
   id: string;
   nickname: string;
+  // Added in Open API v1.2.0; null when the listener is not subscribed.
+  subscription?: { plan: string } | null;
 };
 
 export type SpoonListenersPage = {
@@ -50,6 +65,18 @@ export type SpoonListenersPage = {
 export type SpoonFan = SpoonListener & {
   rank: number;
   spoonCount: number | null;
+};
+
+export type SpoonDonation = {
+  user: { id: string; nickname: string };
+  stickerName: string;
+  amount: number;
+  time: string;
+};
+
+export type SpoonDonationsPage = {
+  donations: SpoonDonation[];
+  nextCursor: string | null;
 };
 
 export type SpoonFans = {
@@ -76,10 +103,19 @@ export class SpoonApiErrorResponse extends Error {
   constructor(
     public readonly status: number,
     public readonly detailCode?: string,
+    // Set on a daily-limit 429: wait this long (until Spoon's midnight reset).
+    public readonly retryAfterMs?: number,
   ) {
     super(`Spoon API request failed with ${status}`);
     this.name = "SpoonApiErrorResponse";
   }
+}
+
+// Spoon sends Retry-After (seconds) only on the daily-limit 429; the per-second
+// 429 has none and is handled with ordinary backoff.
+export function parseRetryAfter(response: Response) {
+  const seconds = Number(response.headers.get("retry-after"));
+  return response.status === 429 && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
 }
 
 export function getSpoonConfig() {
@@ -102,7 +138,30 @@ export function getSpoonConfig() {
   };
 }
 
+let warnedAboutHostMismatch = false;
+
+// In development, every redirect (including the OAuth return) goes to the host
+// in SPOON_REDIRECT_URI. If the dev server ended up on another port (e.g. 3000
+// was taken by another app), logins land on the wrong app; say so once.
+function warnOnDevHostMismatch(fallbackUrl: string) {
+  const configured = process.env.SPOON_REDIRECT_URI;
+  if (process.env.NODE_ENV !== "development" || warnedAboutHostMismatch || !configured) return;
+  try {
+    const expectedHost = new URL(configured).host;
+    const actualHost = new URL(fallbackUrl).host;
+    if (expectedHost === actualHost) return;
+    warnedAboutHostMismatch = true;
+    console.warn(
+      `[NAGU BOT] 이 개발 서버는 ${actualHost}에서 열렸지만 SPOON_REDIRECT_URI는 ${expectedHost}입니다. `
+      + `로그인과 버튼 처리 후 ${expectedHost}로 이동하므로, 해당 포트를 비우고 다시 실행하거나 SPOON_REDIRECT_URI를 맞춰 주세요.`,
+    );
+  } catch {
+    // An invalid URL is reported elsewhere (getSpoonConfig / OAuth errors).
+  }
+}
+
 export function buildApplicationUrl(path: string, fallbackUrl: string) {
+  warnOnDevHostMismatch(fallbackUrl);
   return new URL(path, process.env.SPOON_REDIRECT_URI || fallbackUrl);
 }
 
@@ -142,6 +201,7 @@ async function requestToken(body: URLSearchParams): Promise<SpoonToken> {
     },
     body,
     cache: "no-store",
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -178,6 +238,7 @@ export async function revokeToken(token: string): Promise<void> {
     },
     body: new URLSearchParams({ token }),
     cache: "no-store",
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -193,13 +254,14 @@ export async function getCurrentLive(accessToken: string): Promise<SpoonLive | n
       Authorization: `Bearer ${accessToken}`,
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (response.status === 404) return null;
 
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { detailCode?: string };
-    throw new SpoonApiErrorResponse(response.status, error.detailCode);
+    throw new SpoonApiErrorResponse(response.status, error.detailCode, parseRetryAfter(response));
   }
 
   return (await response.json()) as SpoonLive;
@@ -210,11 +272,12 @@ async function requestSpoonApi<T>(accessToken: string, path: string): Promise<T>
   const response = await fetch(`${baseUrl}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { detailCode?: string };
-    throw new SpoonApiErrorResponse(response.status, error.detailCode);
+    throw new SpoonApiErrorResponse(response.status, error.detailCode, parseRetryAfter(response));
   }
 
   return (await response.json()) as T;
@@ -228,17 +291,32 @@ export async function followCurrentDj(accessToken: string): Promise<void> {
       Authorization: `Bearer ${accessToken}`,
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (response.status === 204) return;
 
   const error = (await response.json().catch(() => ({}))) as { detailCode?: string };
-  throw new SpoonApiErrorResponse(response.status, error.detailCode);
+  throw new SpoonApiErrorResponse(response.status, error.detailCode, parseRetryAfter(response));
+}
+
+// The DJ's stable per-app identifier (same value as `user.id` on the DJ's chat
+// events). Lets a fresh login find the DJ's saved data immediately.
+export async function getMyUserId(accessToken: string) {
+  const { userId } = await requestSpoonApi<{ userId: string }>(accessToken, "/v1/me");
+  return userId;
 }
 
 export function getLiveListenersPage(accessToken: string, cursor?: string) {
   const query = cursor ? `?${new URLSearchParams({ cursor })}` : "";
   return requestSpoonApi<SpoonListenersPage>(accessToken, `/v1/live/listeners${query}`);
+}
+
+// Donations of the current broadcast (Open API v1.2.0, donations.read). Used to
+// recover donations the bot missed while disconnected; the stream never replays.
+export function getLiveDonationsPage(accessToken: string, cursor?: string) {
+  const query = cursor ? `?${new URLSearchParams({ cursor })}` : "";
+  return requestSpoonApi<SpoonDonationsPage>(accessToken, `/v1/live/donations${query}`);
 }
 
 export function getLiveFans(accessToken: string) {

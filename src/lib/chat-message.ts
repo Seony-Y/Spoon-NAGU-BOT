@@ -6,6 +6,14 @@ export function validateChatMessage(message: string): ChatValidationError | null
   return null;
 }
 
+// Cuts to Spoon's 200 UTF-16 code unit limit without splitting a surrogate pair.
+export function truncateChatMessage(message: string, maxLength = 200) {
+  if (message.length <= maxLength) return message;
+  const lastCode = message.charCodeAt(maxLength - 1);
+  const end = lastCode >= 0xd800 && lastCode <= 0xdbff ? maxLength - 1 : maxLength;
+  return message.slice(0, end);
+}
+
 export function formatMultilineMessages(
   heading: string,
   continuationHeading: string,
@@ -43,9 +51,7 @@ export function resolveCommandFallback(
   nickname: string | null,
   configuredReply: string | null,
 ) {
-  return configuredReply
-    ?? getCommandReply(message, nickname)
-    ?? (message.trim().startsWith("!")
-      ? "등록되지 않은 명령어입니다. !명령어로 사용 가능한 명령어를 확인해 주세요."
-      : null);
+  // Unknown `!` messages get no reply: listeners often type `!!!` or `!ㅋㅋ` as
+  // plain reactions, and `!명령어` already lists what is available.
+  return configuredReply ?? getCommandReply(message, nickname);
 }

@@ -32,6 +32,11 @@ const donation = parseSseFrame(
 assert.equal(donation?.event, "donation");
 assert.deepEqual(donation?.data.gift, { id: "item-20", name: "테스트 스푼" });
 
+assert.deepEqual(
+  parseSseFrame('event:follow\ndata:{"user":{"id":"Pq8","nickname":"라디오팬"},"time":"2026-09-02T05:47:55.833Z"}'),
+  { id: undefined, event: "follow", data: { user: { id: "Pq8", nickname: "라디오팬" }, time: "2026-09-02T05:47:55.833Z" } },
+);
+
 console.log(
-  "SSE parser checks passed: CRLF, heartbeat, fragmented, multiline, extra fields, unknown, malformed",
+  "SSE parser checks passed: CRLF, heartbeat, fragmented, multiline, extra fields, unknown, malformed, follow",
 );

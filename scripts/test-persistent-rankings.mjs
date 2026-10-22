@@ -95,7 +95,7 @@ assert.deepEqual(rouletteKeepReplies, ["룰렛팬님의 킵:\n노래 신청권 1
 assert.ok(rouletteKeepReplies.every((reply) => reply.length <= 200));
 assert.deepEqual(
 	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!내 킵", "different-user", "룰렛팬"),
-	["룰렛팬님의 킵 목록이 비어 있습니다."],
+	["룰렛팬님은 아직 킵이 없어요."],
 );
 assert.equal(
 	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!룰렛팬 킵", "roulette-user", "룰렛팬"),
@@ -114,23 +114,23 @@ assert.equal(store.updateRouletteKeeps(firstSessionId, [
 ]), false);
 assert.equal(
 	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰", false),
-	"킵 삭제는 DJ만 할 수 있습니다.",
+	"킵 삭제는 DJ만 할 수 있어요.",
 );
 assert.equal(
 	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰 / 0", true),
-	"차감 수량은 1개 이상 입력해야합니다.",
+	"삭제할 수량은 1개 이상이어야 해요.",
 );
 assert.equal(
 	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 없는 경품", true),
-	"존재하는 킵이 아닙니다.",
+	"해당 킵을 찾지 못했어요. 닉네임과 경품 이름을 확인해 주세요.",
 );
 assert.equal(
 	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰", true),
-	"룰렛팬님의 커피 쿠폰 킵 1개를 삭제했습니다. (4개 남음)",
+	"룰렛팬님의 커피 쿠폰 킵 1개를 삭제했어요. (4개 남음)",
 );
 assert.equal(
 	store.applyRouletteKeepCommand(firstSessionKey, "!킵 삭제 룰렛팬 / 커피 쿠폰 / 3", true),
-	"룰렛팬님의 커피 쿠폰 킵 3개를 삭제했습니다. (1개 남음)",
+	"룰렛팬님의 커피 쿠폰 킵 3개를 삭제했어요. (1개 남음)",
 );
 assert.equal(store.deleteRouletteKeeps(firstSessionId, [
 	{ userId: "roulette-user", itemLabel: "커피 쿠폰" },
@@ -139,7 +139,7 @@ assert.equal(store.deleteRouletteKeeps(firstSessionId, [
 assert.deepEqual(store.listRouletteKeeps(firstSessionId), []);
 assert.deepEqual(
 	store.getRouletteKeepCommandRepliesByKey(firstSessionKey, "!내 킵", "roulette-user", "룰렛팬"),
-	["룰렛팬님의 킵 목록이 비어 있습니다."],
+	["룰렛팬님은 아직 킵이 없어요."],
 );
 assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-restore-coffee-1"), () => 0).itemLabel, "커피 쿠폰");
 assert.equal(store.applyRouletteDonation(firstSessionKey, 101, rouletteEvent("roulette-restore-coffee-2"), () => 0).itemLabel, "커피 쿠폰");
@@ -185,7 +185,7 @@ assert.match(
 );
 assert.match(
 	store.applyRpsCommand(firstSessionKey, "!가위바위보 가위", false, "listener-game", "게임 참가자"),
-	/^이미 참여하셨습니다\.$/,
+	/^게임 참가자님은 이미 참여했어요\.$/,
 );
 const activeRpsRound = store.getRpsRound(firstSessionId);
 assert.equal(activeRpsRound.active, true);
@@ -199,28 +199,28 @@ assert.deepEqual(store.listRpsRounds(firstSessionId).map((round) => round.roundI
 
 assert.equal(store.startRaffleRound(firstSessionId, 300), true);
 assert.equal(store.startRaffleRound(firstSessionId, 1), false);
-assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-1", "추첨 참가자 1"), /참여 완료/);
-assert.equal(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-1", "추첨 참가자 1"), "이미 참여했습니다.");
-assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-2", "추첨 참가자 2"), /참여 완료/);
-assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-3", "추첨 참가자 3"), /참여 완료/);
+assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-1", "추첨 참가자 1"), /응모 완료/);
+assert.equal(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-1", "추첨 참가자 1"), "추첨 참가자 1님은 이미 응모했어요.");
+assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-2", "추첨 참가자 2"), /응모 완료/);
+assert.match(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-3", "추첨 참가자 3"), /응모 완료/);
 const finishedRaffle = store.finishRaffleRound(firstSessionId, () => 0);
 assert.equal(finishedRaffle.active, false);
 assert.equal(finishedRaffle.entries.filter((entry) => entry.winner).length, 3);
 assert.deepEqual(finishedRaffle.entries.filter((entry) => entry.winner).map((entry) => entry.userId), ["raffle-1", "raffle-2", "raffle-3"]);
-assert.equal(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-4", "늦은 참가자"), "현재 진행 중인 추첨이 없습니다.");
+assert.equal(store.applyRaffleCommand(firstSessionKey, "!참여", false, "raffle-4", "늦은 참가자"), "지금 진행 중인 추첨이 없어요.");
 assert.equal(store.listRaffleRounds(firstSessionId)[0].roundId, 1);
 
 assert.equal(store.startQuizRound(firstSessionId, "", "정답"), false);
 assert.equal(store.startQuizRound(firstSessionId, "대한민국의 수도는?", "서울", 10_000), true);
 assert.equal(store.startQuizRound(firstSessionId, "다음 문제", "다음 정답"), false);
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 부산", false, "quiz-1", "퀴즈 참가자 1", 11_000), "퀴즈 참가자 1님, 답안을 제출했습니다.");
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 부산", false, "quiz-1", "퀴즈 참가자 1", 12_000), "이미 동일한 대답을 제출했습니다.");
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 인천", false, "quiz-2", "퀴즈 참가자 2", 11_500), "퀴즈 참가자 2님, 답안을 제출했습니다.");
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 대구", false, "quiz-1", "퀴즈 참가자 1", 11_500), "퀴즈 참가자 1님, 답안을 제출했습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 부산", false, "quiz-1", "퀴즈 참가자 1", 11_000), "퀴즈 참가자 1님 답 접수!");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 부산", false, "quiz-1", "퀴즈 참가자 1", 12_000), "퀴즈 참가자 1님, 같은 답을 이미 냈어요.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 인천", false, "quiz-2", "퀴즈 참가자 2", 11_500), "퀴즈 참가자 2님 답 접수!");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 대구", false, "quiz-1", "퀴즈 참가자 1", 11_500), "퀴즈 참가자 1님 답 접수!");
 assert.deepEqual(store.getQuizRoundByKey(firstSessionKey).submissions.map((entry) => entry.userId), ["quiz-2", "quiz-1"]);
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-2", "퀴즈 참가자 2", 13_500), "퀴즈 참가자 2님, 답안을 제출했습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-2", "퀴즈 참가자 2", 13_500), "퀴즈 참가자 2님 답 접수!");
 assert.equal(store.getQuizRoundByKey(firstSessionKey).active, true);
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-1", "퀴즈 참가자 1", 13_500), "퀴즈 참가자 1님, 답안을 제출했습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-1", "퀴즈 참가자 1", 13_500), "퀴즈 참가자 1님 답 접수!");
 const finishedQuiz = store.finishQuizRound(firstSessionId, 15_000);
 assert.equal(finishedQuiz.active, false);
 assert.equal(finishedQuiz.winnerUserId, "quiz-2");
@@ -228,14 +228,29 @@ assert.equal(finishedQuiz.winnerNickname, "퀴즈 참가자 2");
 assert.equal(finishedQuiz.elapsedMs, 3_500);
 assert.deepEqual(finishedQuiz.submissions.filter((entry) => entry.correct).map((entry) => entry.userId), ["quiz-2", "quiz-1"]);
 assert.deepEqual(store.formatQuizResultMessages(finishedQuiz), [
-	"퀴즈 종료! 정답: 서울\n최초 정답: 퀴즈 참가자 2 (3.5초)\n최초 정답: 퀴즈 참가자 1 (3.5초)\n정답자: 퀴즈 참가자 2 (3.5초)\n정답자: 퀴즈 참가자 1 (3.5초)",
+	"[퀴즈] 종료! 정답: 서울\n첫 정답: 퀴즈 참가자 2 (3.5초)\n첫 정답: 퀴즈 참가자 1 (3.5초)",
 ]);
-assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-3", "늦은 참가자"), "현재 진행 중인 퀴즈가 없습니다.");
+assert.equal(store.applyQuizCommand(firstSessionKey, "!정답 서울", false, "quiz-3", "늦은 참가자"), "지금 진행 중인 퀴즈가 없어요.");
+
+assert.deepEqual(store.startNextQueuedQuizByKey(firstSessionKey), { kind: "empty" });
+assert.equal(store.addQuizQueueItem(firstSessionId, "", "정답"), "invalid");
+assert.equal(store.addQuizQueueItem(firstSessionId, "첫 대기 문제", "하나"), "added");
+assert.equal(store.addQuizQueueItem(firstSessionId, "둘째 대기 문제", "둘"), "added");
+const queuedQuizzes = store.listQuizQueue(firstSessionId);
+assert.deepEqual(queuedQuizzes.map((item) => item.question), ["첫 대기 문제", "둘째 대기 문제"]);
+assert.deepEqual(store.startNextQueuedQuizByKey(firstSessionKey, 30_000), { kind: "started", question: "첫 대기 문제" });
+assert.deepEqual(store.startNextQueuedQuizByKey(firstSessionKey), { kind: "already_active" });
+assert.equal(store.listQuizQueue(firstSessionId).length, 1);
+assert.equal(store.getQuizRoundByKey(firstSessionKey).answer, "하나");
+assert.equal(store.finishQuizRoundByKey(firstSessionKey, 31_000).active, false);
+assert.equal(store.deleteQuizQueueItem(firstSessionId, queuedQuizzes[1].id), true);
+assert.deepEqual(store.listQuizQueue(firstSessionId), []);
+assert.equal(store.addQuizQueueItem(firstSessionId, "백업용 대기 문제", "백업"), "added");
 
 const settings = store.getBotSettings(firstSessionId);
 const commandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey);
-assert.match(commandReplies.join(" "), /전체 사용 명령어:/);
-assert.match(commandReplies.join(" "), /DJ 전용 명령어:\n!실드 \+N\/-N\n!신청곡 삭제 번호/);
+assert.match(commandReplies.join(" "), /사용할 수 있는 명령어:/);
+assert.match(commandReplies.join(" "), /DJ 전용:\n!실드 \+N\/-N\n!신청곡 삭제 번호/);
 assert.doesNotMatch(commandReplies.join(" "), /!하트랭킹/);
 assert.doesNotMatch(commandReplies.join(" "), /!오늘의 하트랭킹/);
 assert.doesNotMatch(commandReplies.join(" "), /!애청온도랭킹/);
@@ -257,20 +272,20 @@ assert.equal(store.updateBotCommand(firstSessionId, "!수정후", "!테스트", 
 assert.equal(store.findBotCommandResponse(firstSessionKey, "!수정후", null), "수정된 응답");
 const populatedCommandReplies = store.getAvailableCommandRepliesByKey(firstSessionKey, true).join(" ");
 assert.match(populatedCommandReplies, /!테스트/);
-assert.match(populatedCommandReplies, /DJ 전용 명령어:/);
+assert.match(populatedCommandReplies, /DJ 전용:/);
 assert.doesNotMatch(populatedCommandReplies, /영구 명령어|수정된 응답|실드 0개/);
-store.updateBotSettings(firstSessionId, {
-	...store.getBotSettings(firstSessionId),
-	commandsEnabled: false,
-});
 assert.match(store.getAvailableCommandRepliesByKey(firstSessionKey).join(" "), /!테스트/);
+assert.equal(store.getBotSettings(firstSessionId).followEnabled, true);
+store.updateBotSettings(firstSessionId, { ...store.getBotSettings(firstSessionId), followEnabled: false, followMessage: "{nickname}님 팔로우 고마워요" });
+assert.equal(store.getBotSettings(firstSessionId).followEnabled, false);
+assert.equal(store.getBotSettings(firstSessionId).followMessage, "{nickname}님 팔로우 고마워요");
 const shield = store.listBotCounters(firstSessionId).find((counter) => counter.name === "실드");
 assert.equal(store.saveBotCounter(firstSessionId, shield.id, shield.name, 5), true);
-assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드 +2", true), "실드 7개 남았습니다.");
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드 +2", true), "실드 7개 남았어요.");
 assert.equal(store.listBotCounters(firstSessionId).find((counter) => counter.id === shield.id).value, 7);
 assert.deepEqual(
 	store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A"),
-	["신청곡 목록이 비어 있습니다."],
+	["아직 신청곡이 없어요."],
 );
 store.applySongRequestCommand(firstSessionKey, "!신청곡 밤편지-아이유", false, "청취자 A");
 assert.match(
@@ -336,7 +351,9 @@ assert.equal(coreBackup.includesAudience, false);
 assert.equal(coreBackup.data.tables.audience_events, undefined);
 assert.equal(coreBackup.data.tables.raffle_rounds.length, 1);
 assert.equal(coreBackup.data.tables.raffle_entries.length, 3);
-assert.equal(coreBackup.data.tables.quiz_rounds.length, 1);
+assert.equal(coreBackup.data.tables.quiz_rounds.length, 2);
+assert.equal(coreBackup.data.tables.quiz_queue.length, 1);
+assert.deepEqual(coreBackup.data.tables.follow_settings.map((row) => ({ ...row })), [{ enabled: 0, message: "{nickname}님 팔로우 고마워요" }]);
 assert.equal(coreBackup.data.tables.quiz_submissions.length, 2);
 assert.equal(JSON.stringify(coreBackup).includes("test-access"), false);
 assert.ok(backups.parseSignedWorkspaceBackup(JSON.parse(JSON.stringify(coreBackup))));
@@ -410,9 +427,10 @@ assert.deepEqual(
 );
 assert.equal(store.finishRpsRound(secondSessionId).roundId, 2);
 const mergedQuizRounds = store.listQuizRounds(secondSessionId);
-assert.deepEqual(mergedQuizRounds.map((round) => [round.roundId, round.active]), [[2, true], [1, false]]);
+assert.deepEqual(mergedQuizRounds.map((round) => [round.roundId, round.active]), [[3, true], [2, false], [1, false]]);
+assert.deepEqual(store.listQuizQueue(secondSessionId).map((item) => item.question), ["백업용 대기 문제"]);
 assert.equal(mergedQuizRounds[0].submissions[0].nickname, "재접속 퀴즈 참가자");
-assert.equal(store.finishQuizRound(secondSessionId, 22_000).roundId, 2);
+assert.equal(store.finishQuizRound(secondSessionId, 22_000).roundId, 3);
 assert.equal(store.startRpsRound(secondSessionId, "보"), true);
 store.applyRpsCommand(secondSessionKey, "!가위바위보 가위", false, "listener-third", "세 번째 참가자");
 assert.equal(store.finishRpsRound(secondSessionId).roundId, 3);
@@ -497,4 +515,73 @@ assert.ok(longKeepReplies.length > 1);
 assert.ok(longKeepReplies.every((reply) => reply.length <= 200));
 assert.ok(longKeepReplies.every((reply) => reply.includes("\n")));
 
-console.log("Persistent ranking checks passed: restore, deduplication, and period totals");
+// Login-time linking (GET /v1/me): a fresh browser reaches the DJ's saved data at once.
+const loginDj = "login-dj-id";
+const loginA = "login-session-a";
+store.saveSession(loginA, token);
+const loginAKey = store.getSessionKey(loginA);
+assert.equal(store.isWorkspaceLinkedByKey(loginAKey), false);
+store.linkDjWorkspaceByKey(loginAKey, loginDj, null);
+assert.equal(store.isWorkspaceLinkedByKey(loginAKey), true);
+assert.equal(store.getSessionDjUserIdByKey(loginAKey), loginDj);
+store.upsertBotCommand(loginA, "!로그인", "저장된 응답");
+const loginB = "login-session-b";
+store.saveSession(loginB, token);
+store.linkDjWorkspaceByKey(store.getSessionKey(loginB), loginDj, null);
+assert.ok(store.listBotCommands(loginB).some((command) => command.command === "!로그인"));
+
+// One bot per DJ across devices: the phone session resolves to the PC's bot.
+const loginBKey = store.getSessionKey(loginB);
+assert.equal(store.getWorkspaceBotSessionKey(loginBKey), null);
+store.setBotEnabled(loginA, true);
+assert.equal(store.getWorkspaceBotSessionKey(loginBKey), loginAKey);
+assert.deepEqual(store.listOtherWorkspaceSessionKeys(loginAKey), [loginBKey]);
+store.setBotEnabled(loginB, true);
+assert.equal(store.getWorkspaceBotSessionKey(loginBKey), loginBKey);
+const restoredLoginBots = store.listEnabledBotSessions()
+	.filter(({ sessionKey }) => sessionKey === loginAKey || sessionKey === loginBKey);
+assert.equal(restoredLoginBots.length, 1, "only one bot per DJ is restored");
+store.setBotEnabled(loginA, false);
+store.setBotEnabled(loginB, false);
+
+// A browser previously used by another DJ is never handed to the next DJ.
+assert.equal(store.sessionBelongsToOtherDj(loginAKey, loginDj), false);
+assert.equal(store.sessionBelongsToOtherDj(loginAKey, "other-dj-id"), true);
+store.linkDjWorkspaceByKey(loginAKey, "other-dj-id", "다른 DJ");
+assert.equal(store.getSessionDjUserIdByKey(loginAKey), "other-dj-id");
+assert.equal(store.listBotCommands(loginA).some((command) => command.command === "!로그인"), false);
+assert.ok(store.listBotCommands(loginB).some((command) => command.command === "!로그인"));
+
+// Batched acknowledgements: an accepted entry goes to the callback, not a reply.
+const ackedNames = [];
+assert.equal(store.startRaffleRound(loginB, 1), true);
+assert.equal(store.applyRaffleCommand(loginBKey, "!참여", false, "ack-1", "묶음 참가자", (name) => ackedNames.push(name)), null);
+assert.deepEqual(ackedNames, ["묶음 참가자"]);
+assert.equal(store.applyRaffleCommand(loginBKey, "!참여", false, "ack-1", "묶음 참가자", (name) => ackedNames.push(name)), "묶음 참가자님은 이미 응모했어요.");
+store.finishRaffleRound(loginB, () => 0);
+
+// A donation recovered from the donations API and the same donation from the
+// stream (different ids) count once: Spoon identifies donations by donor + time.
+const streamDonation = { event: "donation", id: "stream-id-1", data: { user: { id: "donor-1", nickname: "후원자" }, amount: 300, message: "응원해요", time: "2026-10-19T05:47:50.512Z" } };
+const apiDonation = { event: "donation", id: "donation:donor-1:2026-10-19T05:47:50.512Z", data: { user: { id: "donor-1", nickname: "후원자" }, amount: 300, message: null, time: "2026-10-19T05:47:50.512Z" } };
+assert.equal(store.recordAudienceEvent(loginBKey, 777, apiDonation), true);
+assert.equal(store.recordAudienceEvent(loginBKey, 777, streamDonation), false);
+
+// One token set per DJ: a login hands its token to the DJ's other sessions and
+// reports their old refresh tokens; a refresh propagates; disconnect signs out all.
+const peerA = "token-peer-a";
+const peerB = "token-peer-b";
+store.saveSession(peerA, { ...token, access_token: "old-access", refresh_token: "old-refresh" });
+store.linkDjWorkspaceByKey(store.getSessionKey(peerA), "token-dj", null);
+store.saveSession(peerB, { ...token, access_token: "new-access", refresh_token: "new-refresh" });
+store.linkDjWorkspaceByKey(store.getSessionKey(peerB), "token-dj", null);
+assert.deepEqual(store.adoptTokenForDjSessions(store.getSessionKey(peerB)), ["old-refresh"]);
+assert.equal(store.getSession(peerA).refresh_token, "new-refresh");
+store.updateSessionByKey(store.getSessionKey(peerA), { ...token, access_token: "rotated-access", refresh_token: "rotated-refresh" });
+assert.equal(store.getSession(peerB).refresh_token, "rotated-refresh");
+assert.equal(store.getTokenGroupKey(store.getSessionKey(peerA)), store.getTokenGroupKey(store.getSessionKey(peerB)));
+store.invalidateDjSessionsByKey(store.getSessionKey(peerA));
+assert.equal(store.getSession(peerA), null);
+assert.equal(store.getSession(peerB), null);
+
+console.log("Persistent ranking checks passed: restore, deduplication, period totals, login linking, multi-device bots, acks, donation recovery, and shared tokens");

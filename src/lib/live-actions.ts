@@ -1,0 +1,262 @@
+import "server-only";
+
+import { randomInt } from "node:crypto";
+import { sendBotChat } from "./chat";
+import { flushGameAcks } from "./chat-acks";
+import {
+  AUTOMATION_LABELS,
+  DJ_COMMAND_HELP,
+  type AutomationFeature,
+  type DjCommand,
+} from "./dj-command";
+import { formatRaffleResultMessages } from "./raffle";
+import { formatRpsResultMessages, RPS_CHOICES, type RpsChoice } from "./rock-paper-scissors";
+import {
+  applyBotCounterCommand,
+  finishQuizRoundByKey,
+  finishRaffleRoundByKey,
+  finishRpsRoundByKey,
+  formatQuizResultMessages,
+  getBotSettingsByKey,
+  getQuizRoundByKey,
+  getRaffleRoundByKey,
+  getRouletteSettingsByKey,
+  getRpsRoundByKey,
+  getSessionByKey,
+  getWorkspaceBotSessionKey,
+  isBotEnabledByKey,
+  isValidQuiz,
+  listBotCountersByKey,
+  listQuizQueueByKey,
+  startNextQueuedQuizByKey,
+  startQuizRoundByKey,
+  startRaffleRoundByKey,
+  startRpsRoundByKey,
+  updateBotSettingsByKey,
+  updateRouletteSettingsByKey,
+} from "./session-store";
+
+// Shared live-broadcast actions. The dashboard routes, DJ chat commands and the
+// remote page all call these so validation and chat announcements stay in one place.
+
+export type LiveActionFailure =
+  | "bot_required"
+  | "missing_scope"
+  | "already_active"
+  | "not_active"
+  | "invalid_winner_count"
+  | "invalid_quiz"
+  | "queue_empty";
+
+export type LiveActionResult =
+  | { ok: true; status: string }
+  | { ok: false; status: LiveActionFailure };
+
+const FAILURE_REPLIES: Record<LiveActionFailure, string> = {
+  bot_required: "봇이 방송에 들어와 있을 때만 할 수 있어요.",
+  missing_scope: "봇 채팅 권한이 없어 진행할 수 없어요.",
+  already_active: "이미 진행 중이에요. 먼저 종료해 주세요.",
+  not_active: "지금 진행 중인 게임이 없어요.",
+  invalid_winner_count: "당첨 인원을 다시 확인해 주세요.",
+  invalid_quiz: "퀴즈 문제나 정답을 다시 확인해 주세요.",
+  queue_empty: "준비된 퀴즈가 없어요.",
+};
+
+// Sends through the session that runs the DJ's bot, so a press on another of the
+// DJ's devices (e.g. the phone remote) shares its chat queue and echo guard.
+function botSessionOf(sessionKey: string) {
+  return getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
+}
+
+function fail(status: LiveActionFailure): LiveActionResult {
+  return { ok: false, status };
+}
+
+function checkChatGame(sessionKey: string): LiveActionFailure | null {
+  if (!isBotEnabledByKey(sessionKey)) return "bot_required";
+  const scopes = getSessionByKey(sessionKey)?.scope.split(" ") ?? [];
+  if (!scopes.includes("events.chat") || !scopes.includes("chat.send")) return "missing_scope";
+  return null;
+}
+
+// Queues without waiting for delivery: enqueueing already fixes the order, and
+// the DJ's button press should not hang while a long result is being sent.
+async function announce(sessionKey: string, messages: string[]) {
+  for (const message of messages) void sendBotChat(sessionKey, message);
+}
+
+export async function startRps(sessionKey: string, djChoice?: RpsChoice): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const blocked = checkChatGame(sessionKey);
+  if (blocked) return fail(blocked);
+  const choice = djChoice ?? RPS_CHOICES[randomInt(RPS_CHOICES.length)];
+  if (!startRpsRoundByKey(sessionKey, choice)) return fail("already_active");
+  await announce(sessionKey, [
+    "[가위바위보] 시작! 채팅에 '!가위바위보 가위'처럼 가위·바위·보 중 하나를 입력해 주세요. (1인 1회)",
+  ]);
+  return { ok: true, status: "started" };
+}
+
+export async function finishRps(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const round = finishRpsRoundByKey(sessionKey);
+  if (!round) return fail("not_active");
+  flushGameAcks(sessionKey, "rps");
+  await announce(sessionKey, formatRpsResultMessages(round.entries, round.djChoice));
+  return { ok: true, status: "finished" };
+}
+
+export async function startRaffle(sessionKey: string, winnerCount: number): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const blocked = checkChatGame(sessionKey);
+  if (blocked) return fail(blocked);
+  if (!Number.isSafeInteger(winnerCount) || winnerCount < 1) return fail("invalid_winner_count");
+  if (!startRaffleRoundByKey(sessionKey, winnerCount)) return fail("already_active");
+  await announce(sessionKey, [
+    `[추첨] 시작! 채팅에 '!참여'를 입력하면 응모돼요. (1인 1회 · ${winnerCount.toLocaleString("ko-KR")}명 당첨)`,
+  ]);
+  return { ok: true, status: "started" };
+}
+
+export async function finishRaffle(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const round = finishRaffleRoundByKey(sessionKey);
+  if (!round) return fail("not_active");
+  flushGameAcks(sessionKey, "raffle");
+  const winners = round.entries.filter((entry) => entry.winner);
+  await announce(sessionKey, [
+    `[추첨] 종료! ${round.entries.length.toLocaleString("ko-KR")}명 중 ${winners.length.toLocaleString("ko-KR")}명 당첨`,
+    ...formatRaffleResultMessages(winners),
+  ]);
+  return { ok: true, status: "finished" };
+}
+
+function quizStartMessages(question: string) {
+  return [`[퀴즈] ${question}`, "채팅에 '!정답 (답)'으로 답을 적어 주세요. 다시 내면 마지막 답으로 바뀌어요."];
+}
+
+export async function startQuiz(sessionKey: string, question: string, answer: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const blocked = checkChatGame(sessionKey);
+  if (blocked) return fail(blocked);
+  if (!isValidQuiz(question, answer)) return fail("invalid_quiz");
+  if (!startQuizRoundByKey(sessionKey, question, answer)) return fail("already_active");
+  await announce(sessionKey, quizStartMessages(question.trim()));
+  return { ok: true, status: "started" };
+}
+
+export async function startNextQuiz(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const blocked = checkChatGame(sessionKey);
+  if (blocked) return fail(blocked);
+  if (getQuizRoundByKey(sessionKey)?.active) return fail("already_active");
+  const started = startNextQueuedQuizByKey(sessionKey);
+  if (started.kind === "empty") return fail("queue_empty");
+  if (started.kind === "already_active") return fail("already_active");
+  await announce(sessionKey, quizStartMessages(started.question));
+  return { ok: true, status: "started" };
+}
+
+export async function finishQuiz(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const round = finishQuizRoundByKey(sessionKey);
+  if (!round) return fail("not_active");
+  flushGameAcks(sessionKey, "quiz");
+  await announce(sessionKey, formatQuizResultMessages(round));
+  return { ok: true, status: "finished" };
+}
+
+// Same path as the DJ typing `!이름 +N` in chat, including the announcement.
+export async function adjustCounter(sessionKey: string, counterId: number, delta: number) {
+  sessionKey = botSessionOf(sessionKey);
+  const counter = listBotCountersByKey(sessionKey).find((item) => item.id === counterId);
+  if (!counter || !Number.isSafeInteger(delta) || delta === 0) return false;
+  const reply = applyBotCounterCommand(
+    sessionKey,
+    `!${counter.name} ${delta > 0 ? "+" : ""}${delta}`,
+    true,
+  );
+  if (reply) await sendBotChat(sessionKey, reply);
+  return true;
+}
+
+export function setRouletteEnabled(sessionKey: string, enabled: boolean) {
+  const current = getRouletteSettingsByKey(sessionKey);
+  updateRouletteSettingsByKey(sessionKey, { ...current, enabled });
+}
+
+export function setAutomationEnabled(sessionKey: string, feature: AutomationFeature, enabled: boolean) {
+  const current = getBotSettingsByKey(sessionKey);
+  updateBotSettingsByKey(sessionKey, {
+    ...current,
+    ...(feature === "welcome" && { welcomeEnabled: enabled }),
+    ...(feature === "donation" && { donationEnabled: enabled }),
+    ...(feature === "heart" && { heartEnabled: enabled }),
+    ...(feature === "repeat" && { repeatEnabled: enabled }),
+    ...(feature === "follow" && { followEnabled: enabled }),
+  });
+}
+
+function onOff(enabled: boolean) {
+  return enabled ? "ON" : "OFF";
+}
+
+export function formatLiveStatus(sessionKey: string) {
+  const rps = getRpsRoundByKey(sessionKey);
+  const raffle = getRaffleRoundByKey(sessionKey);
+  const quiz = getQuizRoundByKey(sessionKey);
+  const games = [
+    rps?.active && `가위바위보(${rps.entries.length}명)`,
+    raffle?.active && `추첨(${raffle.entries.length}명)`,
+    quiz?.active && `퀴즈(${quiz.submissions.length}명)`,
+  ].filter(Boolean);
+  const settings = getBotSettingsByKey(sessionKey);
+  const roulette = getRouletteSettingsByKey(sessionKey);
+  return [
+    `[봇 상태] 진행 중: ${games.length > 0 ? games.join(", ") : "없음"} · 대기 퀴즈 ${listQuizQueueByKey(sessionKey).length}개`,
+    `룰렛 ${onOff(roulette.enabled)} · 입장 환영 ${onOff(settings.welcomeEnabled)} · 후원 감사 ${onOff(settings.donationEnabled)} · 하트 감사 ${onOff(settings.heartEnabled)} · 팔로우 감사 ${onOff(settings.followEnabled)} · 반복 공지 ${onOff(settings.repeatEnabled)}`,
+  ];
+}
+
+async function replyResult(sessionKey: string, result: LiveActionResult) {
+  if (!result.ok) await sendBotChat(sessionKey, FAILURE_REPLIES[result.status]);
+}
+
+export async function runDjCommand(sessionKey: string, command: DjCommand) {
+  switch (command.kind) {
+    case "help":
+      await announce(sessionKey, [`[DJ 명령어] ${DJ_COMMAND_HELP.join(" | ")}`]);
+      return;
+    case "status":
+      await announce(sessionKey, formatLiveStatus(sessionKey));
+      return;
+    case "usage":
+      await sendBotChat(sessionKey, command.usage);
+      return;
+    case "rps_start":
+      return replyResult(sessionKey, await startRps(sessionKey));
+    case "rps_finish":
+      return replyResult(sessionKey, await finishRps(sessionKey));
+    case "raffle_start":
+      return replyResult(sessionKey, await startRaffle(sessionKey, command.winnerCount));
+    case "raffle_finish":
+      return replyResult(sessionKey, await finishRaffle(sessionKey));
+    case "quiz_start":
+      return replyResult(sessionKey, await startNextQuiz(sessionKey));
+    case "quiz_finish":
+      return replyResult(sessionKey, await finishQuiz(sessionKey));
+    case "roulette_toggle":
+      setRouletteEnabled(sessionKey, command.enabled);
+      await sendBotChat(sessionKey, command.enabled
+        ? `[룰렛] 지금부터 ${getRouletteSettingsByKey(sessionKey).cost.toLocaleString("ko-KR")}스푼 이상 후원하면 룰렛이 돌아가요!`
+        : "[룰렛] 룰렛을 잠시 멈출게요.");
+      return;
+    case "automation_toggle":
+      setAutomationEnabled(sessionKey, command.feature, command.enabled);
+      await sendBotChat(
+        sessionKey,
+        `${AUTOMATION_LABELS[command.feature]} 기능을 ${command.enabled ? "켰어요" : "껐어요"}.`,
+      );
+      return;
+  }
+}

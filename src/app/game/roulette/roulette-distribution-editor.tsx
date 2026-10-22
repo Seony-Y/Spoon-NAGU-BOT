@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfirmButton } from "../../confirm-button";
 import { useState } from "react";
 import Link from "next/link";
 
@@ -51,7 +52,7 @@ export function RouletteDistributionEditor({
           {editing ? (
             <>
               <Link href="/?tab=game&game=roulette">취소</Link>
-              <button type="submit" disabled={missPercentage < 0}>변경사항 저장</button>
+              <button type="submit" disabled={missPercentage < 0}>변경 사항 저장</button>
             </>
           ) : (
             <Link href="/?tab=game&game=roulette&rouletteEdit=1">기존 경품 수정</Link>
@@ -74,7 +75,7 @@ export function RouletteDistributionEditor({
           return (
             <div className={`roulette-percentage-row${isNew ? " is-new" : ""}`} key={row.id || "new"}>
               <label>
-                {isNew ? "새 당첨 내용" : "당첨 내용"}
+                {isNew ? "새 경품 이름" : "경품 이름"}
                 <input
                   name="label"
                   value={row.label}
@@ -109,14 +110,14 @@ export function RouletteDistributionEditor({
                   경품 추가
                 </button>
               ) : (
-                <button className="roulette-remove" type="submit" name="deleteId" value={row.id}>삭제</button>
+                <ConfirmButton className="roulette-remove" type="submit" name="deleteId" value={row.id} message="이 경품을 삭제할까요?">삭제</ConfirmButton>
               )}
             </div>
           );
         })}
         <div className={`roulette-percentage-row is-miss${missPercentage < 0 ? " is-invalid" : ""}`}>
           <strong>꽝</strong>
-          <span><b>{missPercentage.toFixed(2)}%</b><small>(자동 설정)</small></span>
+          <span><b>{missPercentage.toFixed(2)}%</b><small>(자동 계산)</small></span>
         </div>
       </div>
       <div className="roulette-distribution-actions">

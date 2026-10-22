@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 
 import {
+  createAckBatcher,
   createBotAutomationState,
+  createHeartBatcher,
   diffListenerSnapshot,
+  formatHeartMessage,
   normalizeDjNickname,
   processBotAutomation,
   resetBotAutomationState,
@@ -34,7 +37,7 @@ const presence = {
 
 assert.equal(
   processBotAutomation(state, presence),
-  "1위 팬 안녕하세요. DJ DJ입니다. 일등팬님, 반가워요!",
+  "안녕하세요. DJ입니다. 1위 팬 일등팬님, 반가워요!",
 );
 assert.equal(processBotAutomation(state, presence), null);
 assert.equal(state.activity.welcomedListeners, 1);
@@ -89,7 +92,7 @@ const configuredOptions = {
 };
 assert.equal(
   processBotAutomation(configuredState, presence, configuredOptions),
-  "1위 팬 DJ 나구의 방송입니다. 일등팬님, 잘 오셨어요!",
+  "DJ 나구의 방송입니다. 1위 팬 일등팬님, 잘 오셨어요!",
 );
 assert.equal(processBotAutomation(configuredState, like(100), configuredOptions), null);
 assert.equal(processBotAutomation(configuredState, {
@@ -113,7 +116,7 @@ assert.equal(toggledWelcomeState.greetedUserIds.size, 0);
 assert.equal(toggledWelcomeState.activity.welcomedListeners, 0);
 assert.equal(
   processBotAutomation(toggledWelcomeState, presence, configuredOptions),
-  "1위 팬 DJ 나구의 방송입니다. 일등팬님, 잘 오셨어요!",
+  "DJ 나구의 방송입니다. 1위 팬 일등팬님, 잘 오셨어요!",
 );
 
 const templateState = createBotAutomationState();
@@ -140,4 +143,70 @@ assert.equal(
   "누적 하트 100개 달성!",
 );
 
-console.log("Automation checks passed: settings, greetings, hearts, donations, and reset");
+const flushed = [];
+const batcher = createHeartBatcher((batch) => flushed.push(batch), { quietMs: 30, maxWaitMs: 80 });
+batcher.add("fan-1", "일등팬", 1);
+batcher.add("fan-1", "일등팬", 2);
+batcher.add("fan-2", "이등팬", 5);
+await new Promise((resolve) => setTimeout(resolve, 60));
+assert.deepEqual(flushed.sort((a, b) => a.userId.localeCompare(b.userId)), [
+  { userId: "fan-1", nickname: "일등팬", amount: 3 },
+  { userId: "fan-2", nickname: "이등팬", amount: 5 },
+]);
+
+flushed.length = 0;
+const tapping = setInterval(() => batcher.add("fan-3", "연타팬", 1), 10);
+await new Promise((resolve) => setTimeout(resolve, 120));
+clearInterval(tapping);
+assert.ok(flushed.length >= 1, "continuous tapping still flushes after maxWaitMs");
+batcher.clear();
+
+assert.equal(
+  formatHeartMessage({ djNickname: "{나구}", heartMessage: "{name}: {nickname}님 하트 {milestone}개" }, null, 1200),
+  "나구: 청취자님 하트 1,200개",
+);
+
+const follow = { event: "follow", data: { user: { id: "fan-9", nickname: "새팔로워" }, time: "2026-10-20T00:00:00Z" } };
+assert.equal(processBotAutomation(createBotAutomationState(), follow), "새팔로워님, 팔로우 감사합니다!");
+assert.equal(
+  processBotAutomation(createBotAutomationState(), follow, {
+    djNickname: "나구", greetingMessage: "", donationMessage: "", heartMessage: "",
+    welcomeEnabled: true, donationEnabled: true, heartEnabled: true,
+    followMessage: "DJ {name}을 팔로우해 준 {nickname}님 고마워요!", followEnabled: true,
+  }),
+  "DJ 나구을 팔로우해 준 새팔로워님 고마워요!",
+);
+assert.equal(
+  processBotAutomation(createBotAutomationState(), follow, {
+    djNickname: "", greetingMessage: "", donationMessage: "", heartMessage: "",
+    welcomeEnabled: true, donationEnabled: true, heartEnabled: true,
+    followMessage: "x", followEnabled: false,
+  }),
+  null,
+);
+
+const acks = [];
+const ackBatcher = createAckBatcher((game, nicknames) => acks.push([game, nicknames]), { quietMs: 20, maxWaitMs: 60 });
+ackBatcher.add("raffle", "가");
+ackBatcher.add("raffle", "나");
+ackBatcher.add("raffle", "가");
+ackBatcher.add("quiz", "다");
+ackBatcher.flush("quiz");
+assert.deepEqual(acks, [["quiz", ["다"]]]);
+await new Promise((resolve) => setTimeout(resolve, 40));
+assert.deepEqual(acks, [["quiz", ["다"]], ["raffle", ["가", "나"]]]);
+ackBatcher.clear();
+
+const subscriberJoin = {
+  event: "presence",
+  data: { user: { id: "sub-1", nickname: "구독팬" }, type: "JOIN", fanRank: null, isManager: false, favoriteTemperature: 40, time: "2026-10-22T00:00:00Z", subscribed: true },
+};
+assert.equal(processBotAutomation(createBotAutomationState(), subscriberJoin), "안녕하세요. DJ입니다. 구독자 구독팬님, 반가워요!");
+
+const shutdownFlushed = [];
+const shutdownBatcher = createHeartBatcher((batch) => shutdownFlushed.push(batch), { quietMs: 10_000, maxWaitMs: 20_000 });
+shutdownBatcher.add("fan-7", "마지막팬", 4);
+shutdownBatcher.flush();
+assert.deepEqual(shutdownFlushed, [{ userId: "fan-7", nickname: "마지막팬", amount: 4 }]);
+
+console.log("Automation checks passed: settings, greetings, subscribers, hearts, heart batching, ack batching, donations, follows, and reset");

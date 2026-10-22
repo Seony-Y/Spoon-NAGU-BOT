@@ -1,13 +1,20 @@
 import { timingSafeEqual } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
-import { createAuthSession, disconnectAuthSession } from "@/lib/auth";
-import { stopBot } from "@/lib/bot-runtime";
-import { SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
-import { isSessionBlocked } from "@/lib/session-store";
+import { createAuthSession } from "@/lib/auth";
+import { SESSION_COOKIE, SessionConfigurationError, STATE_COOKIE } from "@/lib/session";
+import {
+  adoptTokenForDjSessions,
+  getSessionKey,
+  isSessionBlocked,
+  linkDjWorkspaceByKey,
+  sessionBelongsToOtherDj,
+} from "@/lib/session-store";
 import {
   buildApplicationUrl,
   exchangeCode,
   getMissingRequiredScopes,
+  getMyUserId,
+  hasScope,
   revokeToken,
   type SpoonToken,
 } from "@/lib/spoon";
@@ -29,27 +36,33 @@ function redirectWithError(request: NextRequest, error: string) {
   return response;
 }
 
-async function rejectMissingScopes(request: NextRequest, token: SpoonToken) {
-  await Promise.allSettled([
+function revokeIssuedToken(token: SpoonToken) {
+  return Promise.allSettled([
     revokeToken(token.access_token),
     revokeToken(token.refresh_token),
   ]);
+}
 
-  const currentSessionId = request.cookies.get(SESSION_COOKIE)?.value;
-  if (currentSessionId) {
-    stopBot(currentSessionId);
-    await disconnectAuthSession(currentSessionId).catch(() => undefined);
+// Only the newly issued, incomplete token is discarded. An existing login (and
+// the DJ's other devices sharing its token) keeps working; a failed re-consent
+// should not sign anyone out.
+async function rejectMissingScopes(request: NextRequest, token: SpoonToken) {
+  await revokeIssuedToken(token);
+  return redirectWithError(request, "all_scopes_required");
+}
+
+// Identifies the DJ right after login when the app has the me.read scope, so a
+// new browser or device reaches the DJ's saved data without waiting for a chat.
+async function identifyDj(token: SpoonToken) {
+  if (!hasScope(token.scope, "me.read")) return null;
+  try {
+    return await getMyUserId(token.access_token);
+  } catch {
+    return null;
   }
-
-  const response = redirectWithError(request, "all_scopes_required");
-  response.cookies.delete(SESSION_COOKIE);
-  return response;
 }
 
 export async function GET(request: NextRequest) {
-  if (isSessionBlocked(request.cookies.get(SESSION_COOKIE)?.value)) {
-    return redirectWithError(request, "account_blocked");
-  }
   const query = request.nextUrl.searchParams;
   const state = query.get("state");
 
@@ -67,18 +80,41 @@ export async function GET(request: NextRequest) {
     return redirectWithError(request, "missing_code");
   }
 
+  let token: SpoonToken | null = null;
   try {
-    const token = await exchangeCode(code);
+    const currentSessionId = request.cookies.get(SESSION_COOKIE)?.value;
+    if (isSessionBlocked(currentSessionId)) {
+      return redirectWithError(request, "account_blocked");
+    }
+
+    token = await exchangeCode(code);
     if (getMissingRequiredScopes(token.scope).length > 0) {
       return rejectMissingScopes(request, token);
     }
-    const sessionId = createAuthSession(request.cookies.get(SESSION_COOKIE)?.value, token);
-    const response = NextResponse.redirect(buildApplicationUrl("/?status=connected", request.url));
+
+    const djUserId = await identifyDj(token);
+    const reusableSessionId = currentSessionId
+      && !(djUserId && sessionBelongsToOtherDj(getSessionKey(currentSessionId), djUserId))
+      ? currentSessionId
+      : undefined;
+    const sessionId = createAuthSession(reusableSessionId, token);
+    if (djUserId) {
+      const sessionKey = getSessionKey(sessionId);
+      linkDjWorkspaceByKey(sessionKey, djUserId, null);
+      // One token set per DJ (Spoon's guidance): the DJ's other devices switch
+      // to this login's token and the tokens they held are revoked.
+      void Promise.allSettled(adoptTokenForDjSessions(sessionKey).map((refreshToken) => revokeToken(refreshToken)));
+    }
+
+    const applicationUrl = buildApplicationUrl("/?status=connected", request.url);
+    const response = NextResponse.redirect(applicationUrl);
 
     response.cookies.delete(STATE_COOKIE);
     response.cookies.set(SESSION_COOKIE, sessionId, {
       httpOnly: true,
-      secure: request.nextUrl.protocol === "https:",
+      // From the configured public URL: behind a TLS-terminating proxy the
+      // request itself can look like plain http.
+      secure: applicationUrl.protocol === "https:",
       sameSite: "lax",
       path: "/",
       maxAge: 365 * 24 * 60 * 60,
@@ -87,7 +123,9 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
-    const type = error instanceof Error && error.message.includes("required")
+    if (token) await revokeIssuedToken(token);
+    const type = error instanceof SessionConfigurationError
+      || (error instanceof Error && error.message.includes("required"))
       ? "server_configuration"
       : "token_exchange_failed";
     return redirectWithError(request, type);
