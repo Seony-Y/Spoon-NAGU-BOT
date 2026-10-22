@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 
+import { sendAlert } from "../alerts";
 import { type SpoonToken } from "../spoon";
 import {
   decryptToken,
@@ -40,7 +41,7 @@ function decryptStoredToken(sessionKey: string, payload: string): StoredSpoonTok
     // the DJ's saved data, and a rotated or mistyped SESSION_SECRET would wipe
     // every session at boot. Reconnecting replaces the token.
     invalidateAuthSessionByKey(sessionKey);
-    console.error("Stored Spoon token could not be decrypted; marking the session for reconnect");
+    sendAlert("decrypt", "저장된 Spoon 토큰을 복호화하지 못해 해당 로그인을 재연결 필요로 바꿨습니다. SESSION_SECRET이 바뀌지 않았는지 확인해 주세요.");
     return null;
   }
 }

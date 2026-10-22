@@ -1,5 +1,6 @@
 import "server-only";
 
+import { sendAlert, sessionLabel } from "./alerts";
 import { getBotAuthSession } from "./auth";
 import {
   createBotAutomationState,
@@ -82,6 +83,7 @@ const LISTENER_POLL_MS = 10_000;
 // means a half-open connection that would otherwise look "connected".
 const STREAM_IDLE_MS = 45_000;
 const MAX_DAILY_LIMIT_WAIT_MS = 60 * 60 * 1000;
+const RECONNECT_ALERT_ATTEMPTS = 5;
 
 export type BotConnectionState =
   | "stopped"
@@ -543,6 +545,9 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       setRuntimeState(sessionKey, "reconnecting");
       await abortableDelay(nextBackoff(retryAttempt), signal);
       retryAttempt += 1;
+      if (retryAttempt === RECONNECT_ALERT_ATTEMPTS) {
+        sendAlert(`reconnect:${sessionLabel(sessionKey)}`, `봇(${sessionLabel(sessionKey)}) 재연결이 ${RECONNECT_ALERT_ATTEMPTS}번 연속 실패했습니다.`);
+      }
       continue;
     }
     forceRefresh = false;
@@ -703,7 +708,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (error instanceof SpoonApiErrorResponse && error.retryAfterMs) {
         // Daily limit: checking the live status again before the reset only
         // burns attempts. Re-check at most hourly in case the limit lifts.
-        console.error("Spoon daily API limit reached; waiting", Math.round(error.retryAfterMs / 1000), "s");
+        sendAlert("daily-limit", `Spoon 하루 API 한도에 도달했습니다. 약 ${Math.round(error.retryAfterMs / 60_000)}분 뒤 초기화됩니다.`);
         setRuntimeState(sessionKey, "reconnecting");
         await abortableDelay(Math.min(error.retryAfterMs, MAX_DAILY_LIMIT_WAIT_MS), signal);
         continue;
@@ -722,6 +727,9 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
     setRuntimeState(sessionKey, "reconnecting");
     await abortableDelay(nextBackoff(retryAttempt), signal);
     retryAttempt += 1;
+    if (retryAttempt === RECONNECT_ALERT_ATTEMPTS) {
+      sendAlert(`reconnect:${sessionLabel(sessionKey)}`, `봇(${sessionLabel(sessionKey)}) 재연결이 ${RECONNECT_ALERT_ATTEMPTS}번 연속 실패했습니다.`);
+    }
   }
 }
 
@@ -772,7 +780,7 @@ function startBotByKey(sessionKey: string) {
   runtime.task = runBot(sessionKey, controller.signal).catch((error: unknown) => {
     // e.g. a database error outside the reconnect loop's try: surface it instead
     // of leaving the dashboard stuck on "connecting".
-    console.error("Bot worker stopped", error instanceof Error ? error.message : error);
+    sendAlert(`worker:${sessionLabel(sessionKey)}`, `봇(${sessionLabel(sessionKey)})이 오류로 멈췄습니다: ${error instanceof Error ? error.message : String(error)}`);
     runtime.state = "error";
   }).finally(() => {
     if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
@@ -858,7 +866,7 @@ export function restoreEnabledBots() {
   } catch (error) {
     // Allow a later request to retry instead of never restoring in this process.
     globalForBots.naguBotRestoreStarted = false;
-    console.error("Could not restore bots", error instanceof Error ? error.message : error);
+    sendAlert("restore", `서버 시작 시 봇을 복원하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
   for (const { sessionKey, token } of sessions) {
@@ -869,7 +877,7 @@ export function restoreEnabledBots() {
       }
       startBotByKey(sessionKey);
     } catch (error) {
-      console.error("Could not restore a bot", error instanceof Error ? error.message : error);
+      sendAlert(`restore:${sessionLabel(sessionKey)}`, `봇(${sessionLabel(sessionKey)})을 복원하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

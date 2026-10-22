@@ -643,4 +643,28 @@ assert.equal(store.getAppState("maintenance:last_backup") !== null, true);
 assert.notEqual(maintenance.runDailyCleanup(), null);
 assert.equal(maintenance.runDailyCleanup(), null);
 
+// Alerts: posted to the webhook as Discord/Slack-compatible JSON, at most once
+// per kind per 30 minutes.
+const { createServer } = await import("node:http");
+const alertBodies = [];
+const webhook = createServer((request, response) => {
+	let body = "";
+	request.on("data", (chunk) => { body += chunk; });
+	request.on("end", () => { alertBodies.push(JSON.parse(body)); response.end("ok"); });
+});
+await new Promise((resolve) => webhook.listen(0, "127.0.0.1", resolve));
+process.env.ALERT_WEBHOOK_URL = `http://127.0.0.1:${webhook.address().port}/hook`;
+const alerts = await import("../src/lib/alerts.ts");
+const quietError = console.error;
+console.error = () => {};
+alerts.sendAlert("test-kind", "첫 알림");
+alerts.sendAlert("test-kind", "30분 안의 같은 종류");
+alerts.sendAlert("other-kind", "다른 종류");
+console.error = quietError;
+await new Promise((resolve) => setTimeout(resolve, 300));
+webhook.close();
+assert.equal(alertBodies.length, 2);
+assert.equal(alertBodies[0].content, alertBodies[0].text);
+assert.match(alertBodies.map((body) => body.content).join(" "), /첫 알림.*다른 종류|다른 종류.*첫 알림/);
+
 console.log("Persistent ranking checks passed: restore, deduplication, period totals, login linking, multi-device bots, acks, donation recovery, and shared tokens");

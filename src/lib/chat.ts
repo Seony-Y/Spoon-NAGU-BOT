@@ -1,5 +1,6 @@
 import "server-only";
 
+import { sendAlert } from "./alerts";
 import { getBotAuthSession } from "./auth";
 import { truncateChatMessage, validateChatMessage, type ChatValidationError } from "./chat-message";
 import { getSessionKey, getWorkspaceBotSessionKey } from "./session-store";
@@ -58,7 +59,11 @@ async function sendChatRequest(accessToken: string, message: string): Promise<Ch
   if (response.status === 404) return { kind: "offline" };
   if (response.status === 429) {
     // With Retry-After it is the daily limit: retrying today is pointless.
-    return { kind: parseRetryAfter(response) ? "daily_limited" : "rate_limited" };
+    if (parseRetryAfter(response)) {
+      sendAlert("chat-daily-limit", "Spoon 하루 채팅 한도에 도달해 봇 메시지를 보내지 못하고 있습니다.");
+      return { kind: "daily_limited" };
+    }
+    return { kind: "rate_limited" };
   }
 
   const detailCode = await readDetailCode(response);
