@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "NAGU BOT",
-  description: "Spoon OAuth connection for NAGU BOT",
+  description: "Spoon DJ를 위한 방송 도우미 봇 NAGU BOT",
   icons: {
     icon: favicon.src,
   },

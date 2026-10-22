@@ -21,6 +21,7 @@ Validation:
 npm test
 npm run lint
 npm run build
+npm run test:e2e   # after build: CRUD over HTTP on a throwaway database
 ```
 
 ## Deployment (Railway)

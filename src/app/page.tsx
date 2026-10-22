@@ -60,7 +60,7 @@ type HomeProps = {
 const errorMessages: Record<string, string> = {
   access_denied: "연동 요청이 취소되었습니다.",
   invalid_scope: "로그인 중 문제가 생겼습니다. 다시 로그인해 주세요.",
-  all_scopes_required: "NAGU BOT에 필요한 모든 권한을 승인해야 연결할 수 있습니다.",
+  all_scopes_required: "NAGU BOT에 필요한 권한을 모두 허용해야 로그인할 수 있습니다. 권한 다시 허용하기를 눌러 모든 권한을 선택해 주세요.",
   access_code_required: "입장코드를 확인한 뒤 Spoon DJ 계정으로 로그인해 주세요.",
   missing_code: "로그인 중 문제가 생겼습니다. 다시 로그인해 주세요.",
   state_mismatch: "다른 로그인 시도와 엇갈렸습니다. 탭 하나에서 처음부터 다시 로그인해 주세요.",
@@ -68,26 +68,29 @@ const errorMessages: Record<string, string> = {
   token_exchange_failed: "로그인을 완료하지 못했습니다. 다시 로그인해 주시고, 계속되면 운영자에게 문의해 주세요.",
   disconnect_failed: "연결 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.",
   authentication_required: "인증이 만료되었습니다. Spoon 계정을 다시 연결해 주세요.",
-  events_scope_required: "실시간 이벤트 권한을 먼저 승인해 주세요.",
+  events_scope_required: "‘실시간 채팅·입장·하트·후원’ 권한을 먼저 허용해 주세요.",
   bot_start_failed: "봇을 입장시키지 못했습니다. 다시 시도해 주세요.",
   account_blocked: "관리자가 이 DJ 연결을 차단했습니다.",
   server_configuration: "서비스 준비 중입니다. 운영자에게 문의해 주세요.",
 };
 
+// Badge order and wording follow the dashboard (required scopes first, then
+// the optional ones); the event labels are also used in the recent-activity list.
 const scopeLabels: Record<string, string> = {
   "live.read": "방송 정보",
-  "dj.follow": "DJ 팔로우",
   "events.chat": "실시간 채팅",
   "events.presence": "청취자 입장",
-  "events.like": "좋아요",
-  "events.donation": "후원 내역",
-  "events.follow": "팔로우",
-  "me.read": "DJ 식별",
-  "donations.read": "후원 기록 조회",
+  "events.like": "하트",
+  "events.donation": "후원",
   "chat.send": "봇 채팅",
   "listeners.read": "청취자 목록",
   "fans.read": "팬 랭킹",
+  "me.read": "DJ 식별",
+  "events.follow": "팔로우",
+  "dj.follow": "DJ 팔로우",
+  "donations.read": "후원 기록",
 };
+const scopeOrder = Object.keys(scopeLabels);
 
 const PREVIEW_FUTURE_TIMESTAMP = 4_102_444_800_000;
 const PREVIEW_EVENT_TIMESTAMP = 1_735_689_600_000;
@@ -511,9 +514,11 @@ export default async function Home({ searchParams }: HomeProps) {
 
             {connected && scopes.length > 0 && (
               <div className="permissions" aria-label="허용된 권한">
-                {scopes.map((scope) => (
-                  <span key={scope}>{scopeLabels[scope] ?? scope}</span>
-                ))}
+                {[...scopes]
+                  .sort((left, right) => (scopeOrder.indexOf(left) + 1 || 99) - (scopeOrder.indexOf(right) + 1 || 99))
+                  .map((scope) => (
+                    <span key={scope}>{scopeLabels[scope] ?? scope}</span>
+                  ))}
               </div>
             )}
 

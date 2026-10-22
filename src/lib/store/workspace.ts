@@ -333,9 +333,10 @@ export function linkDjWorkspaceByKey(sessionKey: string, djUserId: string, nickn
   const currentWorkspaceKey = getWorkspaceKey(sessionKey);
   const owner = getWorkspaceOwner(currentWorkspaceKey);
   if (owner === normalizedUserId) {
-    // Already linked (the common case on every DJ chat): only refresh the nickname.
+    // Already linked (the common case on every DJ chat): only fill in a blank
+    // display name, so a name the DJ typed in the dashboard is never replaced.
     if (normalized) {
-      database.prepare("UPDATE bot_settings SET dj_nickname = ? WHERE session_key = ?")
+      database.prepare("UPDATE bot_settings SET dj_nickname = ? WHERE session_key = ? AND dj_nickname = ''")
         .run(normalized, currentWorkspaceKey);
     }
     return;
@@ -362,7 +363,7 @@ export function linkDjWorkspaceByKey(sessionKey: string, djUserId: string, nickn
       .run(workspaceKey, normalizedUserId, sessionKey);
     ensureBotSettings(sessionKey);
     if (normalized) {
-      database.prepare("UPDATE bot_settings SET dj_nickname = ? WHERE session_key = ?")
+      database.prepare("UPDATE bot_settings SET dj_nickname = ? WHERE session_key = ? AND dj_nickname = ''")
         .run(normalized, workspaceKey);
     }
     database.exec("COMMIT");

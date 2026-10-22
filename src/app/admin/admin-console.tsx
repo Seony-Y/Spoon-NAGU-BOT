@@ -76,7 +76,7 @@ export function AdminConsole({ configured }: AdminConsoleProps) {
       <div className="admin-heading">
         <div>
           <h2 id="sessions-title">DJ 연결</h2>
-          <p>닉네임은 DJ가 표시 이름을 저장하거나 채팅·퀵메시지를 보낸 뒤 확인됩니다. 차단하면 실행 중인 봇이 즉시 종료됩니다.</p>
+          <p>닉네임은 DJ가 표시 이름을 저장하거나, 비어 있을 때 방송에서 처음 채팅(퀵메시지 포함)한 뒤 확인됩니다. 차단하면 실행 중인 봇이 즉시 종료됩니다.</p>
         </div>
       </div>
       {error && <p className="admin-error" role="alert">{error}</p>}

@@ -401,6 +401,13 @@ store.applyRaffleCommand(secondSessionKey, "!참여", false, "raffle-reconnect",
 assert.equal(store.startQuizRound(secondSessionId, "병합할 문제", "병합 정답", 20_000), true);
 store.applyQuizCommand(secondSessionKey, "!정답 오답", false, "quiz-reconnect", "재접속 퀴즈 참가자", 21_000);
 store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
+// A display name the DJ typed is kept; chat only fills in a blank one.
+store.updateBotSettings(secondSessionId, { ...store.getBotSettings(secondSessionId), djNickname: "직접 입력한 이름" });
+store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "스푼 닉네임");
+assert.equal(store.getBotSettings(secondSessionId).djNickname, "직접 입력한 이름");
+store.updateBotSettings(secondSessionId, { ...store.getBotSettings(secondSessionId), djNickname: "" });
+store.linkDjWorkspaceByKey(secondSessionKey, "dj-user-id", "DJ 나구");
+assert.equal(store.getBotSettings(secondSessionId).djNickname, "DJ 나구");
 
 assert.equal(store.listRecentBotEventsByKey(secondSessionKey)[0].type, "presence");
 store.clearRecentBotEventsByKey(secondSessionKey);
