@@ -1,0 +1,245 @@
+/* 관리자 화면 (and the roulette editor rules that follow it). */
+.admin-main {
+  width: min(100% - 48px, 1080px);
+  margin: 0 auto;
+  padding: 72px 0 96px;
+}
+
+.admin-main > h1 {
+  margin: 4px 0 32px;
+  font-size: 38px;
+  letter-spacing: 0;
+}
+
+.admin-login,
+.admin-sessions {
+  border-top: 3px solid var(--text);
+  padding-top: 24px;
+}
+
+.admin-login {
+  max-width: 480px;
+}
+
+.admin-login h2,
+.admin-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.admin-login form {
+  display: grid;
+  margin-top: 24px;
+  gap: 10px;
+}
+
+.admin-login label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-login input {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.admin-login button,
+.admin-heading button,
+.admin-table-wrap button {
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-login button {
+  justify-self: start;
+  background: var(--text);
+  color: #fff;
+}
+
+.admin-login button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.admin-heading p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-heading button {
+  background: #eeeeef;
+  color: var(--text);
+}
+
+.admin-error,
+.admin-success {
+  margin: 20px 0 0;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-error {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.admin-success {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+  margin-top: 28px;
+}
+
+.admin-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-table-wrap th,
+.admin-table-wrap td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.admin-table-wrap th {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-table-wrap td.admin-session-name {
+  display: grid;
+  gap: 3px;
+  white-space: normal;
+}
+
+.admin-session-name small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.admin-block {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.admin-unblock {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+@media (max-width: 760px) {
+  .dashboard-tabs {
+    width: 100%;
+    min-height: 48px;
+    justify-content: flex-start;
+    gap: 28px;
+    overflow-x: auto;
+  }
+
+  .automation-heading,
+  .admin-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .command-form {
+    grid-template-columns: 1fr;
+  }
+
+  .command-custom-item {
+    flex-direction: column;
+  }
+
+  .command-update-form {
+    grid-template-columns: 1fr;
+  }
+
+  .command-update-form button {
+    min-height: 38px;
+  }
+
+  .command-delete-form {
+    justify-content: flex-end;
+  }
+
+  .admin-main {
+    width: min(100% - 32px, 560px);
+    padding: 48px 0 64px;
+  }
+
+  .admin-main > h1 {
+    font-size: 30px;
+  }
+}
+
+@media (max-width: 760px) {
+  .dj-name-form {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .automation-tabs {
+    gap: 18px;
+  }
+
+  .command-enabled-form {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .counter-item {
+    grid-template-columns: 1fr;
+  }
+
+  .counter-item > form,
+  .counter-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .counter-actions {
+    justify-content: flex-end;
+  }
+}
+
+.roulette-distribution-actions > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .backup-scope {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .backup-scope section + section {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    padding-top: 14px;
+    padding-left: 0;
+  }
+}
