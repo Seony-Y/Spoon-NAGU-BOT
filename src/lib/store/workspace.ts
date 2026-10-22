@@ -35,6 +35,7 @@ const AUDIENCE_BACKUP_TABLES = [
   { name: "audience_profiles", key: "workspace_key", columns: ["user_id", "nickname", "first_seen_at", "last_seen_at"] },
   { name: "audience_events", key: "workspace_key", columns: ["event_id", "event_type", "live_id", "user_id", "spoons", "hearts", "favorite_temperature", "occurred_at", "stat_date"] },
   { name: "audience_spoon_snapshots", key: "workspace_key", columns: ["live_id", "user_id", "spoons", "stat_date", "updated_at"] },
+  { name: "audience_archive", key: "workspace_key", columns: ["user_id", "spoons", "hearts", "favorite_temperature"] },
 ] as const;
 
 export const WORKSPACE_BACKUP_TABLES = {
@@ -308,6 +309,14 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM bot_settings WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_events WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_spoon_snapshots WHERE workspace_key = ?").run(sourceKey);
+  database.prepare(`
+    INSERT INTO audience_archive (workspace_key, user_id, spoons, hearts, favorite_temperature)
+    SELECT ?, user_id, spoons, hearts, favorite_temperature FROM audience_archive WHERE workspace_key = ?
+    ON CONFLICT(workspace_key, user_id) DO UPDATE SET
+      spoons = audience_archive.spoons + excluded.spoons,
+      hearts = audience_archive.hearts + excluded.hearts
+  `).run(targetKey, sourceKey);
+  database.prepare("DELETE FROM audience_archive WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM recent_bot_events WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM audience_profiles WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM rps_entries WHERE workspace_key = ?").run(sourceKey);

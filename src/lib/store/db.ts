@@ -255,6 +255,24 @@ function migrateDatabase(database: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS audience_events_period_idx
       ON audience_events (workspace_key, stat_date, live_id, user_id);
+    -- Per-user totals of audience events compacted away after the retention
+    -- period, so all-time rankings keep counting them.
+    CREATE TABLE IF NOT EXISTS audience_archive (
+      workspace_key TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      spoons INTEGER NOT NULL DEFAULT 0,
+      hearts INTEGER NOT NULL DEFAULT 0,
+      favorite_temperature REAL,
+      PRIMARY KEY (workspace_key, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS blocked_djs (
+      dj_user_id TEXT PRIMARY KEY,
+      blocked_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS app_migrations (
       key TEXT PRIMARY KEY,
       applied_at INTEGER NOT NULL
@@ -365,6 +383,14 @@ function migrateDatabase(database: DatabaseSync) {
 // is re-evaluated by dev HMR while the connection itself is reused.
 let migratedDatabase: DatabaseSync | undefined;
 
+export function getDatabasePath() {
+  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
+  return resolve(
+    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH
+      || (isRailway ? "/data/nagu.db" : ".data/nagu.db"),
+  );
+}
+
 export function getDatabase() {
   if (globalForDatabase.naguSessionDatabase) {
     if (migratedDatabase !== globalForDatabase.naguSessionDatabase) {
@@ -374,11 +400,7 @@ export function getDatabase() {
     return globalForDatabase.naguSessionDatabase;
   }
 
-  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
-  const databasePath = resolve(
-    /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH
-      || (isRailway ? "/data/nagu.db" : ".data/nagu.db"),
-  );
+  const databasePath = getDatabasePath();
   mkdirSync(dirname(databasePath), { recursive: true });
 
   // Wait briefly instead of failing at once if another process (a deploy
@@ -411,6 +433,23 @@ export function checkpointDatabase() {
   } catch {
     // The WAL is durable on its own; a failed checkpoint only costs startup time.
   }
+}
+
+export function getAppState(key: string) {
+  const row = getDatabase().prepare("SELECT value FROM app_state WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setAppState(key: string, value: string) {
+  getDatabase().prepare(`
+    INSERT INTO app_state (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value);
+}
+
+// Consistent copy of the live database (safe while it is being written).
+export function backupDatabaseTo(path: string) {
+  getDatabase().exec(`VACUUM INTO '${path.replaceAll("'", "''")}'`);
 }
 
 export function checkDatabase() {

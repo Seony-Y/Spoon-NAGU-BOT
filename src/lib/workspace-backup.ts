@@ -11,7 +11,9 @@ import {
 
 const BACKUP_VERSION = 1;
 const MAX_ROWS_PER_TABLE = 50_000;
+// Tables added after the first backup format; backups made before them omit them.
 const OPTIONAL_CORE_TABLES = new Set(["quiz_rounds", "quiz_submissions", "quiz_queue", "follow_settings"]);
+const OPTIONAL_AUDIENCE_TABLES = new Set(["audience_archive"]);
 
 type BackupBody = {
   format: "nagu-bot-workspace";
@@ -57,13 +59,15 @@ function isValidData(data: unknown, includesAudience: boolean): data is Workspac
   if (WORKSPACE_BACKUP_TABLES.core.some(({ name }) => (
     !OPTIONAL_CORE_TABLES.has(name) && !Object.hasOwn(tables, name)
   ))) return false;
-  if (includesAudience && WORKSPACE_BACKUP_TABLES.audience.some(({ name }) => !Object.hasOwn(tables, name))) {
+  if (includesAudience && WORKSPACE_BACKUP_TABLES.audience.some(({ name }) => (
+    !OPTIONAL_AUDIENCE_TABLES.has(name) && !Object.hasOwn(tables, name)
+  ))) {
     return false;
   }
 
   for (const specification of specifications) {
     const rows = tables[specification.name];
-    if (OPTIONAL_CORE_TABLES.has(specification.name) && rows === undefined) continue;
+    if ((OPTIONAL_CORE_TABLES.has(specification.name) || OPTIONAL_AUDIENCE_TABLES.has(specification.name)) && rows === undefined) continue;
     if (!Array.isArray(rows) || rows.length > MAX_ROWS_PER_TABLE) return false;
     const expectedColumns = new Set<string>(specification.columns);
     for (const row of rows) {

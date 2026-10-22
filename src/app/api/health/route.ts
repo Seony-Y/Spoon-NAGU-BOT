@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkDatabase } from "@/lib/session-store";
+import { checkDatabase, getAppState } from "@/lib/session-store";
 
 export const runtime = "nodejs";
 
@@ -8,7 +8,11 @@ export const runtime = "nodejs";
 export function GET() {
   try {
     checkDatabase();
-    return NextResponse.json({ service: "nagu-bot", status: "ok" });
+    return NextResponse.json({
+      service: "nagu-bot",
+      status: "ok",
+      lastBackup: getAppState("maintenance:last_backup"),
+    });
   } catch {
     return NextResponse.json({ service: "nagu-bot", status: "database_unavailable" }, { status: 503 });
   }

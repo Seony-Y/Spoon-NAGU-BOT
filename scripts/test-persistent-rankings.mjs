@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
 process.env.SESSION_SECRET = "test-session-secret-that-is-at-least-32-characters";
-process.env.SESSION_STORE_PATH = join(tmpdir(), `nagu-ranking-test-${process.pid}.db`);
-rmSync(process.env.SESSION_STORE_PATH, { force: true });
+// Own directory: the maintenance test writes backups/ next to the database.
+const testDirectory = join(tmpdir(), `nagu-ranking-test-${process.pid}`);
+rmSync(testDirectory, { recursive: true, force: true });
+mkdirSync(testDirectory, { recursive: true });
+process.env.SESSION_STORE_PATH = join(testDirectory, "nagu.db");
 
 const legacyDatabase = new DatabaseSync(process.env.SESSION_STORE_PATH);
 legacyDatabase.exec(`
@@ -590,5 +593,35 @@ assert.equal(store.getTokenGroupKey(store.getSessionKey(peerA)), store.getTokenG
 store.invalidateDjSessionsByKey(store.getSessionKey(peerA));
 assert.equal(store.getSession(peerA), null);
 assert.equal(store.getSession(peerB), null);
+
+// Maintenance: compacting old audience history keeps all-time totals intact.
+const totalsByUser = (entries) => Object.fromEntries(entries.map((e) => [e.userId, [e.spoons, e.hearts]]).sort());
+const allBefore = totalsByUser(store.listAudienceRankings(firstSessionId, "all"));
+assert.ok(Object.keys(allBefore).length > 0);
+assert.ok(store.compactAudienceHistory(Date.now() + 86_400_000) > 0);
+assert.deepEqual(totalsByUser(store.listAudienceRankings(firstSessionId, "all")), allBefore);
+assert.equal(store.compactAudienceHistory(Date.now() + 86_400_000), 0);
+assert.deepEqual(store.listAudienceRankings(firstSessionId, "daily"), []);
+
+// Maintenance: stale signed-out sessions and old roulette results are removed.
+store.saveSession("stale-session", token);
+store.invalidateStoredAuthSession("stale-session");
+assert.equal(store.deleteStaleSessions(Date.now() + 1_000) >= 1, true);
+assert.equal(store.isBotEnabled("stale-session"), false);
+assert.equal(store.deleteOldRouletteResults(0), 0);
+
+// Maintenance: one backup per day, written atomically, old ones rotated.
+const maintenance = await import("../src/lib/maintenance.ts");
+const firstBackup = maintenance.runDailyBackup(Date.parse("2026-10-01T03:00:00Z"));
+assert.equal(firstBackup, "nagu-2026-10-01.db");
+assert.equal(maintenance.runDailyBackup(Date.parse("2026-10-01T05:00:00Z")), null);
+const { readdirSync } = await import("node:fs");
+for (let day = 2; day <= 9; day += 1) maintenance.runDailyBackup(Date.parse(`2026-10-0${day}T03:00:00Z`.replace("0-10", "-10")));
+const backupFiles = readdirSync(maintenance.backupsDirectory()).filter((name) => name.endsWith(".db"));
+assert.equal(backupFiles.length, 7);
+assert.ok(!backupFiles.includes("nagu-2026-10-01.db"));
+assert.equal(store.getAppState("maintenance:last_backup") !== null, true);
+assert.notEqual(maintenance.runDailyCleanup(), null);
+assert.equal(maintenance.runDailyCleanup(), null);
 
 console.log("Persistent ranking checks passed: restore, deduplication, period totals, login linking, multi-device bots, acks, donation recovery, and shared tokens");

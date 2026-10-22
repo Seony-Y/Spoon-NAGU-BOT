@@ -331,6 +331,38 @@ export function listAudienceRankingsByKey(
       });
     }
   }
+  if (period === "all") {
+    // Totals of broadcasts already compacted by the daily maintenance.
+    const archived = database.prepare(`
+      SELECT a.user_id, COALESCE(p.nickname, '청취자') AS nickname, a.spoons, a.hearts, a.favorite_temperature
+      FROM audience_archive a
+      LEFT JOIN audience_profiles p ON p.workspace_key = a.workspace_key AND p.user_id = a.user_id
+      WHERE a.workspace_key = ?
+    `).all(workspaceKey) as Array<{
+      user_id: string;
+      nickname: string;
+      spoons: number;
+      hearts: number;
+      favorite_temperature: number | null;
+    }>;
+    for (const row of archived) {
+      const entry = entryMap.get(row.user_id);
+      if (entry) {
+        entry.spoons += row.spoons;
+        entry.hearts += row.hearts;
+        entry.favoriteTemperature = Math.max(entry.favoriteTemperature ?? -Infinity, row.favorite_temperature ?? -Infinity);
+        if (!Number.isFinite(entry.favoriteTemperature)) entry.favoriteTemperature = null;
+      } else {
+        entryMap.set(row.user_id, {
+          userId: row.user_id,
+          nickname: row.nickname,
+          spoons: row.spoons,
+          hearts: row.hearts,
+          favoriteTemperature: row.favorite_temperature,
+        });
+      }
+    }
+  }
   return [...entryMap.values()];
 }
 
