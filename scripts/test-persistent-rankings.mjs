@@ -594,6 +594,25 @@ store.invalidateDjSessionsByKey(store.getSessionKey(peerA));
 assert.equal(store.getSession(peerA), null);
 assert.equal(store.getSession(peerB), null);
 
+// Admin block by DJ: every device of the DJ and later logins are blocked.
+store.saveSession("block-a", token);
+store.linkDjWorkspaceByKey(store.getSessionKey("block-a"), "block-dj", null);
+store.saveSession("block-b", token);
+store.linkDjWorkspaceByKey(store.getSessionKey("block-b"), "block-dj", null);
+const blockedKeys = store.setSessionBlockedByKey(store.getSessionKey("block-a"), true);
+assert.equal(blockedKeys.length, 2);
+assert.equal(store.isSessionBlocked("block-b"), true);
+assert.equal(store.isDjBlocked("block-dj"), true);
+store.saveSession("block-c", token);
+store.linkDjWorkspaceByKey(store.getSessionKey("block-c"), "block-dj", null);
+assert.equal(store.isSessionBlocked("block-c"), true, "a later session of a blocked DJ is blocked");
+assert.equal(store.listAdminSessions().find((row) => row.sessionKey === store.getSessionKey("block-a")).djUserId, "block-dj");
+store.setSessionBlockedByKey(store.getSessionKey("block-b"), false);
+assert.equal(store.isDjBlocked("block-dj"), false);
+assert.equal(["block-a", "block-b", "block-c"].some((id) => store.isSessionBlocked(id)), false);
+store.saveSession("unknown-dj", token);
+assert.deepEqual(store.setSessionBlockedByKey(store.getSessionKey("unknown-dj"), true), [store.getSessionKey("unknown-dj")]);
+
 // Maintenance: compacting old audience history keeps all-time totals intact.
 const totalsByUser = (entries) => Object.fromEntries(entries.map((e) => [e.userId, [e.spoons, e.hearts]]).sort());
 const allBefore = totalsByUser(store.listAudienceRankings(firstSessionId, "all"));

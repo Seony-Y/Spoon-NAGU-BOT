@@ -5,6 +5,7 @@ import { SESSION_COOKIE, SessionConfigurationError, STATE_COOKIE } from "@/lib/s
 import {
   adoptTokenForDjSessions,
   getSessionKey,
+  isDjBlocked,
   isSessionBlocked,
   linkDjWorkspaceByKey,
   sessionBelongsToOtherDj,
@@ -100,6 +101,10 @@ export async function GET(request: NextRequest) {
     }
 
     const djUserId = await identifyDj(token);
+    if (djUserId && isDjBlocked(djUserId)) {
+      await revokeIssuedToken(token);
+      return redirectWithError(request, "account_blocked");
+    }
     const reusableSessionId = currentSessionId
       && !(djUserId && sessionBelongsToOtherDj(getSessionKey(currentSessionId), djUserId))
       ? currentSessionId

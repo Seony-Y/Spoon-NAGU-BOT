@@ -19,6 +19,7 @@ import {
 export type AdminSession = {
   sessionKey: string;
   djNickname: string;
+  djUserId: string | null;
   botEnabled: boolean;
   blocked: boolean;
   createdAt: number;
@@ -259,25 +260,64 @@ export function isSessionBlocked(sessionId: string | undefined) {
   return sessionId ? isSessionBlockedByKey(getSessionKey(sessionId)) : false;
 }
 
+function getSessionDjId(sessionKey: string) {
+  const row = getDatabase().prepare(`
+    SELECT COALESCE(
+      (SELECT dj_user_id FROM dj_workspaces WHERE workspace_key = COALESCE(o.workspace_key, o.id_hash)),
+      o.dj_user_id
+    ) AS dj_user_id
+    FROM oauth_sessions o WHERE o.id_hash = ?
+  `).get(sessionKey) as { dj_user_id: string | null } | undefined;
+  return row?.dj_user_id ?? null;
+}
+
+export function isDjBlocked(djUserId: string) {
+  return Boolean(getDatabase().prepare("SELECT 1 FROM blocked_djs WHERE dj_user_id = ?").get(djUserId));
+}
+
+// Blocks or unblocks a connection. When the DJ behind it is known, the block
+// covers every session of that DJ and future logins (checked at OAuth callback
+// and DJ-chat linking); otherwise only this session. Returns the affected keys.
 export function setSessionBlockedByKey(sessionKey: string, blocked: boolean) {
-  const result = getDatabase().prepare(`
+  const database = getDatabase();
+  const djUserId = getSessionDjId(sessionKey);
+  const now = Date.now();
+  if (djUserId) {
+    if (blocked) {
+      database.prepare("INSERT OR IGNORE INTO blocked_djs (dj_user_id, blocked_at) VALUES (?, ?)").run(djUserId, now);
+    } else {
+      database.prepare("DELETE FROM blocked_djs WHERE dj_user_id = ?").run(djUserId);
+    }
+  }
+  const keys = (djUserId
+    ? database.prepare(`
+        SELECT o.id_hash FROM oauth_sessions o
+        WHERE o.id_hash = ? OR o.dj_user_id = ?
+           OR COALESCE(o.workspace_key, o.id_hash) IN (SELECT workspace_key FROM dj_workspaces WHERE dj_user_id = ?)
+      `).all(sessionKey, djUserId, djUserId)
+    : database.prepare("SELECT id_hash FROM oauth_sessions WHERE id_hash = ?").all(sessionKey)) as Array<{ id_hash: string }>;
+  const update = database.prepare(`
     UPDATE oauth_sessions
     SET blocked = ?, bot_enabled = CASE WHEN ? = 1 THEN 0 ELSE bot_enabled END, updated_at = ?
     WHERE id_hash = ?
-  `).run(blocked ? 1 : 0, blocked ? 1 : 0, Date.now(), sessionKey);
-  return result.changes > 0;
+  `);
+  for (const { id_hash: key } of keys) update.run(blocked ? 1 : 0, blocked ? 1 : 0, now, key);
+  return keys.map((row) => row.id_hash);
 }
 
 export function listAdminSessions(): AdminSession[] {
   const rows = getDatabase().prepare(`
     SELECT o.id_hash, o.bot_enabled, o.blocked, o.created_at, o.updated_at,
-           COALESCE(s.dj_nickname, '') AS dj_nickname
+           COALESCE(s.dj_nickname, '') AS dj_nickname,
+           COALESCE(w.dj_user_id, o.dj_user_id) AS dj_user_id
     FROM oauth_sessions o
     LEFT JOIN bot_settings s ON s.session_key = COALESCE(o.workspace_key, o.id_hash)
+    LEFT JOIN dj_workspaces w ON w.workspace_key = COALESCE(o.workspace_key, o.id_hash)
     ORDER BY o.updated_at DESC
   `).all() as Array<{
     id_hash: string;
     dj_nickname: string;
+    dj_user_id: string | null;
     bot_enabled: number;
     blocked: number;
     created_at: number;
@@ -286,6 +326,7 @@ export function listAdminSessions(): AdminSession[] {
   return rows.map((row) => ({
     sessionKey: row.id_hash,
     djNickname: row.dj_nickname,
+    djUserId: row.dj_user_id,
     botEnabled: row.bot_enabled === 1,
     blocked: row.blocked === 1,
     createdAt: row.created_at,

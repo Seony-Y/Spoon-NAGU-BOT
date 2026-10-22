@@ -32,9 +32,10 @@ export async function POST(request: NextRequest) {
   }
 
   const blocked = mode === "block";
-  if (!setSessionBlockedByKey(sessionKey, blocked)) {
+  const affected = setSessionBlockedByKey(sessionKey, blocked);
+  if (affected.length === 0) {
     return NextResponse.json({ error: "session_not_found" }, { status: 404 });
   }
-  if (blocked) blockBotByKey(sessionKey);
+  if (blocked) for (const key of affected) blockBotByKey(key);
   return NextResponse.json({ sessions: listAdminSessions() });
 }

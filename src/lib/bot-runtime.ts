@@ -377,6 +377,11 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
 
   if (event.event === "chat" && event.data.isDj && event.data.user.nickname) {
     linkDjWorkspaceByKey(sessionKey, event.data.user.id, event.data.user.nickname);
+    // Linking may reveal a DJ an admin blocked from another session.
+    if (isSessionBlockedByKey(sessionKey)) {
+      blockBotByKey(sessionKey);
+      return;
+    }
   }
   recordRecentBotEventByKey(sessionKey, event, receivedAt);
   const isNewAudienceEvent = runtime.currentLiveId === undefined

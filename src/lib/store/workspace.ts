@@ -339,6 +339,11 @@ export function linkDjWorkspaceByKey(sessionKey: string, djUserId: string, nickn
   const normalizedUserId = djUserId.trim();
   if (!normalizedUserId) return;
   const database = getDatabase();
+  // A DJ blocked by an admin stays blocked on every new session.
+  if (database.prepare("SELECT 1 FROM blocked_djs WHERE dj_user_id = ?").get(normalizedUserId)) {
+    database.prepare("UPDATE oauth_sessions SET blocked = 1, bot_enabled = 0, updated_at = ? WHERE id_hash = ?")
+      .run(Date.now(), sessionKey);
+  }
   const currentWorkspaceKey = getWorkspaceKey(sessionKey);
   const owner = getWorkspaceOwner(currentWorkspaceKey);
   if (owner === normalizedUserId) {

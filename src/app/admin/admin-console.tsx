@@ -5,6 +5,7 @@ import { type FormEvent, useState } from "react";
 type AdminSession = {
   sessionKey: string;
   djNickname: string;
+  djUserId: string | null;
   botEnabled: boolean;
   blocked: boolean;
   createdAt: number;
@@ -77,12 +78,13 @@ export function AdminConsole({ configured }: AdminConsoleProps) {
         <div>
           <h2 id="sessions-title">DJ 연결</h2>
           <p>닉네임은 DJ가 표시 이름을 저장하거나, 비어 있을 때 방송에서 처음 채팅(퀵메시지 포함)한 뒤 확인됩니다. 차단하면 실행 중인 봇이 즉시 종료됩니다.</p>
+          <p>DJ가 확인된 연결을 차단하면 같은 DJ의 모든 기기와 이후 로그인까지 차단됩니다. DJ가 확인되지 않은 연결은 그 연결만 차단됩니다.</p>
         </div>
       </div>
       {error && <p className="admin-error" role="alert">{error}</p>}
       <div className="admin-table-wrap">
         <table>
-          <thead><tr><th>DJ 닉네임</th><th>연결 ID</th><th>최초 연결</th><th>봇 상태</th><th>최근 갱신</th><th>관리</th></tr></thead>
+          <thead><tr><th>DJ 닉네임</th><th>DJ</th><th>연결 ID</th><th>최초 연결</th><th>봇 상태</th><th>최근 갱신</th><th>관리</th></tr></thead>
           <tbody>
             {sessions.map((session) => (
               <tr key={session.sessionKey}>
@@ -90,9 +92,10 @@ export function AdminConsole({ configured }: AdminConsoleProps) {
                   <strong>{session.djNickname || "미확인"}</strong>
                   {!session.djNickname && <small>표시 이름 또는 DJ 채팅 필요</small>}
                 </td>
+                <td>{session.djUserId ? <code>{session.djUserId.slice(0, 8)}</code> : <small>미확인</small>}</td>
                 <td><code>{session.sessionKey.slice(0, 12)}</code></td>
                 <td>{formatter.format(session.createdAt)}</td>
-                <td>{session.blocked ? "차단됨" : session.botEnabled ? "참여 중" : "대기"}</td>
+                <td>{session.blocked ? "차단됨" : session.botEnabled ? "입장 중" : "대기"}</td>
                 <td>{formatter.format(session.updatedAt)}</td>
                 <td><button disabled={busy} className={session.blocked ? "admin-unblock" : "admin-block"} type="button" onClick={() => void request(session.blocked ? "unblock" : "block", session.sessionKey)}>{session.blocked ? "차단 해제" : "차단"}</button></td>
               </tr>
