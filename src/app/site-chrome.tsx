@@ -6,6 +6,13 @@ type SiteHeaderProps = {
   connectionStatus?: "connected" | "waiting";
 };
 
+// Shown when APP_ENV_LABEL is set (e.g. "스테이징") so a staging or local
+// deployment is never mistaken for production.
+export function EnvironmentBadge() {
+  const label = process.env.APP_ENV_LABEL?.trim();
+  return label ? <span className="environment-badge">{label}</span> : null;
+}
+
 export function SiteHeader({ connectionStatus }: SiteHeaderProps) {
   return (
     <header className="header">
@@ -19,6 +26,7 @@ export function SiteHeader({ connectionStatus }: SiteHeaderProps) {
         />
         <span>NAGU BOT</span>
       </Link>
+      <EnvironmentBadge />
       <div className="header-side">
         <nav className="header-links" aria-label="서비스 안내">
           <Link href="/guide">사용 방법</Link>

@@ -17,6 +17,7 @@ import {
 } from "@/lib/session-store";
 import { ClearStatusParams } from "../clear-status-params";
 import { AutoRefresh } from "../refresh-live-button";
+import { EnvironmentBadge } from "../site-chrome";
 
 export const metadata: Metadata = {
   title: "리모컨 | NAGU BOT",
@@ -135,7 +136,7 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
       <AutoRefresh intervalMs={3000} />
       <ClearStatusParams keys="r" delayMs={4000} />
       <header className="remote-header">
-        <h1 className="remote-title">NAGU BOT 리모컨</h1>
+        <h1 className="remote-title">NAGU BOT 리모컨 <EnvironmentBadge /></h1>
         <span className={`remote-state${bot.state === "connected" ? " is-live" : ""}`}>
           {bot.state === "connected" ? "봇 입장 중" : bot.enabled ? "방송 기다리는 중" : "봇 꺼짐"}
         </span>

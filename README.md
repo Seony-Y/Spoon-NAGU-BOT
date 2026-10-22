@@ -24,6 +24,8 @@ npm run build
 npm run test:e2e   # after build: CRUD over HTTP on a throwaway database
 ```
 
+GitHub Actions (`.github/workflows/ci.yml`) runs all four on every push to `main` and every pull request. The e2e run uses throwaway secrets and an unreachable Spoon base URL, so it never touches real accounts.
+
 ## Deployment (Railway)
 
 - Configure every variable from `.env.example` in Railway. `SPOON_REDIRECT_URI` is the production callback, e.g. `https://spoon-nagu-bot-production.up.railway.app/oauth/callback`, and must match the URL registered in Spoon Developers.
@@ -31,6 +33,39 @@ npm run test:e2e   # after build: CRUD over HTTP on a throwaway database
 - Run a **single replica**: SQLite is local to the volume, bot workers live in process memory, and Spoon allows one event stream per app and DJ.
 - Point the health check at `/api/health`; it queries SQLite, so a missing volume fails it.
 - Node.js 22.13 or newer is required (`node:sqlite`).
+
+### Staging
+
+Spoon Developers accepts one login redirect URL per app, so each environment that DJs log into needs its own Spoon app:
+
+| Environment | Spoon app | `SPOON_REDIRECT_URI` |
+|---|---|---|
+| Production (Railway) | production app | production URL |
+| Staging (Railway environment) | development app | the staging URL |
+| Local | development app (switch its URL when needed) or a third app | `http://localhost:3000/oauth/callback` |
+
+Create the staging environment in Railway with its **own volume**, its own `SESSION_SECRET`, `ACCESS_CODE`, and `ADMIN_PASSWORD`, and `APP_ENV_LABEL=스테이징` so every page shows a staging badge. Deploy a branch there first, run the post-deploy checklist, then merge to `main`.
+
+### Operations settings
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ALERT_WEBHOOK_URL` | unset | Discord/Slack webhook for operator alerts: bot worker stopped, 5 failed reconnects in a row, Spoon daily API or chat limit, token decryption failure (check `SESSION_SECRET`), bot restore failure, backup or cleanup failure. Each kind is sent at most once per 30 minutes. |
+| `APP_ENV_LABEL` | unset | Badge text shown in the header and remote (e.g. `스테이징`, `로컬`) |
+| `DB_BACKUP_DISABLED` | unset | `1` turns off the daily backup |
+| `DB_BACKUP_KEEP` | `7` | Daily backup files to keep |
+| `SESSION_RETENTION_DAYS` | `30` | Signed-out sessions older than this are deleted |
+| `ROULETTE_RESULT_RETENTION_DAYS` | `365` | Older roulette results are deleted (keeps are kept) |
+| `AUDIENCE_EVENT_RETENTION_DAYS` | `180` | Audience events of broadcasts older than this are folded into per-listener totals |
+
+### Daily maintenance and restoring a backup
+
+About a minute after boot and then hourly, the app checks whether today's tasks ran:
+
+- **Backup:** `VACUUM INTO` writes `backups/nagu-YYYY-MM-DD.db` next to the database (`/data/backups` on Railway), first under a `.partial` name, and keeps the newest `DB_BACKUP_KEEP` files. `/api/health` reports `lastBackup`.
+- **Cleanup:** deletes stale signed-out sessions and old roulette results, and compacts old audience events into `audience_archive` so all-time listener totals stay the same.
+
+To restore: stop the service, replace `/data/nagu.db` with the chosen `backups/nagu-YYYY-MM-DD.db`, delete `/data/nagu.db-wal` and `/data/nagu.db-shm`, and start the service. For a single DJ, the in-app signed JSON backup (데이터 백업 tab) is usually the better tool.
 
 ## Spoon OAuth and permissions
 
@@ -117,7 +152,7 @@ The **데이터 백업** tab downloads a signed JSON backup of the DJ display na
 
 ## Administration
 
-`/admin` (with `ADMIN_PASSWORD`, rate limited) lists OAuth connections and can block or unblock one. Nothing is stored in the browser; reopening the page asks for the password again. Blocking stops that connection's worker and rejects login, bot participation, chat, and settings changes for it.
+`/admin` (with `ADMIN_PASSWORD`, rate limited) lists OAuth connections with the DJ they belong to and can block or unblock them. Nothing is stored in the browser; reopening the page asks for the password again. When the DJ is known, blocking applies to **every session of that DJ and to future logins** (rejected at the OAuth callback via `/v1/me`, or when a DJ chat links a new session); a connection whose DJ is not known yet is blocked on its own. Blocking stops the affected workers and rejects login, bot participation, chat, and settings changes.
 
 ## Errors and resilience
 
