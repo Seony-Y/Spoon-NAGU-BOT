@@ -5,6 +5,7 @@ import { RafflePanel } from "./raffle-panel";
 import { RoulettePanel } from "./roulette-panel";
 import { RpsPanel } from "./rps-panel";
 import { SecretWordPanel } from "./secret-word-panel";
+import { TeamBattlePanel } from "./team-battle-panel";
 import type { DashboardView } from "./load";
 
 export function GameCard({ view }: { view: DashboardView }) {
@@ -24,6 +25,7 @@ export function GameCard({ view }: { view: DashboardView }) {
         <Link scroll={false} className={gameTab === "raffle" ? "is-active" : ""} href="/?tab=game&game=raffle">추첨</Link>
         <Link scroll={false} className={gameTab === "quiz" ? "is-active" : ""} href="/?tab=game&game=quiz">퀴즈</Link>
         <Link scroll={false} className={gameTab === "secret" ? "is-active" : ""} href="/?tab=game&game=secret">비밀 단어</Link>
+        <Link scroll={false} className={gameTab === "team" ? "is-active" : ""} href="/?tab=game&game=team">팀 대항전</Link>
         <Link scroll={false} className={gameTab === "roulette" ? "is-active" : ""} href="/?tab=game&game=roulette">룰렛</Link>
       </nav>
 
@@ -42,6 +44,8 @@ export function GameCard({ view }: { view: DashboardView }) {
       {gameTab === "quiz" && <QuizPanel view={view} />}
 
       {gameTab === "secret" && <SecretWordPanel view={view} />}
+
+      {gameTab === "team" && <TeamBattlePanel view={view} />}
 
       {gameTab === "roulette" && <RoulettePanel view={view} />}
     </article>

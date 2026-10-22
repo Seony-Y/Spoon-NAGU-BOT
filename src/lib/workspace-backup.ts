@@ -12,7 +12,7 @@ import {
 const BACKUP_VERSION = 1;
 const MAX_ROWS_PER_TABLE = 50_000;
 // Tables added after the first backup format; backups made before them omit them.
-const OPTIONAL_CORE_TABLES = new Set(["quiz_rounds", "quiz_submissions", "quiz_queue", "follow_settings", "secret_word_queue", "secret_word_rounds"]);
+const OPTIONAL_CORE_TABLES = new Set(["quiz_rounds", "quiz_submissions", "quiz_queue", "follow_settings", "secret_word_queue", "secret_word_rounds", "team_battle_settings", "team_battles", "team_members"]);
 const OPTIONAL_AUDIENCE_TABLES = new Set(["audience_archive"]);
 
 type BackupBody = {

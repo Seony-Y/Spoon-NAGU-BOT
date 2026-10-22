@@ -617,6 +617,41 @@ assert.equal(store.finishSecretWordByKey(firstSessionKey).word, "노을");
 assert.equal(store.finishSecretWordByKey(firstSessionKey), null);
 assert.deepEqual(store.listSecretWordRounds(firstSessionId).map((round) => [round.word, round.winnerNickname]), [["노을", null], ["Spoon", "팬4"], ["고구마", "팬2"]]);
 
+// Team battle: join once, points from hearts/spoons, lead change, goal.
+assert.equal(store.saveTeamBattleSettings(firstSessionId, { teamNames: ["혼자"], metric: "both", goal: 0 }), false);
+assert.equal(store.saveTeamBattleSettings(firstSessionId, { teamNames: ["A팀", "a팀"], metric: "both", goal: 0 }), false, "names must differ");
+assert.equal(store.saveTeamBattleSettings(firstSessionId, { teamNames: ["A팀", "B팀", ""], metric: "both", goal: 300 }), true);
+assert.deepEqual(store.getTeamBattleSettings(firstSessionId), { teamNames: ["A팀", "B팀"], metric: "both", goal: 300 });
+assert.equal(store.resolveTeamIndex(["A팀", "B팀"], "a"), 0);
+assert.equal(store.resolveTeamIndex(["A팀", "B팀"], "2"), 1);
+assert.equal(store.resolveTeamIndex(["A팀", "B팀"], "팀"), -1, "ambiguous prefix");
+assert.equal(store.applyTeamCommand(firstSessionKey, "!팀 1", false, "t1", "팀원1"), "지금 진행 중인 팀 대항전이 없어요.");
+assert.equal(store.startTeamBattleByKey(firstSessionKey, 100_000).kind, "started");
+assert.equal(store.startTeamBattleByKey(firstSessionKey).kind, "already_active");
+const joined = [];
+assert.equal(store.applyTeamCommand(firstSessionKey, "!팀 1", false, "t1", "팀원1", (name, team) => joined.push([name, team])), null);
+assert.equal(store.applyTeamCommand(firstSessionKey, "!팀 b", false, "t2", "팀원2"), "팀원2님 B팀 참여 완료!");
+assert.equal(store.applyTeamCommand(firstSessionKey, "!팀 2", false, "t1", "팀원1"), "팀원1님은 이미 A팀 소속이에요.");
+assert.match(store.applyTeamCommand(firstSessionKey, "!팀 9", false, "t3", "팀원3"), /팀을 찾지 못했어요/);
+assert.equal(store.applyTeamCommand(firstSessionKey, "!팀 1", true, "dj", "DJ"), "DJ는 팀에 참여할 수 없어요.");
+assert.deepEqual(joined, [["팀원1", "A팀"]]);
+assert.equal(store.addTeamBattlePoints(firstSessionKey, "outsider", "hearts", 50, 101_000), null, "non-members score nothing");
+assert.equal(store.addTeamBattlePoints(firstSessionKey, "t1", "hearts", 10, 101_000), null, "first leader is not announced");
+assert.equal(store.addTeamBattlePoints(firstSessionKey, "t2", "spoons", 5, 102_000), null, "lead change within a minute is quiet");
+const lead = store.addTeamBattlePoints(firstSessionKey, "t1", "hearts", 50, 200_000);
+assert.equal(lead.kind, "lead_change");
+assert.equal(lead.leader.name, "A팀");
+assert.deepEqual(store.getActiveTeamBattleByKey(firstSessionKey).teams.map((team) => team.score), [60, 50]);
+const goal = store.addTeamBattlePoints(firstSessionKey, "t2", "spoons", 30, 210_000);
+assert.equal(goal.kind, "goal_reached");
+assert.equal(goal.winner.name, "B팀");
+assert.equal(store.getActiveTeamBattleByKey(firstSessionKey), null, "reaching the goal ends the battle");
+assert.equal(store.finishTeamBattleByKey(firstSessionKey), null);
+const history = store.listTeamBattles(firstSessionId);
+assert.equal(history[0].winnerIndex, 1);
+assert.equal(history[0].topMembers[0].nickname, "팀원2");
+assert.equal(history[0].topMembers[0].points, 350);
+
 // Admin block by DJ: every device of the DJ and later logins are blocked.
 store.saveSession("block-a", token);
 store.linkDjWorkspaceByKey(store.getSessionKey("block-a"), "block-dj", null);

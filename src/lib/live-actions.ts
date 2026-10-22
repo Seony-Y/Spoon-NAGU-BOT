@@ -15,6 +15,14 @@ import {
   applyBotCounterCommand,
   finishQuizRoundByKey,
   finishSecretWordByKey,
+  finishTeamBattleByKey,
+  getActiveTeamBattleByKey,
+  SPOON_POINTS_IN_BOTH,
+  startTeamBattleByKey,
+  type TeamBattle,
+  type TeamBattleMetric,
+  type TeamBattleOutcome,
+  type TeamScore,
   getActiveSecretWordByKey,
   listSecretWordQueueByKey,
   startNextSecretWordByKey,
@@ -228,6 +236,70 @@ export function announceSecretWordFound(sessionKey: string, round: { word: strin
   ]);
 }
 
+const METRIC_LABELS: Record<TeamBattleMetric, string> = {
+  hearts: "하트",
+  spoons: "후원(스푼)",
+  both: `하트와 후원(스푼 1개 = ${SPOON_POINTS_IN_BOTH}점)`,
+};
+
+function formatTeamScores(teams: TeamScore[]) {
+  return teams.map((team) => `${team.name} ${team.score.toLocaleString("ko-KR")}`).join(" : ");
+}
+
+function teamBattleResultMessages(battle: TeamBattle) {
+  const ranked = [...battle.teams].sort((left, right) => right.score - left.score);
+  const ranking = ranked.map((team, index) => `${index + 1}위 ${team.name} ${team.score.toLocaleString("ko-KR")}점`).join(" · ");
+  const mvp = battle.topMembers[0];
+  const messages = [`[팀 대항전] 종료! ${battle.winnerIndex === null ? "무승부 · " : ""}${ranking}`];
+  if (mvp) messages.push(`[팀 대항전] MVP: ${mvp.nickname}님(${battle.teams[mvp.teamIndex]?.name ?? ""}) ${mvp.points.toLocaleString("ko-KR")}점`);
+  return messages;
+}
+
+export async function startTeamBattle(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const blocked = checkChatGame(sessionKey);
+  if (blocked) return fail(blocked);
+  const started = startTeamBattleByKey(sessionKey);
+  if (started.kind === "already_active") return fail("already_active");
+  const { teamNames, metric, goal } = started.settings;
+  const choices = teamNames.map((name, index) => `'!팀 ${index + 1}'(${name})`).join(" / ");
+  await announce(sessionKey, [
+    `[팀 대항전] 시작! 채팅에 ${choices}로 팀을 골라 주세요. 참여 후 보낸 ${METRIC_LABELS[metric]}가 팀 점수가 돼요.${goal > 0 ? ` 먼저 ${goal.toLocaleString("ko-KR")}점 달성한 팀이 이겨요.` : ""}`,
+  ]);
+  return { ok: true, status: "started" };
+}
+
+export async function announceTeamBattleStatus(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const battle = getActiveTeamBattleByKey(sessionKey);
+  if (!battle) return fail("not_active");
+  const members = battle.teams.reduce((sum, team) => sum + team.members, 0);
+  await announce(sessionKey, [`[팀 대항전] 현재 점수: ${formatTeamScores(battle.teams)} (참여 ${members.toLocaleString("ko-KR")}명)`]);
+  return { ok: true, status: "status_sent" };
+}
+
+export async function finishTeamBattle(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const battle = finishTeamBattleByKey(sessionKey);
+  if (!battle) return fail("not_active");
+  flushGameAcks(sessionKey, "team");
+  await announce(sessionKey, teamBattleResultMessages(battle));
+  return { ok: true, status: "finished" };
+}
+
+// Called by the bot runtime after hearts/donations changed team scores.
+export function announceTeamBattleOutcome(sessionKey: string, outcome: TeamBattleOutcome) {
+  if (outcome.kind === "lead_change") {
+    void announce(sessionKey, [`[팀 대항전] 역전! ${outcome.leader.name} 선두 (${formatTeamScores(outcome.battle.teams)})`]);
+    return;
+  }
+  flushGameAcks(sessionKey, "team");
+  void announce(sessionKey, [
+    `[팀 대항전] ${outcome.winner.name} 승리! 목표 ${outcome.battle.goal.toLocaleString("ko-KR")}점을 먼저 달성했어요.`,
+    ...teamBattleResultMessages(outcome.battle),
+  ]);
+}
+
 export function setRouletteEnabled(sessionKey: string, enabled: boolean) {
   const current = getRouletteSettingsByKey(sessionKey);
   updateRouletteSettingsByKey(sessionKey, { ...current, enabled });
@@ -258,6 +330,7 @@ export function formatLiveStatus(sessionKey: string) {
     raffle?.active && `추첨(${raffle.entries.length}명)`,
     quiz?.active && `퀴즈(${quiz.submissions.length}명)`,
     getActiveSecretWordByKey(sessionKey) && "비밀 단어",
+    getActiveTeamBattleByKey(sessionKey) && "팀 대항전",
   ].filter(Boolean);
   const settings = getBotSettingsByKey(sessionKey);
   const roulette = getRouletteSettingsByKey(sessionKey);
@@ -300,6 +373,12 @@ export async function runDjCommand(sessionKey: string, command: DjCommand) {
       return replyResult(sessionKey, await revealSecretWordHint(sessionKey));
     case "secret_finish":
       return replyResult(sessionKey, await finishSecretWord(sessionKey));
+    case "team_start":
+      return replyResult(sessionKey, await startTeamBattle(sessionKey));
+    case "team_status":
+      return replyResult(sessionKey, await announceTeamBattleStatus(sessionKey));
+    case "team_finish":
+      return replyResult(sessionKey, await finishTeamBattle(sessionKey));
     case "roulette_toggle":
       setRouletteEnabled(sessionKey, command.enabled);
       await sendBotChat(sessionKey, command.enabled

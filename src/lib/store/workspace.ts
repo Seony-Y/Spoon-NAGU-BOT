@@ -26,6 +26,9 @@ const CORE_BACKUP_TABLES = [
   { name: "quiz_queue", key: "workspace_key", columns: ["question", "answer", "created_at"] },
   { name: "follow_settings", key: "workspace_key", columns: ["enabled", "message"] },
   { name: "secret_word_queue", key: "workspace_key", columns: ["word", "hint", "created_at"] },
+  { name: "team_battle_settings", key: "workspace_key", columns: ["team_names", "metric", "goal"] },
+  { name: "team_battles", key: "workspace_key", columns: ["battle_id", "team_names", "metric", "goal", "active", "started_at", "ended_at", "winner_index", "last_lead_index", "last_lead_announced_at"] },
+  { name: "team_members", key: "workspace_key", columns: ["battle_id", "user_id", "nickname", "team_index", "points", "joined_at"] },
   { name: "secret_word_rounds", key: "workspace_key", columns: ["round_id", "word", "hint", "active", "started_at", "ended_at", "winner_user_id", "winner_nickname", "found_at"] },
   { name: "roulette_settings", key: "workspace_key", columns: ["enabled", "cost", "miss_weight"] },
   { name: "roulette_items", key: "workspace_key", columns: ["label", "weight", "created_at"] },
@@ -314,6 +317,24 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
     FROM secret_word_rounds WHERE workspace_key = ?
   `).run(targetKey, targetKey, sourceKey);
   database.prepare("DELETE FROM secret_word_rounds WHERE workspace_key = ?").run(sourceKey);
+  database.prepare(`
+    INSERT OR IGNORE INTO team_battle_settings (workspace_key, team_names, metric, goal)
+    SELECT ?, team_names, metric, goal FROM team_battle_settings WHERE workspace_key = ?
+  `).run(targetKey, sourceKey);
+  database.prepare("DELETE FROM team_battle_settings WHERE workspace_key = ?").run(sourceKey);
+  const battleOffset = (database.prepare("SELECT COALESCE(MAX(battle_id), 0) AS last FROM team_battles WHERE workspace_key = ?")
+    .get(targetKey) as { last: number }).last;
+  database.prepare(`
+    INSERT INTO team_battles (workspace_key, battle_id, team_names, metric, goal, active, started_at, ended_at, winner_index, last_lead_index, last_lead_announced_at)
+    SELECT ?, battle_id + ?, team_names, metric, goal, 0, started_at, COALESCE(ended_at, started_at), winner_index, last_lead_index, last_lead_announced_at
+    FROM team_battles WHERE workspace_key = ?
+  `).run(targetKey, battleOffset, sourceKey);
+  database.prepare(`
+    INSERT OR IGNORE INTO team_members (workspace_key, battle_id, user_id, nickname, team_index, points, joined_at)
+    SELECT ?, battle_id + ?, user_id, nickname, team_index, points, joined_at FROM team_members WHERE workspace_key = ?
+  `).run(targetKey, battleOffset, sourceKey);
+  database.prepare("DELETE FROM team_members WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("DELETE FROM team_battles WHERE workspace_key = ?").run(sourceKey);
 
   database.prepare("DELETE FROM bot_commands WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM bot_counters WHERE session_key = ?").run(sourceKey);

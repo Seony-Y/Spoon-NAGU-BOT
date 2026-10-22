@@ -163,6 +163,10 @@ assert.deepEqual(parseDjCommand("!비밀단어 시작"), { kind: "secret_start" 
 assert.deepEqual(parseDjCommand("!비밀단어 힌트"), { kind: "secret_hint" });
 assert.deepEqual(parseDjCommand("!비밀단어 종료"), { kind: "secret_finish" });
 assert.equal(parseDjCommand("!비밀단어 고구마"), null);
+assert.deepEqual(parseDjCommand("!팀전 시작"), { kind: "team_start" });
+assert.deepEqual(parseDjCommand("!팀전 상태"), { kind: "team_status" });
+assert.deepEqual(parseDjCommand("!팀전 마감"), { kind: "team_finish" });
+assert.equal(parseDjCommand("!팀 1"), null, "listener command, not a DJ command");
 assert.deepEqual(parseDjCommand("!팔로우 켜기"), { kind: "automation_toggle", feature: "follow", enabled: true });
 assert.equal(parseDjCommand("!실드 +1"), null);
 assert.equal(parseDjCommand("!참여"), null);

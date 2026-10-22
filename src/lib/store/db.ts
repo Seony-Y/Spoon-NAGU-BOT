@@ -202,6 +202,38 @@ function migrateDatabase(database: DatabaseSync) {
       correct_at INTEGER,
       PRIMARY KEY (workspace_key, round_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS team_battle_settings (
+      workspace_key TEXT PRIMARY KEY,
+      team_names TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      goal INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS team_battles (
+      workspace_key TEXT NOT NULL,
+      battle_id INTEGER NOT NULL,
+      team_names TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      goal INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      winner_index INTEGER,
+      last_lead_index INTEGER,
+      last_lead_announced_at INTEGER,
+      PRIMARY KEY (workspace_key, battle_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS team_battles_active_idx
+      ON team_battles (workspace_key) WHERE active = 1;
+    CREATE TABLE IF NOT EXISTS team_members (
+      workspace_key TEXT NOT NULL,
+      battle_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      team_index INTEGER NOT NULL,
+      points INTEGER NOT NULL DEFAULT 0,
+      joined_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, battle_id, user_id)
+    );
     CREATE TABLE IF NOT EXISTS secret_word_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       workspace_key TEXT NOT NULL,

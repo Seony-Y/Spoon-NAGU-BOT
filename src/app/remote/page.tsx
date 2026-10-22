@@ -14,6 +14,8 @@ import {
   getSessionKey,
   listBotCounters,
   getActiveSecretWordByKey,
+  getActiveTeamBattleByKey,
+  getTeamBattleSettings,
   listQuizQueue,
   listSecretWordQueue,
 } from "@/lib/session-store";
@@ -37,6 +39,9 @@ const RESULT_NOTICES: Record<string, { tone: "success" | "error"; text: string }
   raffle_finished: { tone: "success", text: "당첨자를 채팅에 공개했습니다." },
   quiz_started: { tone: "success", text: "다음 대기 문제를 출제했습니다." },
   quiz_finished: { tone: "success", text: "퀴즈 정답과 결과를 공개했습니다." },
+  team_started: { tone: "success", text: "팀 대항전을 시작했습니다." },
+  team_status_sent: { tone: "success", text: "현재 점수를 채팅에 알렸습니다." },
+  team_finished: { tone: "success", text: "팀 대항전 결과를 공개했습니다." },
   secret_started: { tone: "success", text: "비밀 단어 찾기를 시작했습니다." },
   secret_hint_sent: { tone: "success", text: "힌트를 채팅에 공개했습니다." },
   secret_finished: { tone: "success", text: "비밀 단어를 공개하고 종료했습니다." },
@@ -126,6 +131,8 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
   const quizQueue = listQuizQueue(sessionId);
   const secretWord = getActiveSecretWordByKey(sessionKey);
   const secretWordQueue = listSecretWordQueue(sessionId);
+  const teamBattle = getActiveTeamBattleByKey(sessionKey);
+  const teamSettings = getTeamBattleSettings(sessionId);
   const counters = listBotCounters(sessionId);
   const settings = getBotSettings(sessionId);
   const roulette = getRouletteSettings(sessionId);
@@ -227,6 +234,30 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
           <ActionButton action="secret_start" label="다음 단어로 시작" disabled={gameDisabled} />
         ) : (
           <p className="remote-empty">대시보드 게임 &gt; 비밀 단어에서 대기 단어를 먼저 등록해 주세요.</p>
+        )}
+      </section>
+
+      <section className="remote-card" aria-labelledby="remote-team">
+        <div className="remote-card-heading">
+          <h2 id="remote-team">팀 대항전</h2>
+          <span>{teamBattle ? "진행 중" : teamSettings.teamNames.join(" vs ")}</span>
+        </div>
+        {teamBattle ? (
+          <>
+            <ul className="remote-counters">
+              {teamBattle.teams.map((team) => (
+                <li key={team.index} className="remote-team-row">
+                  <span>{team.name}</span>
+                  <strong>{team.score.toLocaleString("ko-KR")}</strong>
+                  <small>{team.members}명</small>
+                </li>
+              ))}
+            </ul>
+            <ActionButton action="team_status" label="채팅에 점수 알리기" />
+            <ActionButton action="team_finish" label="종료하고 결과 공개" tone="finish" />
+          </>
+        ) : (
+          <ActionButton action="team_start" label="저장된 설정으로 시작" disabled={gameDisabled} />
         )}
       </section>
 

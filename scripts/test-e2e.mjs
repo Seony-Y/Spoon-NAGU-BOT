@@ -72,7 +72,7 @@ try {
   }
 
   // --- Read: pages render with the session -----------------------------------
-  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
+  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=team", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
     reseed();
     const response = await fetch(BASE + path, { headers: { cookie } });
     const html = await response.text();
@@ -167,6 +167,20 @@ try {
   check("비밀 단어 힌트", r.params.secret === "hint_sent", JSON.stringify(r.params));
   r = await post("/game/secret-word", { action: "finish" });
   check("비밀 단어 종료", r.params.secret === "finished" && store.getActiveSecretWordByKey(sessionKey) === null, JSON.stringify(r.params));
+  store.setBotEnabled(sessionId, false);
+
+  // --- Team battle: settings, start, status, finish ---------------------------
+  r = await post("/game/team-battle", { action: "settings", team: ["빨강", "파랑", "", ""], metric: "hearts", goal: "1000" });
+  check("팀 대항전 설정 저장", r.params.team === "settings_saved" && store.getTeamBattleSettings(sessionId).teamNames.join() === "빨강,파랑", JSON.stringify(r.params));
+  r = await post("/game/team-battle", { action: "settings", team: ["같음", "같음", "", ""], metric: "hearts", goal: "0" });
+  check("팀 대항전 잘못된 설정 거부", r.params.team === "invalid_settings", JSON.stringify(r.params));
+  store.setBotEnabled(sessionId, true);
+  r = await post("/game/team-battle", { action: "start" });
+  check("팀 대항전 시작", r.params.team === "started" && store.getActiveTeamBattleByKey(sessionKey)?.teams.length === 2, JSON.stringify(r.params));
+  r = await post("/game/team-battle", { action: "status" });
+  check("팀 대항전 점수 알림", r.params.team === "status_sent", JSON.stringify(r.params));
+  r = await post("/game/team-battle", { action: "finish" });
+  check("팀 대항전 종료", r.params.team === "finished" && store.getActiveTeamBattleByKey(sessionKey) === null, JSON.stringify(r.params));
   store.setBotEnabled(sessionId, false);
 
   // --- Roulette: settings, prizes, keeps ------------------------------------

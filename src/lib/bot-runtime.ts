@@ -16,7 +16,7 @@ import { isRecentBotMessage, sendBotChat } from "./chat";
 import { clearGameAcks, flushAllGameAcks, queueGameAck } from "./chat-acks";
 import { formatMultilineMessages, resolveCommandFallback } from "./chat-message";
 import { parseDjCommand } from "./dj-command";
-import { announceSecretWordFound, runDjCommand } from "./live-actions";
+import { announceSecretWordFound, announceTeamBattleOutcome, runDjCommand } from "./live-actions";
 import {
   applyBotCounterCommand,
   applyQuizCommand,
@@ -24,7 +24,9 @@ import {
   applyRpsCommand,
   applyRouletteDonation,
   applyRouletteKeepCommand,
+  addTeamBattlePoints,
   applySecretWordChat,
+  applyTeamCommand,
   applySongRequestCommand,
   findBotCommandResponse,
   getAvailableCommandRepliesByKey,
@@ -311,6 +313,8 @@ async function backfillDonations(sessionKey: string, accessToken: string, liveId
     };
     if (!recordAudienceEvent(sessionKey, liveId, event)) continue;
     runtime.activity.spoons += donation.amount;
+    const teamOutcome = addTeamBattlePoints(sessionKey, donation.user.id, "spoons", donation.amount);
+    if (teamOutcome) announceTeamBattleOutcome(sessionKey, teamOutcome);
     recovered.push(donation);
     const draw = applyRouletteDonation(sessionKey, liveId, event);
     if (draw) void sendBotChat(sessionKey, formatRouletteDraw(draw));
@@ -391,6 +395,13 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     || recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
   // A donation replayed after a reconnect was already thanked (and drawn).
   if (event.event === "donation" && !isNewAudienceEvent) return;
+  // Team battle points: only counted once per event (replays are not new).
+  if (isNewAudienceEvent && (event.event === "like" || event.event === "donation")) {
+    const outcome = event.event === "like"
+      ? addTeamBattlePoints(sessionKey, event.data.user.id, "hearts", event.data.totalAmount)
+      : addTeamBattlePoints(sessionKey, event.data.user.id, "spoons", event.data.amount);
+    if (outcome) announceTeamBattleOutcome(sessionKey, outcome);
+  }
 
   const settings = getBotSettingsByKey(sessionKey);
   let reply: string | null;
@@ -462,6 +473,14 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.user.nickname,
       (nickname) => queueGameAck(sessionKey, "raffle", nickname),
     );
+    const teamReply = applyTeamCommand(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+      event.data.user.id,
+      event.data.user.nickname,
+      (nickname, teamName) => queueGameAck(sessionKey, "team", `${nickname}님(${teamName})`),
+    );
     const songRequestReply = applySongRequestCommand(
       sessionKey,
       event.data.message,
@@ -478,7 +497,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.user.nickname,
       findBotCommandResponse(sessionKey, event.data.message, event.data.user.nickname),
     );
-    reply = keepReply ?? quizReply ?? raffleReply ?? rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
+    reply = keepReply ?? quizReply ?? raffleReply ?? teamReply ?? rpsReply ?? songRequestReply ?? counterReply ?? fallbackReply;
   } else {
     const enriched = event.event === "presence" && runtime.subscriberIds.has(event.data.user.id)
       ? { ...event, data: { ...event.data, subscribed: true } }

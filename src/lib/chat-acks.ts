@@ -11,6 +11,7 @@ const ACK_HEADINGS: Record<string, string> = {
   rps: "[가위바위보] 참여 완료! 결과는 끝나고 알려 드려요.",
   raffle: "[추첨] 응모 완료!",
   quiz: "[퀴즈] 답 접수!",
+  team: "[팀 대항전] 팀 참여 완료!",
 };
 
 const globalForAcks = globalThis as typeof globalThis & {
@@ -47,11 +48,13 @@ function getBatcher(sessionKey: string) {
   return batcher;
 }
 
-export function queueGameAck(sessionKey: string, game: "rps" | "raffle" | "quiz", nickname: string) {
+export type AckGame = "rps" | "raffle" | "quiz" | "team";
+
+export function queueGameAck(sessionKey: string, game: AckGame, nickname: string) {
   getBatcher(sessionKey).add(game, nickname);
 }
 
-export function flushGameAcks(sessionKey: string, game?: "rps" | "raffle" | "quiz") {
+export function flushGameAcks(sessionKey: string, game?: AckGame) {
   batchers.get(sessionKey)?.flush(game);
 }
 

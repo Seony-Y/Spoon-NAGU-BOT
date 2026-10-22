@@ -210,6 +210,7 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
     "!신청곡 목록",
     "!가위바위보 가위·바위·보",
     "!참여",
+    "!팀 (번호)",
     "!정답 (답)",
     "!내 킵",
   ].filter((label, index, items) => items.indexOf(label) === index);

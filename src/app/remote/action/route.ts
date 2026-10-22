@@ -8,7 +8,10 @@ import {
   finishRps,
   setAutomationEnabled,
   setRouletteEnabled,
+  announceTeamBattleStatus,
   finishSecretWord,
+  finishTeamBattle,
+  startTeamBattle,
   revealSecretWordHint,
   startNextQuiz,
   startSecretWord,
@@ -67,6 +70,12 @@ export async function POST(request: NextRequest) {
       return redirect(request, fromResult("secret", await revealSecretWordHint(sessionKey)));
     case "secret_finish":
       return redirect(request, fromResult("secret", await finishSecretWord(sessionKey)));
+    case "team_start":
+      return redirect(request, fromResult("team", await startTeamBattle(sessionKey)));
+    case "team_status":
+      return redirect(request, fromResult("team", await announceTeamBattleStatus(sessionKey)));
+    case "team_finish":
+      return redirect(request, fromResult("team", await finishTeamBattle(sessionKey)));
     case "counter": {
       const id = Number(formData.get("id"));
       const delta = Number(formData.get("delta"));

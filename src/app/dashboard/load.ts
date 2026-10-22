@@ -15,6 +15,8 @@ import {
   listQuizQueue,
   listSecretWordQueue,
   listSecretWordRounds,
+  listTeamBattles,
+  getTeamBattleSettings,
   listQuizRounds,
   listRaffleRounds,
   listSongRequests,
@@ -50,6 +52,7 @@ export type DashboardSearchParams = {
   raffle?: string;
   quiz?: string;
   secret?: string;
+  team?: string;
   roulette?: string;
   rouletteEdit?: string;
   preview?: string;
@@ -67,6 +70,8 @@ export async function loadDashboardView(params: DashboardSearchParams) {
     ? "roulette"
     : params.game === "secret"
       ? "secret"
+    : params.game === "team"
+      ? "team"
     : params.game === "quiz"
       ? "quiz"
     : params.game === "raffle"
@@ -199,6 +204,11 @@ export async function loadDashboardView(params: DashboardSearchParams) {
   const secretWordRounds = isSecretPage ? listSecretWordRounds(sessionId) : [];
   const secretWordRound = secretWordRounds.find((round) => round.active) ?? null;
   const secretWordHistory = secretWordRounds.filter((round) => !round.active);
+  const isTeamPage = isGameTab && gameTab === "team" && connected && sessionId && !previewConnected;
+  const teamBattleRounds = isTeamPage ? listTeamBattles(sessionId) : [];
+  const teamBattle = teamBattleRounds.find((battle) => battle.active) ?? null;
+  const teamBattleHistory = teamBattleRounds.filter((battle) => !battle.active);
+  const teamBattleSettings = isTeamPage ? getTeamBattleSettings(sessionId) : { teamNames: ["A팀", "B팀"], metric: "both" as const, goal: 0 };
   const isRoulettePage = isGameTab && gameTab === "roulette" && connected && sessionId;
   const rouletteSettings = isRoulettePage
     ? previewConnected
@@ -285,6 +295,9 @@ export async function loadDashboardView(params: DashboardSearchParams) {
     secretWordQueue,
     secretWordRound,
     secretWordHistory,
+    teamBattle,
+    teamBattleHistory,
+    teamBattleSettings,
     isRoulettePage,
     rouletteSettings,
     rouletteItems,

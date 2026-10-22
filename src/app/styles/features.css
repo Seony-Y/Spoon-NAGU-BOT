@@ -611,3 +611,124 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* 팀 대항전 */
+.team-scoreboard {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.team-scoreboard-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.team-scoreboard-label span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.team-scoreboard-bar {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.team-scoreboard-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.team-goal,
+.team-top-members {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.team-settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.team-settings-form fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.team-settings-form legend,
+.team-settings-form > label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.team-name-inputs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.team-name-inputs label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.team-settings-form input,
+.team-settings-form select {
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.team-settings-form > label {
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.team-settings-form button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--accent);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.team-settings-form button.is-secondary {
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+}
+
+.team-settings-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.remote-counters li.remote-team-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+@media (max-width: 640px) {
+  .team-name-inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

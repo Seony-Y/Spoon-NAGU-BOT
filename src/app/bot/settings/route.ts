@@ -35,6 +35,8 @@ const RESERVED_COMMANDS = [
   "!킵",
   "!봇",
   "!비밀단어",
+  "!팀",
+  "!팀전",
 ];
 
 function isReservedCommand(command: string) {
