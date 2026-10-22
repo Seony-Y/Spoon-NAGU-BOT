@@ -13,14 +13,14 @@ export function GET(request: NextRequest) {
   }
   if (!verifyOAuthAccessProof(request.cookies.get(OAUTH_ACCESS_COOKIE)?.value)) {
     const response = NextResponse.redirect(buildApplicationUrl("/?error=access_code_required", request.url));
-    response.cookies.delete(OAUTH_ACCESS_COOKIE);
+    response.cookies.delete({ name: OAUTH_ACCESS_COOKIE, path: "/oauth" });
     return response;
   }
   try {
     const state = randomBytes(32).toString("base64url");
     const response = NextResponse.redirect(buildAuthorizationUrl(state));
 
-    response.cookies.delete(OAUTH_ACCESS_COOKIE);
+    response.cookies.delete({ name: OAUTH_ACCESS_COOKIE, path: "/oauth" });
     response.cookies.set(STATE_COOKIE, state, {
       httpOnly: true,
       secure: buildApplicationUrl("/", request.url).protocol === "https:",
