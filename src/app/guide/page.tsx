@@ -55,7 +55,7 @@ export default function GuidePage() {
               <div className="guide-topic"><h3>방송 현황</h3><p>현재 방송 제목과 상태, 청취자 수를 확인합니다. 새 정보가 필요하면 해당 영역의 새로고침 버튼을 누릅니다.</p></div>
               <div className="guide-topic"><h3>청취자 및 팬 랭킹</h3><p>현재 청취자 목록과 현재 방송의 후원 팬 랭킹을 확인합니다. 구독 중인 청취자에게는 <strong>구독</strong> 표시가 붙습니다. 하트 합계는 봇이 입장한 뒤 받은 것만 셉니다.</p></div>
               <div className="guide-topic"><h3>최근 활동</h3><p>입장, 채팅, 하트, 후원, 팔로우 등 봇이 실시간으로 받은 방송 활동을 최근 순서로 확인합니다.</p></div>
-              <div className="guide-topic"><h3>데이터 저장과 백업</h3><p>설정과 기록은 서버에 자동으로 저장됩니다. 새로고침, 창 닫기, 방송 종료, 서버 재시작, 연결 해제 후 다시 로그인해도 그대로 이어서 쓸 수 있습니다.</p><p>상단 <strong>데이터 백업</strong> 탭은 다른 계정으로 옮기거나 만일에 대비할 때 씁니다. DJ 표시 이름, 자동화 설정, 명령어, 카운터, 신청곡, 가위바위보·추첨·퀴즈(대기 문제 포함)·룰렛 데이터를 백업 파일로 저장하고 복원할 수 있습니다. 청취자 ID·닉네임, 입장·하트·스푼 기록과 스푼 랭킹은 청취자 기록 포함 다운로드에서만 추가됩니다. 로그인 정보, 관리자 정보, 봇 입장 상태와 최근 활동 목록은 백업하지 않습니다.</p></div>
+              <div className="guide-topic"><h3>데이터 저장과 백업</h3><p>설정과 기록은 서버에 자동으로 저장됩니다. 새로고침, 창 닫기, 방송 종료, 서버 재시작, 연결 해제 후 다시 로그인해도 그대로 이어서 쓸 수 있습니다.</p><p>상단 <strong>데이터 백업</strong> 탭은 다른 계정으로 옮기거나 만일에 대비할 때 씁니다. DJ 표시 이름, 자동화 설정, 명령어, 카운터, 신청곡, 가위바위보·추첨·퀴즈(대기 문제 포함)·비밀 단어·팀 대항전·출석·룰렛 데이터를 백업 파일로 저장하고 복원할 수 있습니다. 청취자 ID·닉네임, 입장·하트·스푼 기록과 스푼 랭킹은 청취자 기록 포함 다운로드에서만 추가됩니다. 로그인 정보, 관리자 정보, 봇 입장 상태와 최근 활동 목록은 백업하지 않습니다.</p></div>
             </div>
           </details>
 
@@ -93,13 +93,13 @@ export default function GuidePage() {
           </details>
 
           <details className="guide-accordion" id="game">
-            <summary><span className="guide-number">04</span><strong>게임</strong><span>가위바위보, 추첨, 퀴즈와 룰렛 진행</span><i aria-hidden="true" /></summary>
+            <summary><span className="guide-number">04</span><strong>게임</strong><span>가위바위보, 추첨, 퀴즈, 비밀 단어, 팀 대항전, 출석과 룰렛</span><i aria-hidden="true" /></summary>
             <div className="guide-accordion-content">
               <div className="guide-topic">
                 <h3>방송 채팅으로 진행하기 (DJ 전용)</h3>
                 <p>방송 모니터링 화면을 벗어나지 않아도 DJ 계정으로 채팅에 입력하면 대시보드 버튼과 똑같이 동작합니다. <code>!봇</code>으로 명령어 목록을, <code>!봇 상태</code>로 진행 중인 게임과 자동 기능 켜짐 여부를 확인합니다.</p>
-                <p><code>!가위바위보 시작</code> · <code>!가위바위보 종료</code> (DJ 선택은 랜덤), <code>!추첨 시작 3</code> · <code>!추첨 종료</code>, <code>!퀴즈 시작</code> · <code>!퀴즈 종료</code>, <code>!룰렛 켜기</code> · <code>!룰렛 끄기</code>, <code>!환영</code> · <code>!후원</code> · <code>!하트</code> · <code>!팔로우</code> · <code>!공지</code> + <code>켜기</code>/<code>끄기</code></p>
-                <p>채팅은 청취자에게도 보이므로 퀴즈 정답은 방송 전에 게임 &gt; 퀴즈의 <strong>대기 문제</strong>에 등록해 두고, 방송 중에는 <code>!퀴즈 시작</code>으로 위에서부터 출제합니다.</p>
+                <p><code>!가위바위보 시작</code> · <code>!가위바위보 종료</code> (DJ 선택은 랜덤), <code>!추첨 시작 3</code> · <code>!추첨 종료</code>, <code>!퀴즈 시작</code> · <code>!퀴즈 종료</code>, <code>!비밀단어 시작</code> · <code>힌트</code> · <code>종료</code>, <code>!팀전 시작</code> · <code>상태</code> · <code>종료</code>, <code>!룰렛 켜기</code> · <code>!룰렛 끄기</code>, <code>!환영</code> · <code>!후원</code> · <code>!하트</code> · <code>!팔로우</code> · <code>!공지</code> + <code>켜기</code>/<code>끄기</code></p>
+                <p>채팅은 청취자에게도 보이므로 퀴즈 정답과 비밀 단어는 방송 전에 대시보드에 등록해 둡니다. 퀴즈 정답은 방송 전에 게임 &gt; 퀴즈의 <strong>대기 문제</strong>에 등록해 두고, 방송 중에는 <code>!퀴즈 시작</code>으로 위에서부터 출제합니다.</p>
               </div>
               <div className="guide-topic">
                 <h3>휴대폰 리모컨</h3>
@@ -128,6 +128,29 @@ export default function GuidePage() {
                   <li>정답이 나와도 퀴즈는 계속 진행됩니다. <strong>퀴즈 종료 및 정답 공개</strong>나 <code>!퀴즈 종료</code>를 누르면 봇 채팅에 정답, 첫 정답자와 걸린 시간, 다른 정답자를 공개합니다.</li>
                 </ol>
                 <p>결과는 최근 퀴즈 기록과 백업에도 저장됩니다.</p>
+              </div>
+              <div className="guide-topic">
+                <h3>비밀 단어 찾기</h3>
+                <ol>
+                  <li><strong>게임 &gt; 비밀 단어</strong>에서 단어(최대 20자)와 힌트를 대기 목록에 등록합니다. 최대 30개까지 둘 수 있습니다.</li>
+                  <li>방송 중에 <code>!비밀단어 시작</code>이나 화면의 시작 버튼을 누르면 위에서부터 한 단어가 출제되고, 봇은 글자 수만 알립니다. 단어는 대시보드와 리모컨 화면에만 보입니다.</li>
+                  <li>청취자가 평소처럼 채팅하다가 그 단어가 들어간 말을 처음 한 사람이 찾은 사람이 됩니다. 띄어쓰기·문장부호·대소문자는 무시하고, DJ의 채팅은 세지 않습니다.</li>
+                  <li>막히면 <code>!비밀단어 힌트</code>로 힌트를 공개하고, 아무도 못 찾으면 <code>!비밀단어 종료</code>로 정답을 공개합니다.</li>
+                </ol>
+              </div>
+              <div className="guide-topic">
+                <h3>팀 대항전</h3>
+                <ol>
+                  <li><strong>게임 &gt; 팀 대항전</strong>에서 팀 이름(2~4개), 점수 기준(하트+후원 · 하트만 · 후원만), 목표 점수(0이면 없음)를 정합니다. 하트+후원은 스푼 1개를 10점으로 계산합니다.</li>
+                  <li><strong>이 설정으로 시작</strong>이나 <code>!팀전 시작</code>으로 엽니다. 청취자는 <code>!팀 1</code>이나 <code>!팀 A팀</code>처럼 팀을 고르며, 한 번 고른 팀은 바꿀 수 없습니다.</li>
+                  <li>참여한 뒤 보낸 하트·후원만 팀 점수가 됩니다. 선두가 바뀌면 봇이 알리고(1분에 한 번까지), <code>!팀전 상태</code>로 현재 점수를 채팅에 띄울 수 있습니다.</li>
+                  <li>목표 점수에 먼저 도달한 팀이 나오면 자동으로 끝나고, 아니면 <code>!팀전 종료</code>로 끝냅니다. 봇이 순위와 가장 많이 기여한 MVP를 발표합니다.</li>
+                </ol>
+              </div>
+              <div className="guide-topic">
+                <h3>출석 스탬프</h3>
+                <p>봇이 방송에 있는 동안 입장·채팅·하트·후원·팔로우한 청취자는 방송마다 한 번씩 자동으로 출석됩니다. 연속 출석은 달력 날짜가 아니라 DJ의 방송 횟수로 세므로, 방송을 쉬는 날에는 끊기지 않습니다.</p>
+                <p>누적 10·30·50·100번째 등, 연속 5·10·20회 등에 도달하면 봇이 채팅으로 축하합니다. <strong>게임 &gt; 출석</strong>에서 축하 메시지를 끄고, 이번 달·전체 출석 순위를 확인합니다. 청취자는 <code>!출석</code>으로 본인 기록을, <code>!출석왕</code>으로 이번 달 TOP 5를 봅니다.</p>
               </div>
               <div className="guide-topic">
                 <h3>룰렛 설정</h3>
