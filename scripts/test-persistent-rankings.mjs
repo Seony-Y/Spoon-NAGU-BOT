@@ -652,6 +652,28 @@ assert.equal(history[0].winnerIndex, 1);
 assert.equal(history[0].topMembers[0].nickname, "팀원2");
 assert.equal(history[0].topMembers[0].points, 350);
 
+// Attendance: once per broadcast, streak by broadcasts, milestones, ranking.
+const attendanceNow = Date.now();
+for (let live = 1; live <= 5; live += 1) store.recordBroadcastByKey(firstSessionKey, 9000 + live, attendanceNow - (10 - live) * 60_000);
+store.recordBroadcastByKey(firstSessionKey, 9001, 0);
+for (const live of [9001, 9003, 9004]) assert.ok(store.markAttendanceByKey(firstSessionKey, live, "a1", "출석러", attendanceNow));
+assert.equal(store.markAttendanceByKey(firstSessionKey, 9004, "a1", "출석러"), null, "once per broadcast");
+assert.deepEqual(store.markAttendanceByKey(firstSessionKey, 9005, "a1", "출석러 새닉", attendanceNow), { total: 4, streak: 3 });
+assert.deepEqual(store.getAttendanceSummaryByKey(firstSessionKey, "a1"), { total: 4, streak: 3 });
+store.markAttendanceByKey(firstSessionKey, 9005, "a2", "하루", attendanceNow);
+assert.equal(store.attendanceMilestoneLabel({ total: 10, streak: 2 }), "10번째 출석");
+assert.equal(store.attendanceMilestoneLabel({ total: 30, streak: 5 }), "30번째 출석 · 연속 5회");
+assert.equal(store.attendanceMilestoneLabel({ total: 4, streak: 3 }), null);
+const attendanceRanking = store.listAttendanceRankingByKey(firstSessionKey, "month");
+assert.deepEqual(attendanceRanking.map((entry) => [entry.nickname, entry.count]), [["출석러 새닉", 4], ["하루", 1]]);
+assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러"), "출석러님은 지금까지 4번 출석했어요. (연속 3회)");
+assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "nobody", "새손님"), "새손님님은 아직 출석 기록이 없어요.");
+assert.match(store.applyAttendanceCommand(firstSessionKey, "!출석왕", "a1", "출석러"), /^\[출석왕\] 이번 달: 1\. 출석러 새닉 4회/);
+assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석 해요", "a1", "출석러"), null);
+assert.equal(store.getAttendanceAnnounceByKey(firstSessionKey), true);
+store.setAttendanceAnnounce(firstSessionId, false);
+assert.equal(store.getAttendanceAnnounceByKey(firstSessionKey), false);
+
 // Admin block by DJ: every device of the DJ and later logins are blocked.
 store.saveSession("block-a", token);
 store.linkDjWorkspaceByKey(store.getSessionKey("block-a"), "block-dj", null);

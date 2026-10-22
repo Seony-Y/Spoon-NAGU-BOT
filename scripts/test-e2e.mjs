@@ -72,7 +72,7 @@ try {
   }
 
   // --- Read: pages render with the session -----------------------------------
-  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=team", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
+  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=team", "/?tab=game&game=attendance", "/?tab=game&game=attendance&period=all", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
     reseed();
     const response = await fetch(BASE + path, { headers: { cookie } });
     const html = await response.text();
@@ -182,6 +182,12 @@ try {
   r = await post("/game/team-battle", { action: "finish" });
   check("팀 대항전 종료", r.params.team === "finished" && store.getActiveTeamBattleByKey(sessionKey) === null, JSON.stringify(r.params));
   store.setBotEnabled(sessionId, false);
+
+  // --- Attendance: announce toggle ---------------------------------------------
+  r = await post("/game/attendance", { announce: "off" });
+  check("출석 기념 메시지 끄기", r.params.attendance === "announce_off" && store.getAttendanceAnnounce(sessionId) === false, JSON.stringify(r.params));
+  r = await post("/game/attendance", { announce: "on" });
+  check("출석 기념 메시지 켜기", r.params.attendance === "announce_on" && store.getAttendanceAnnounce(sessionId) === true, JSON.stringify(r.params));
 
   // --- Roulette: settings, prizes, keeps ------------------------------------
   r = await post("/game/roulette", { action: "settings", cost: 30, enabled: "on" });

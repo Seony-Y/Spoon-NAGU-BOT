@@ -27,6 +27,9 @@ const CORE_BACKUP_TABLES = [
   { name: "follow_settings", key: "workspace_key", columns: ["enabled", "message"] },
   { name: "secret_word_queue", key: "workspace_key", columns: ["word", "hint", "created_at"] },
   { name: "team_battle_settings", key: "workspace_key", columns: ["team_names", "metric", "goal"] },
+  { name: "broadcasts", key: "workspace_key", columns: ["live_id", "started_at"] },
+  { name: "attendance", key: "workspace_key", columns: ["user_id", "live_id", "nickname", "attended_at", "month"] },
+  { name: "attendance_settings", key: "workspace_key", columns: ["announce"] },
   { name: "team_battles", key: "workspace_key", columns: ["battle_id", "team_names", "metric", "goal", "active", "started_at", "ended_at", "winner_index", "last_lead_index", "last_lead_announced_at"] },
   { name: "team_members", key: "workspace_key", columns: ["battle_id", "user_id", "nickname", "team_index", "points", "joined_at"] },
   { name: "secret_word_rounds", key: "workspace_key", columns: ["round_id", "word", "hint", "active", "started_at", "ended_at", "winner_user_id", "winner_nickname", "found_at"] },
@@ -335,6 +338,15 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   `).run(targetKey, battleOffset, sourceKey);
   database.prepare("DELETE FROM team_members WHERE workspace_key = ?").run(sourceKey);
   database.prepare("DELETE FROM team_battles WHERE workspace_key = ?").run(sourceKey);
+  for (const [table, columns] of [
+    ["broadcasts", "live_id, started_at"],
+    ["attendance", "user_id, live_id, nickname, attended_at, month"],
+    ["attendance_settings", "announce"],
+  ]) {
+    database.prepare(`INSERT OR IGNORE INTO ${table} (workspace_key, ${columns}) SELECT ?, ${columns} FROM ${table} WHERE workspace_key = ?`)
+      .run(targetKey, sourceKey);
+    database.prepare(`DELETE FROM ${table} WHERE workspace_key = ?`).run(sourceKey);
+  }
 
   database.prepare("DELETE FROM bot_commands WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM bot_counters WHERE session_key = ?").run(sourceKey);

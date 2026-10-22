@@ -37,6 +37,8 @@ const RESERVED_COMMANDS = [
   "!비밀단어",
   "!팀",
   "!팀전",
+  "!출석",
+  "!출석왕",
 ];
 
 function isReservedCommand(command: string) {

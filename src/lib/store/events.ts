@@ -417,3 +417,134 @@ export function finishTeamBattleByKey(sessionKey: string, endedAt = Date.now()) 
   `).run(endedAt, winnerIndex, workspaceKey, row.battle_id).changes > 0;
   return ended ? { ...battle, active: false, endedAt, winnerIndex } : null;
 }
+
+// ---- Attendance -------------------------------------------------------------
+// A listener attends a broadcast once by entering, chatting, sending hearts or
+// donations, or following. Streaks count the DJ's broadcasts (not calendar
+// days), so a DJ who airs twice a week keeps regular listeners' streaks alive.
+
+export const ATTENDANCE_TOTAL_MILESTONES = [10, 30, 50, 100, 200, 300, 500, 1000];
+export const ATTENDANCE_STREAK_MILESTONES = [5, 10, 20, 30, 50, 100];
+
+export type AttendanceRankingPeriod = "month" | "all";
+export type AttendanceEntry = { userId: string; nickname: string; count: number };
+
+function koreanMonth(timestamp: number) {
+  return new Date(timestamp + 9 * 60 * 60 * 1000).toISOString().slice(0, 7);
+}
+
+export function recordBroadcastByKey(sessionKey: string, liveId: number, startedAt = Date.now()) {
+  getDatabase().prepare(`
+    INSERT OR IGNORE INTO broadcasts (workspace_key, live_id, started_at) VALUES (?, ?, ?)
+  `).run(getWorkspaceKey(sessionKey), liveId, Number.isFinite(startedAt) ? startedAt : Date.now());
+}
+
+function attendanceStreak(workspaceKey: string, userId: string) {
+  const database = getDatabase();
+  const lives = database.prepare(`
+    SELECT live_id FROM broadcasts WHERE workspace_key = ? ORDER BY started_at DESC, live_id DESC LIMIT 1000
+  `).all(workspaceKey) as Array<{ live_id: number }>;
+  const attended = new Set((database.prepare(`
+    SELECT live_id FROM attendance WHERE workspace_key = ? AND user_id = ?
+  `).all(workspaceKey, userId) as Array<{ live_id: number }>).map((row) => row.live_id));
+  let streak = 0;
+  for (const { live_id: liveId } of lives) {
+    if (!attended.has(liveId)) break;
+    streak += 1;
+  }
+  return streak;
+}
+
+export function getAttendanceSummaryByKey(sessionKey: string, userId: string) {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const { total } = getDatabase().prepare("SELECT COUNT(*) AS total FROM attendance WHERE workspace_key = ? AND user_id = ?")
+    .get(workspaceKey, userId) as { total: number };
+  return { total, streak: attendanceStreak(workspaceKey, userId) };
+}
+
+// Records attendance for the broadcast. Returns the listener's totals only the
+// first time they are seen in it, otherwise null.
+export function markAttendanceByKey(sessionKey: string, liveId: number, userId: string, nickname: string | null, at = Date.now()) {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const database = getDatabase();
+  // The DJ entering their own broadcast is not attendance.
+  if (database.prepare("SELECT 1 FROM dj_workspaces WHERE dj_user_id = ? AND workspace_key = ?").get(userId, workspaceKey)) return null;
+  const inserted = database.prepare(`
+    INSERT OR IGNORE INTO attendance (workspace_key, user_id, live_id, nickname, attended_at, month)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(workspaceKey, userId, liveId, nickname?.trim().slice(0, 50) || "청취자", at, koreanMonth(at)).changes > 0;
+  return inserted ? getAttendanceSummaryByKey(sessionKey, userId) : null;
+}
+
+export function attendanceMilestoneLabel(summary: { total: number; streak: number }) {
+  const total = ATTENDANCE_TOTAL_MILESTONES.includes(summary.total);
+  const streak = ATTENDANCE_STREAK_MILESTONES.includes(summary.streak);
+  if (total && streak) return `${summary.total}번째 출석 · 연속 ${summary.streak}회`;
+  if (total) return `${summary.total}번째 출석`;
+  if (streak) return `연속 ${summary.streak}회 출석`;
+  return null;
+}
+
+export function listAttendanceRankingByKey(sessionKey: string, period: AttendanceRankingPeriod, limit = 20, now = Date.now()) {
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const monthFilter = period === "month" ? "AND month = ?" : "";
+  const parameters: Array<string | number> = period === "month" ? [workspaceKey, koreanMonth(now)] : [workspaceKey];
+  // The latest nickname a listener used is shown.
+  return (getDatabase().prepare(`
+    SELECT user_id, COUNT(*) AS count,
+           (SELECT nickname FROM attendance a2 WHERE a2.workspace_key = a.workspace_key AND a2.user_id = a.user_id
+            ORDER BY attended_at DESC, rowid DESC LIMIT 1) AS nickname
+    FROM attendance a
+    WHERE workspace_key = ? ${monthFilter}
+    GROUP BY user_id
+    ORDER BY count DESC, MIN(attended_at)
+    LIMIT ?
+  `).all(...parameters, Math.max(1, Math.min(limit, 100))) as Array<{ user_id: string; count: number; nickname: string }>)
+    .map((row) => ({ userId: row.user_id, nickname: row.nickname, count: row.count }));
+}
+
+export function listAttendanceRanking(sessionId: string, period: AttendanceRankingPeriod, limit = 20) {
+  return listAttendanceRankingByKey(getSessionKey(sessionId), period, limit);
+}
+
+export function countBroadcastsThisMonth(sessionId: string, now = Date.now()) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const month = koreanMonth(now);
+  const lives = getDatabase().prepare("SELECT started_at FROM broadcasts WHERE workspace_key = ?").all(workspaceKey) as Array<{ started_at: number }>;
+  return lives.filter((row) => koreanMonth(row.started_at) === month).length;
+}
+
+export function getAttendanceAnnounceByKey(sessionKey: string) {
+  const row = getDatabase().prepare("SELECT announce FROM attendance_settings WHERE workspace_key = ?")
+    .get(getWorkspaceKey(sessionKey)) as { announce: number } | undefined;
+  return row ? row.announce === 1 : true;
+}
+
+export function getAttendanceAnnounce(sessionId: string) {
+  return getAttendanceAnnounceByKey(getSessionKey(sessionId));
+}
+
+export function setAttendanceAnnounce(sessionId: string, announce: boolean) {
+  getDatabase().prepare(`
+    INSERT INTO attendance_settings (workspace_key, announce) VALUES (?, ?)
+    ON CONFLICT(workspace_key) DO UPDATE SET announce = excluded.announce
+  `).run(getWorkspaceKey(getSessionKey(sessionId)), announce ? 1 : 0);
+}
+
+// Listener commands "!출석" (own totals) and "!출석왕" (this month's top 5).
+export function applyAttendanceCommand(sessionKey: string, message: string, userId: string, nickname: string | null) {
+  const command = message.trim();
+  if (command === "!출석") {
+    const { total, streak } = getAttendanceSummaryByKey(sessionKey, userId);
+    const name = nickname?.trim() || "청취자";
+    return total === 0
+      ? `${name}님은 아직 출석 기록이 없어요.`
+      : `${name}님은 지금까지 ${total.toLocaleString("ko-KR")}번 출석했어요. (연속 ${streak}회)`;
+  }
+  if (command === "!출석왕") {
+    const ranking = listAttendanceRankingByKey(sessionKey, "month", 5);
+    if (ranking.length === 0) return "[출석왕] 이번 달 출석 기록이 아직 없어요.";
+    return `[출석왕] 이번 달: ${ranking.map((entry, index) => `${index + 1}. ${entry.nickname} ${entry.count}회`).join(" · ")}`;
+  }
+  return null;
+}

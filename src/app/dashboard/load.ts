@@ -16,6 +16,10 @@ import {
   listSecretWordQueue,
   listSecretWordRounds,
   listTeamBattles,
+  listAttendanceRanking,
+  countBroadcastsThisMonth,
+  getAttendanceAnnounce,
+  type AttendanceRankingPeriod,
   getTeamBattleSettings,
   listQuizRounds,
   listRaffleRounds,
@@ -53,6 +57,8 @@ export type DashboardSearchParams = {
   quiz?: string;
   secret?: string;
   team?: string;
+  attendance?: string;
+  period?: string;
   roulette?: string;
   rouletteEdit?: string;
   preview?: string;
@@ -72,6 +78,8 @@ export async function loadDashboardView(params: DashboardSearchParams) {
       ? "secret"
     : params.game === "team"
       ? "team"
+    : params.game === "attendance"
+      ? "attendance"
     : params.game === "quiz"
       ? "quiz"
     : params.game === "raffle"
@@ -209,6 +217,11 @@ export async function loadDashboardView(params: DashboardSearchParams) {
   const teamBattle = teamBattleRounds.find((battle) => battle.active) ?? null;
   const teamBattleHistory = teamBattleRounds.filter((battle) => !battle.active);
   const teamBattleSettings = isTeamPage ? getTeamBattleSettings(sessionId) : { teamNames: ["A팀", "B팀"], metric: "both" as const, goal: 0 };
+  const isAttendancePage = isGameTab && gameTab === "attendance" && connected && sessionId && !previewConnected;
+  const attendancePeriod: AttendanceRankingPeriod = params.period === "all" ? "all" : "month";
+  const attendanceRanking = isAttendancePage ? listAttendanceRanking(sessionId, attendancePeriod) : [];
+  const attendanceBroadcasts = isAttendancePage ? countBroadcastsThisMonth(sessionId) : 0;
+  const attendanceAnnounce = isAttendancePage ? getAttendanceAnnounce(sessionId) : true;
   const isRoulettePage = isGameTab && gameTab === "roulette" && connected && sessionId;
   const rouletteSettings = isRoulettePage
     ? previewConnected
@@ -298,6 +311,10 @@ export async function loadDashboardView(params: DashboardSearchParams) {
     teamBattle,
     teamBattleHistory,
     teamBattleSettings,
+    attendancePeriod,
+    attendanceRanking,
+    attendanceBroadcasts,
+    attendanceAnnounce,
     isRoulettePage,
     rouletteSettings,
     rouletteItems,

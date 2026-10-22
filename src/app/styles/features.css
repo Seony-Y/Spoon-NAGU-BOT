@@ -732,3 +732,39 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* 출석 */
+.attendance-summary {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.attendance-ranking {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attendance-ranking li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.attendance-ranking li > span:first-child {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.attendance-ranking strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

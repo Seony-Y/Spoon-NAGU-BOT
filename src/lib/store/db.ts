@@ -202,6 +202,26 @@ function migrateDatabase(database: DatabaseSync) {
       correct_at INTEGER,
       PRIMARY KEY (workspace_key, round_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS broadcasts (
+      workspace_key TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      started_at INTEGER NOT NULL,
+      PRIMARY KEY (workspace_key, live_id)
+    );
+    CREATE TABLE IF NOT EXISTS attendance (
+      workspace_key TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      live_id INTEGER NOT NULL,
+      nickname TEXT NOT NULL,
+      attended_at INTEGER NOT NULL,
+      month TEXT NOT NULL,
+      PRIMARY KEY (workspace_key, user_id, live_id)
+    );
+    CREATE INDEX IF NOT EXISTS attendance_month_idx ON attendance (workspace_key, month);
+    CREATE TABLE IF NOT EXISTS attendance_settings (
+      workspace_key TEXT PRIMARY KEY,
+      announce INTEGER NOT NULL DEFAULT 1
+    );
     CREATE TABLE IF NOT EXISTS team_battle_settings (
       workspace_key TEXT PRIMARY KEY,
       team_names TEXT NOT NULL,

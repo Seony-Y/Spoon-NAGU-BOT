@@ -25,7 +25,12 @@ import {
   applyRouletteDonation,
   applyRouletteKeepCommand,
   addTeamBattlePoints,
+  applyAttendanceCommand,
   applySecretWordChat,
+  attendanceMilestoneLabel,
+  getAttendanceAnnounceByKey,
+  markAttendanceByKey,
+  recordBroadcastByKey,
   applyTeamCommand,
   applySongRequestCommand,
   findBotCommandResponse,
@@ -395,6 +400,13 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     || recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
   // A donation replayed after a reconnect was already thanked (and drawn).
   if (event.event === "donation" && !isNewAudienceEvent) return;
+  if (runtime.currentLiveId !== undefined && !(event.event === "chat" && event.data.isDj)) {
+    const attended = markAttendanceByKey(sessionKey, runtime.currentLiveId, event.data.user.id, event.data.user.nickname);
+    const milestone = attended && attendanceMilestoneLabel(attended);
+    if (milestone && getAttendanceAnnounceByKey(sessionKey)) {
+      void sendBotChat(sessionKey, `[출석] ${event.data.user.nickname?.trim() || "청취자"}님 ${milestone} 축하해요!`);
+    }
+  }
   // Team battle points: only counted once per event (replays are not new).
   if (isNewAudienceEvent && (event.event === "like" || event.event === "donation")) {
     const outcome = event.event === "like"
@@ -425,6 +437,11 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     );
     if (foundSecret) announceSecretWordFound(sessionKey, foundSecret);
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
+    const attendanceReply = applyAttendanceCommand(sessionKey, event.data.message, event.data.user.id, event.data.user.nickname);
+    if (attendanceReply) {
+      void sendBotChat(sessionKey, attendanceReply);
+      return;
+    }
     if (command === "!명령어") {
       for (const message of getAvailableCommandRepliesByKey(sessionKey)) {
         void sendBotChat(sessionKey, message);
@@ -604,6 +621,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         continue;
       }
       if (signal.aborted) return;
+      recordBroadcastByKey(sessionKey, live.liveId);
       if (runtime && runtime.currentLiveId !== live.liveId) {
         clearBroadcastState(sessionKey, runtime);
         runtime.currentLiveId = live.liveId;

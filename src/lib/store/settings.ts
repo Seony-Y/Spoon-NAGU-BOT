@@ -211,6 +211,8 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
     "!가위바위보 가위·바위·보",
     "!참여",
     "!팀 (번호)",
+    "!출석",
+    "!출석왕",
     "!정답 (답)",
     "!내 킵",
   ].filter((label, index, items) => items.indexOf(label) === index);
