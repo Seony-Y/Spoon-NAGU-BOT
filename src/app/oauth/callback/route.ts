@@ -66,7 +66,14 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams;
   const state = query.get("state");
 
-  if (!statesMatch(request.cookies.get(STATE_COOKIE)?.value, state)) {
+  const expectedState = request.cookies.get(STATE_COOKIE)?.value;
+  if (!expectedState) {
+    // No login was started from this address in the last 10 minutes: it began
+    // elsewhere (e.g. localhost while Spoon returns to the registered address)
+    // or took too long.
+    return redirectWithError(request, "state_missing");
+  }
+  if (!statesMatch(expectedState, state)) {
     return redirectWithError(request, "state_mismatch");
   }
 
