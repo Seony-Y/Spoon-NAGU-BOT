@@ -19,6 +19,14 @@ process.env.SESSION_SECRET = randomBytes(32).toString("base64url");
 process.env.ADMIN_PASSWORD = randomBytes(16).toString("hex");
 process.env.ACCESS_CODE = randomBytes(8).toString("hex");
 process.env.SESSION_STORE_PATH = dbPath;
+// Never reach the real Spoon API (CI has no .env, and local runs must not
+// touch real accounts): port 9 refuses connections, so every call fails fast.
+process.env.SPOON_BASE_URL = "http://127.0.0.1:9";
+process.env.SPOON_CLIENT_ID = "00000000-0000-0000-0000-000000000000";
+process.env.SPOON_CLIENT_SECRET = "e2e-client-secret";
+process.env.SPOON_REDIRECT_URI = "http://localhost:3210/oauth/callback";
+process.env.ALERT_WEBHOOK_URL = "";
+process.env.DB_BACKUP_DISABLED = "1";
 const { ADMIN_PASSWORD } = process.env;
 
 const store = await import(pathToFileURL(join(process.cwd(), "src/lib/session-store.ts")).href);
