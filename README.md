@@ -168,4 +168,11 @@ The **데이터 백업** tab downloads a signed JSON backup of the DJ display na
 - `src/lib/live-actions.ts` — live actions (games, switches, counters) shared by dashboard routes, DJ chat commands, and `/remote`
 - `src/lib/dj-command.ts` — DJ chat command parser
 - `src/lib/bot-runtime.ts` — per-DJ event-stream worker; `src/lib/chat.ts` and `src/lib/chat-acks.ts` — send queue and batched acknowledgements
-- `src/lib/store/*` — SQLite persistence by domain (`db`, `sessions`, `settings`, `workspace`, `audience`, `roulette`, `games`), imported through `src/lib/session-store.ts`
+- `src/lib/store/*` — SQLite persistence by domain (`db`, `sessions`, `settings`, `workspace`, `audience`, `roulette`, `games`, `maintenance`), imported through `src/lib/session-store.ts`
+- `src/lib/maintenance.ts` — daily backup and cleanup; `src/lib/alerts.ts` — webhook alerts
+- `src/app/page.tsx` — dashboard shell (header, login card, bot bar, tabs). Data comes from `src/app/dashboard/load.ts` (`loadDashboardView`, typed as `DashboardView`); each tab section is a server component in `src/app/dashboard/` (`live-card`, `audience-card`, `recent-events-card`, `game-card` with `rps`/`raffle`/`quiz`/`roulette` panels, `bot-card` with `automation-settings`, `backup-card`); notice texts live in `labels.ts`, display helpers in `format.ts`
+- `src/app/globals.css` plus `src/app/styles/*.css` — global styles split in cascade order and imported in that order by `src/app/layout.tsx`; keep the order when adding files
+
+## Keeping up with Spoon
+
+Check the [Spoon Open API changelog](https://developers.spooncast.net/docs/changelog) now and then. v1.1.0–v1.2.0 brought `/v1/me`, follow events, donation history, and subscription info; new scopes must be approved in Spoon Developers before they are added to `SPOON_SCOPES`.
