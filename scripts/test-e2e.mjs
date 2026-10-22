@@ -162,6 +162,9 @@ try {
   check("비밀 단어 삭제", r.params.secret === "queue_deleted" && store.listSecretWordQueue(sessionId).length === 1, JSON.stringify(r.params));
   store.setBotEnabled(sessionId, true);
   r = await post("/game/secret-word", { action: "start" });
+  check("방송 전 게임 시작 차단", r.params.secret === "not_live" && store.listSecretWordQueue(sessionId).length === 1, JSON.stringify(r.params));
+  store.setCurrentLiveIdByKey(sessionKey, 777);
+  r = await post("/game/secret-word", { action: "start" });
   check("비밀 단어 시작", r.params.secret === "started" && store.getActiveSecretWordByKey(sessionKey)?.word === "고구마", JSON.stringify(r.params));
   r = await post("/game/secret-word", { action: "hint" });
   check("비밀 단어 힌트", r.params.secret === "hint_sent", JSON.stringify(r.params));
@@ -182,6 +185,7 @@ try {
   r = await post("/game/team-battle", { action: "finish" });
   check("팀 대항전 종료", r.params.team === "finished" && store.getActiveTeamBattleByKey(sessionKey) === null, JSON.stringify(r.params));
   store.setBotEnabled(sessionId, false);
+  store.setCurrentLiveIdByKey(sessionKey, undefined);
 
   // --- Attendance: announce toggle ---------------------------------------------
   r = await post("/game/attendance", { announce: "off" });

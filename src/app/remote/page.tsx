@@ -56,6 +56,7 @@ const RESULT_NOTICES: Record<string, { tone: "success" | "error"; text: string }
 
 const FAILURE_NOTICES: Record<string, string> = {
   bot_required: "봇이 방송에 입장해 있을 때만 진행할 수 있습니다.",
+  not_live: "방송 중일 때만 시작할 수 있습니다.",
   missing_scope: "채팅 권한이 없습니다. 대시보드에서 다시 연결해 주세요.",
   already_active: "이미 진행 중입니다. 먼저 종료해 주세요.",
   not_active: "진행 중인 게임이 없습니다.",

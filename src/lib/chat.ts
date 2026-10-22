@@ -116,8 +116,15 @@ function rememberSentMessage(sessionKey: string, message: string) {
   const now = Date.now();
   const sent = (recentlySent.get(sessionKey) ?? [])
     .filter((entry) => now - entry.at < SENT_ECHO_WINDOW_MS);
-  sent.push({ text: message.trim(), at: now });
+  const entry = { text: message.trim(), at: now };
+  sent.push(entry);
   recentlySent.set(sessionKey, sent.slice(-50));
+  return entry;
+}
+
+function forgetSentMessage(sessionKey: string, entry: { text: string; at: number }) {
+  const sent = recentlySent.get(sessionKey);
+  if (sent) recentlySent.set(sessionKey, sent.filter((item) => item !== entry));
 }
 
 // Messages are sent with the DJ's token, so if Spoon echoes them back as DJ chat
@@ -135,8 +142,11 @@ function enqueueChat(sessionKey: string, message: string) {
     .catch(() => ({ kind: "unavailable" }) as ChatSendResult)
     .then(async () => {
       try {
+        // Remembered before sending: Spoon may echo the message on the event
+        // stream before the send request returns.
+        const entry = rememberSentMessage(sessionKey, message);
         const result = await sendChatBySessionKey(sessionKey, message);
-        if (result.kind === "sent") rememberSentMessage(sessionKey, message);
+        if (result.kind !== "sent") forgetSentMessage(sessionKey, entry);
         return result;
       } catch {
         return { kind: "unavailable" } as ChatSendResult;

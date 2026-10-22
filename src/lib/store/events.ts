@@ -368,6 +368,7 @@ export function addTeamBattlePoints(
   source: "hearts" | "spoons",
   amount: number,
   at = Date.now(),
+  occurredAt = Date.now(),
 ): TeamBattleOutcome | null {
   if (!(amount > 0)) return null;
   const workspaceKey = getWorkspaceKey(sessionKey);
@@ -379,8 +380,9 @@ export function addTeamBattlePoints(
   if (points <= 0) return null;
   const database = getDatabase();
   const updated = database.prepare(`
-    UPDATE team_members SET points = points + ? WHERE workspace_key = ? AND battle_id = ? AND user_id = ?
-  `).run(points, workspaceKey, row.battle_id, userId).changes > 0;
+    UPDATE team_members SET points = points + ?
+    WHERE workspace_key = ? AND battle_id = ? AND user_id = ? AND joined_at <= ?
+  `).run(points, workspaceKey, row.battle_id, userId, occurredAt).changes > 0;
   if (!updated) return null;
 
   const battle = loadTeamBattle(workspaceKey, row);
@@ -394,14 +396,15 @@ export function addTeamBattlePoints(
   }
   const leader = ranked[0].score > ranked[1].score ? ranked[0] : null;
   if (!leader || leader.index === row.last_lead_index) return null;
-  // The first leader is not news but starts the clock; later changes are
-  // announced at most once a minute (flip-flops in between stay quiet).
+  // The first leader is not news but starts the clock. A later change is
+  // announced at most once a minute; until then the announced leader is kept,
+  // so a lead that still holds after the minute is announced on the next point.
   const wasLed = row.last_lead_index !== null;
   const announce = wasLed && at - (row.last_lead_announced_at ?? 0) >= LEAD_ANNOUNCE_INTERVAL_MS;
+  if (wasLed && !announce) return null;
   database.prepare(`
-    UPDATE team_battles SET last_lead_index = ?, last_lead_announced_at = CASE WHEN ? THEN ? ELSE last_lead_announced_at END
-    WHERE workspace_key = ? AND battle_id = ?
-  `).run(leader.index, announce || !wasLed ? 1 : 0, at, workspaceKey, row.battle_id);
+    UPDATE team_battles SET last_lead_index = ?, last_lead_announced_at = ? WHERE workspace_key = ? AND battle_id = ?
+  `).run(leader.index, at, workspaceKey, row.battle_id);
   return announce ? { kind: "lead_change", battle, leader } : null;
 }
 
@@ -469,10 +472,12 @@ export function markAttendanceByKey(sessionKey: string, liveId: number, userId: 
   const database = getDatabase();
   // The DJ entering their own broadcast is not attendance.
   if (database.prepare("SELECT 1 FROM dj_workspaces WHERE dj_user_id = ? AND workspace_key = ?").get(userId, workspaceKey)) return null;
+  const broadcast = database.prepare("SELECT started_at FROM broadcasts WHERE workspace_key = ? AND live_id = ?")
+    .get(workspaceKey, liveId) as { started_at: number } | undefined;
   const inserted = database.prepare(`
     INSERT OR IGNORE INTO attendance (workspace_key, user_id, live_id, nickname, attended_at, month)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(workspaceKey, userId, liveId, nickname?.trim().slice(0, 50) || "청취자", at, koreanMonth(at)).changes > 0;
+  `).run(workspaceKey, userId, liveId, nickname?.trim().slice(0, 50) || "청취자", at, koreanMonth(broadcast?.started_at ?? at)).changes > 0;
   return inserted ? getAttendanceSummaryByKey(sessionKey, userId) : null;
 }
 
@@ -544,7 +549,7 @@ export function applyAttendanceCommand(sessionKey: string, message: string, user
   if (command === "!출석왕") {
     const ranking = listAttendanceRankingByKey(sessionKey, "month", 5);
     if (ranking.length === 0) return "[출석왕] 이번 달 출석 기록이 아직 없어요.";
-    return `[출석왕] 이번 달: ${ranking.map((entry, index) => `${index + 1}. ${entry.nickname} ${entry.count}회`).join(" · ")}`;
+    return `[출석왕] 이번 달: ${ranking.map((entry, index) => `${index + 1}. ${entry.nickname.slice(0, 12)} ${entry.count}회`).join(" · ")}`;
   }
   return null;
 }

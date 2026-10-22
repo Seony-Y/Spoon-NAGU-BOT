@@ -131,7 +131,7 @@ DJ-only commands (other users' messages fall through to the listener commands) c
 - `!팀전 시작` / `상태` / `종료` — uses the team settings saved in the dashboard
 - `!룰렛`, `!환영`, `!후원`, `!하트`, `!팔로우`, `!공지` + `켜기` / `끄기`
 
-`/remote` is a phone-sized controller for DJs broadcasting from a PC: start and finish games, adjust counters (announced in chat), and flip the roulette and automation switches. It refreshes every 3 seconds and shows the active quiz answer only on screen.
+`/remote` is a phone-sized controller for DJs broadcasting from a PC: start and finish games (including the secret word, with its hint, and the team battle with live scores), adjust counters (announced in chat), and flip the roulette and automation switches. It refreshes every 3 seconds and shows the active quiz answer and secret word only on screen.
 
 ## Automation
 
@@ -145,19 +145,21 @@ Switches apply immediately; message edits apply on save. Spoon's own `welcomeMes
 
 ## Games
 
+Games start only while the bot is in a live broadcast (`not_live` otherwise), since the start announcement would be lost and a queued question or word used up. A secret word or team battle still open when the broadcast ends is closed automatically and its result recorded (chat is gone, so it is not announced), so the next broadcast starts clean.
+
 Rock-paper-scissors, raffle, and quiz rounds are kept per workspace; the dashboard shows the 10 most recent completed rounds. Quiz questions can be queued before a broadcast (Enter queues; **지금 바로 출제** publishes immediately). A listener who answered correctly once stays correct even after resubmitting (intended). Quiz results announce the answer, the first solver(s) with elapsed time, and the other solvers.
 
 **비밀 단어** — the DJ queues words (and optional hints) before a broadcast; while a round is active, the first listener whose chat contains the word (spaces, punctuation and case ignored; the DJ's own chat never counts) wins and the bot announces it with the elapsed time. Matching chat is still processed as usual.
 
-**팀 대항전** — 2 to 4 teams, scored by hearts, spoons, or both (1 spoon = 10 points), with an optional goal. Listeners join with `!팀` once; only hearts and donations sent after joining count (recovered donations included, replayed events excluded). Lead changes are announced at most once a minute, the first team to reach the goal wins automatically, and the result names the MVP.
+**팀 대항전** — 2 to 4 teams, scored by hearts, spoons, or both (1 spoon = 10 points), with an optional goal. Listeners join with `!팀` once; only hearts and donations sent after joining count (recovered donations included, replayed events excluded). Lead changes are announced at most once a minute (a lead that still holds after the minute is announced on the next point), the first team to reach the goal wins automatically, and the result names the MVP.
 
-**출석** — a listener who enters, chats, sends hearts or donations, or follows while the bot is in the broadcast attends that broadcast once (the DJ is excluded). Streaks count the DJ's broadcasts rather than calendar days. Milestones (total 10/30/50/100/200/300/500/1000, streak 5/10/20/30/50/100) are congratulated in chat unless turned off on the dashboard, which also shows the monthly and all-time ranking.
+**출석** — a listener who enters (presence event, or the listener list when the bot gets no presence events), chats, sends hearts or donations, or follows while the bot is in the broadcast attends that broadcast once (the DJ is excluded). Streaks count the DJ's broadcasts rather than calendar days. Milestones (total 10/30/50/100/200/300/500/1000, streak 5/10/20/30/50/100) are congratulated in chat unless turned off on the dashboard, which also shows the monthly and all-time ranking.
 
 The roulette runs once per donation at or above the configured cost, with prize percentages in 0.01% steps and the remainder as 꽝. Prizes go to per-listener keeps, deduplicated per donation.
 
 ## Backups
 
-The **데이터 백업** tab downloads a signed JSON backup of the DJ display name, automation settings (including follow thanks), commands, counters, song requests, game rounds and entries, the quiz queue, secret words, team battles, attendance, and roulette settings, prizes, results, and keeps. The full download adds listener profiles, presence/heart/donation events, and Spoon-ranking snapshots. Tokens, session cookies, admin state, bot participation, and recent events are never exported. Restoring replaces core workspace data after signature and schema validation; older backups without newer tables still restore. Uploads are limited to 10 MB.
+The **데이터 백업** tab downloads a signed JSON backup of the DJ display name, automation settings (including follow thanks), commands, counters, song requests, game rounds and entries, the quiz queue, secret words, team battles, the attendance switch and broadcast list, and roulette settings, prizes, results, and keeps. The full download adds listener profiles, presence/heart/donation events, Spoon-ranking snapshots, and attendance records. Tokens, session cookies, admin state, bot participation, and recent events are never exported. Restoring replaces core workspace data after signature and schema validation; older backups without newer tables still restore. Uploads are limited to 10 MB.
 
 ## Administration
 

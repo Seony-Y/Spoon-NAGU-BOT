@@ -40,7 +40,8 @@ function getBatcher(sessionKey: string) {
       for (const message of formatMultilineMessages(
         heading,
         `${heading.split(" ")[0]} (이어서)`,
-        joinIntoLines(nicknames.map((nickname) => `${nickname.slice(0, 50)}님`)),
+        // Team entries arrive as "닉네임님(팀)" already.
+        joinIntoLines(nicknames.map((nickname) => game === "team" ? nickname : `${nickname.slice(0, 50)}님`)),
       )) void sendBotChat(sessionKey, message);
     });
     batchers.set(sessionKey, batcher);

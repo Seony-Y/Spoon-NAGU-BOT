@@ -3,6 +3,7 @@ import "server-only";
 import { randomInt } from "node:crypto";
 import { sendBotChat } from "./chat";
 import { flushGameAcks } from "./chat-acks";
+import { formatMultilineMessages } from "./chat-message";
 import {
   AUTOMATION_LABELS,
   DJ_COMMAND_HELP,
@@ -46,6 +47,7 @@ import {
   startRpsRoundByKey,
   updateBotSettingsByKey,
   updateRouletteSettingsByKey,
+  getCurrentLiveIdByKey,
 } from "./session-store";
 
 // Shared live-broadcast actions. The dashboard routes, DJ chat commands and the
@@ -59,7 +61,8 @@ export type LiveActionFailure =
   | "invalid_winner_count"
   | "invalid_quiz"
   | "queue_empty"
-  | "secret_queue_empty";
+  | "secret_queue_empty"
+  | "not_live";
 
 export type LiveActionResult =
   | { ok: true; status: string }
@@ -67,6 +70,7 @@ export type LiveActionResult =
 
 const FAILURE_REPLIES: Record<LiveActionFailure, string> = {
   bot_required: "봇이 방송에 들어와 있을 때만 할 수 있어요.",
+  not_live: "방송 중일 때만 시작할 수 있어요.",
   missing_scope: "봇 채팅 권한이 없어 진행할 수 없어요.",
   already_active: "이미 진행 중이에요. 먼저 종료해 주세요.",
   not_active: "지금 진행 중인 게임이 없어요.",
@@ -90,6 +94,8 @@ function checkChatGame(sessionKey: string): LiveActionFailure | null {
   if (!isBotEnabledByKey(sessionKey)) return "bot_required";
   const scopes = getSessionByKey(sessionKey)?.scope.split(" ") ?? [];
   if (!scopes.includes("events.chat") || !scopes.includes("chat.send")) return "missing_scope";
+  // The start announcement would be dropped offline (and a queued word used up).
+  if (getCurrentLiveIdByKey(sessionKey) === undefined) return "not_live";
   return null;
 }
 
@@ -237,9 +243,9 @@ export function announceSecretWordFound(sessionKey: string, round: { word: strin
 }
 
 const METRIC_LABELS: Record<TeamBattleMetric, string> = {
-  hearts: "하트",
-  spoons: "후원(스푼)",
-  both: `하트와 후원(스푼 1개 = ${SPOON_POINTS_IN_BOTH}점)`,
+  hearts: "하트가",
+  spoons: "후원(스푼)이",
+  both: `하트와 후원이(스푼 1개 = ${SPOON_POINTS_IN_BOTH}점)`,
 };
 
 function formatTeamScores(teams: TeamScore[]) {
@@ -264,7 +270,7 @@ export async function startTeamBattle(sessionKey: string): Promise<LiveActionRes
   const { teamNames, metric, goal } = started.settings;
   const choices = teamNames.map((name, index) => `'!팀 ${index + 1}'(${name})`).join(" / ");
   await announce(sessionKey, [
-    `[팀 대항전] 시작! 채팅에 ${choices}로 팀을 골라 주세요. 참여 후 보낸 ${METRIC_LABELS[metric]}가 팀 점수가 돼요.${goal > 0 ? ` 먼저 ${goal.toLocaleString("ko-KR")}점 달성한 팀이 이겨요.` : ""}`,
+    `[팀 대항전] 시작! 채팅에 ${choices}로 팀을 골라 주세요. 참여 후 보낸 ${METRIC_LABELS[metric]} 팀 점수가 돼요.${goal > 0 ? ` 먼저 ${goal.toLocaleString("ko-KR")}점 달성한 팀이 이겨요.` : ""}`,
   ]);
   return { ok: true, status: "started" };
 }
@@ -347,7 +353,7 @@ async function replyResult(sessionKey: string, result: LiveActionResult) {
 export async function runDjCommand(sessionKey: string, command: DjCommand) {
   switch (command.kind) {
     case "help":
-      await announce(sessionKey, [`[DJ 명령어] ${DJ_COMMAND_HELP.join(" | ")}`]);
+      await announce(sessionKey, formatMultilineMessages("[DJ 명령어]", "[DJ 명령어] (이어서)", DJ_COMMAND_HELP));
       return;
     case "status":
       await announce(sessionKey, formatLiveStatus(sessionKey));

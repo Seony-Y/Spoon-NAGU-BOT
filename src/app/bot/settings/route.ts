@@ -214,7 +214,8 @@ export async function POST(request: NextRequest) {
 
   if (mode === "delete_command") {
     const command = String(formData.get("command") ?? "").trim().toLocaleLowerCase("ko-KR");
-    if (isReservedCommand(command)) return redirect(request, "reserved_command", "commands");
+    // Deleting stays allowed: a command made before its name became built in
+    // is shadowed by the built-in one and must be removable.
     if (command) deleteBotCommand(sessionId, command);
     return redirect(request, "command_deleted", "commands");
   }

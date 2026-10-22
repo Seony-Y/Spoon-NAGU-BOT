@@ -15,6 +15,7 @@ const NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
   already_active: { tone: "error", text: "진행 중인 라운드를 먼저 종료해 주세요." },
   not_active: { tone: "error", text: "진행 중인 라운드가 없습니다." },
   bot_required: { tone: "error", text: "봇을 방송에 입장시킨 뒤 시작해 주세요." },
+  not_live: { tone: "error", text: "방송이 시작된 뒤 시작해 주세요." },
   missing_scope: { tone: "error", text: "채팅 이벤트와 전송 권한이 필요합니다." },
 };
 

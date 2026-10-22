@@ -28,7 +28,6 @@ const CORE_BACKUP_TABLES = [
   { name: "secret_word_queue", key: "workspace_key", columns: ["word", "hint", "created_at"] },
   { name: "team_battle_settings", key: "workspace_key", columns: ["team_names", "metric", "goal"] },
   { name: "broadcasts", key: "workspace_key", columns: ["live_id", "started_at"] },
-  { name: "attendance", key: "workspace_key", columns: ["user_id", "live_id", "nickname", "attended_at", "month"] },
   { name: "attendance_settings", key: "workspace_key", columns: ["announce"] },
   { name: "team_battles", key: "workspace_key", columns: ["battle_id", "team_names", "metric", "goal", "active", "started_at", "ended_at", "winner_index", "last_lead_index", "last_lead_announced_at"] },
   { name: "team_members", key: "workspace_key", columns: ["battle_id", "user_id", "nickname", "team_index", "points", "joined_at"] },
@@ -44,6 +43,7 @@ const AUDIENCE_BACKUP_TABLES = [
   { name: "audience_events", key: "workspace_key", columns: ["event_id", "event_type", "live_id", "user_id", "spoons", "hearts", "favorite_temperature", "occurred_at", "stat_date"] },
   { name: "audience_spoon_snapshots", key: "workspace_key", columns: ["live_id", "user_id", "spoons", "stat_date", "updated_at"] },
   { name: "audience_archive", key: "workspace_key", columns: ["user_id", "spoons", "hearts", "favorite_temperature"] },
+  { name: "attendance", key: "workspace_key", columns: ["user_id", "live_id", "nickname", "attended_at", "month"] },
 ] as const;
 
 export const WORKSPACE_BACKUP_TABLES = {

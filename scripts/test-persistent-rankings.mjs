@@ -638,10 +638,12 @@ assert.deepEqual(joined, [["팀원1", "A팀"]]);
 assert.equal(store.addTeamBattlePoints(firstSessionKey, "outsider", "hearts", 50, 101_000), null, "non-members score nothing");
 assert.equal(store.addTeamBattlePoints(firstSessionKey, "t1", "hearts", 10, 101_000), null, "first leader is not announced");
 assert.equal(store.addTeamBattlePoints(firstSessionKey, "t2", "spoons", 5, 102_000), null, "lead change within a minute is quiet");
-const lead = store.addTeamBattlePoints(firstSessionKey, "t1", "hearts", 50, 200_000);
-assert.equal(lead.kind, "lead_change");
-assert.equal(lead.leader.name, "A팀");
-assert.deepEqual(store.getActiveTeamBattleByKey(firstSessionKey).teams.map((team) => team.score), [60, 50]);
+assert.equal(store.addTeamBattlePoints(firstSessionKey, "t2", "hearts", 1, 103_000, 0), null, "events before joining do not count");
+const lead = store.addTeamBattlePoints(firstSessionKey, "t2", "hearts", 1, 200_000);
+assert.equal(lead.kind, "lead_change", "a quiet lead change is announced once the minute has passed");
+assert.equal(lead.leader.name, "B팀");
+assert.equal(store.addTeamBattlePoints(firstSessionKey, "t2", "hearts", 1, 300_000), null, "same leader is not repeated");
+assert.deepEqual(store.getActiveTeamBattleByKey(firstSessionKey).teams.map((team) => team.score), [10, 52]);
 const goal = store.addTeamBattlePoints(firstSessionKey, "t2", "spoons", 30, 210_000);
 assert.equal(goal.kind, "goal_reached");
 assert.equal(goal.winner.name, "B팀");
@@ -650,7 +652,7 @@ assert.equal(store.finishTeamBattleByKey(firstSessionKey), null);
 const history = store.listTeamBattles(firstSessionId);
 assert.equal(history[0].winnerIndex, 1);
 assert.equal(history[0].topMembers[0].nickname, "팀원2");
-assert.equal(history[0].topMembers[0].points, 350);
+assert.equal(history[0].topMembers[0].points, 352);
 
 // Attendance: once per broadcast, streak by broadcasts, milestones, ranking.
 const attendanceNow = Date.now();

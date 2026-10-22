@@ -24,6 +24,7 @@ export function RafflePanel({ view }: { view: DashboardView }) {
       {params.raffle === "already_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 추첨을 먼저 종료해 주세요.</strong></div>}
       {params.raffle === "not_active" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>진행 중인 추첨이 없습니다.</strong></div>}
       {params.raffle === "invalid_winner_count" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>당첨 인원은 1명 이상 {MAX_RAFFLE_WINNERS.toLocaleString("ko-KR")}명 이하의 정수로 입력해 주세요.</strong></div>}
+      {params.raffle === "not_live" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>방송이 시작된 뒤 시작해 주세요.</strong></div>}
       {params.raffle === "bot_required" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>봇을 방송에 입장시킨 뒤 시작해 주세요.</strong></div>}
       {params.raffle === "missing_scope" && <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>채팅 이벤트와 전송 권한이 필요합니다.</strong></div>}
 

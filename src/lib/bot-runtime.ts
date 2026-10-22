@@ -32,6 +32,8 @@ import {
   markAttendanceByKey,
   recordBroadcastByKey,
   applyTeamCommand,
+  finishSecretWordByKey,
+  finishTeamBattleByKey,
   applySongRequestCommand,
   findBotCommandResponse,
   getAvailableCommandRepliesByKey,
@@ -170,6 +172,10 @@ function setRuntimeState(sessionKey: string, state: BotConnectionState) {
 }
 
 function clearBroadcastState(sessionKey: string, runtime: BotRuntime) {
+  if (runtime.currentLiveId !== undefined) {
+    finishTeamBattleByKey(sessionKey);
+    finishSecretWordByKey(sessionKey);
+  }
   resetBotAutomationState(runtime);
   runtime.lastEventAt = undefined;
   runtime.events = [];
@@ -264,6 +270,7 @@ async function pollListenerJoins(
       runtime.subscriberIds = new Set(listeners.filter((listener) => listener.subscription).map((listener) => listener.id));
       const settings = getBotSettingsByKey(sessionKey);
       for (const listener of joinedListeners) {
+        recordAttendance(sessionKey, runtime, listener);
         const reply = processBotAutomation(runtime, {
           event: "presence",
           data: {
@@ -318,7 +325,15 @@ async function backfillDonations(sessionKey: string, accessToken: string, liveId
     };
     if (!recordAudienceEvent(sessionKey, liveId, event)) continue;
     runtime.activity.spoons += donation.amount;
-    const teamOutcome = addTeamBattlePoints(sessionKey, donation.user.id, "spoons", donation.amount);
+    const donatedAt = Date.parse(donation.time);
+    const teamOutcome = addTeamBattlePoints(
+      sessionKey,
+      donation.user.id,
+      "spoons",
+      donation.amount,
+      Date.now(),
+      Number.isNaN(donatedAt) ? Date.now() : donatedAt,
+    );
     if (teamOutcome) announceTeamBattleOutcome(sessionKey, teamOutcome);
     recovered.push(donation);
     const draw = applyRouletteDonation(sessionKey, liveId, event);
@@ -357,6 +372,15 @@ async function readErrorDetail(response: Response) {
     return (JSON.parse(payload) as { detailCode?: string }).detailCode;
   } catch {
     return undefined;
+  }
+}
+
+function recordAttendance(sessionKey: string, runtime: BotRuntime, user: { id: string; nickname: string | null }) {
+  if (runtime.currentLiveId === undefined) return;
+  const attended = markAttendanceByKey(sessionKey, runtime.currentLiveId, user.id, user.nickname);
+  const milestone = attended && attendanceMilestoneLabel(attended);
+  if (milestone && getAttendanceAnnounceByKey(sessionKey)) {
+    void sendBotChat(sessionKey, `[출석] ${user.nickname?.trim() || "청취자"}님 ${milestone} 축하해요!`);
   }
 }
 
@@ -400,13 +424,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     || recordAudienceEvent(sessionKey, runtime.currentLiveId, event);
   // A donation replayed after a reconnect was already thanked (and drawn).
   if (event.event === "donation" && !isNewAudienceEvent) return;
-  if (runtime.currentLiveId !== undefined && !(event.event === "chat" && event.data.isDj)) {
-    const attended = markAttendanceByKey(sessionKey, runtime.currentLiveId, event.data.user.id, event.data.user.nickname);
-    const milestone = attended && attendanceMilestoneLabel(attended);
-    if (milestone && getAttendanceAnnounceByKey(sessionKey)) {
-      void sendBotChat(sessionKey, `[출석] ${event.data.user.nickname?.trim() || "청취자"}님 ${milestone} 축하해요!`);
-    }
-  }
+  if (!(event.event === "chat" && event.data.isDj)) recordAttendance(sessionKey, runtime, event.data.user);
   // Team battle points: only counted once per event (replays are not new).
   if (isNewAudienceEvent && (event.event === "like" || event.event === "donation")) {
     const outcome = event.event === "like"
@@ -433,7 +451,8 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.isDj,
       event.data.user.id,
       event.data.user.nickname,
-      Number.isNaN(Date.parse(event.data.sentTime)) ? Date.now() : Date.parse(event.data.sentTime),
+      // Server time, like the round's start, so elapsed time is never negative.
+      Date.now(),
     );
     if (foundSecret) announceSecretWordFound(sessionKey, foundSecret);
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
