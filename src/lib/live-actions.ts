@@ -14,6 +14,10 @@ import { formatRpsResultMessages, RPS_CHOICES, type RpsChoice } from "./rock-pap
 import {
   applyBotCounterCommand,
   finishQuizRoundByKey,
+  finishSecretWordByKey,
+  getActiveSecretWordByKey,
+  listSecretWordQueueByKey,
+  startNextSecretWordByKey,
   finishRaffleRoundByKey,
   finishRpsRoundByKey,
   formatQuizResultMessages,
@@ -46,7 +50,8 @@ export type LiveActionFailure =
   | "not_active"
   | "invalid_winner_count"
   | "invalid_quiz"
-  | "queue_empty";
+  | "queue_empty"
+  | "secret_queue_empty";
 
 export type LiveActionResult =
   | { ok: true; status: string }
@@ -60,6 +65,7 @@ const FAILURE_REPLIES: Record<LiveActionFailure, string> = {
   invalid_winner_count: "당첨 인원을 다시 확인해 주세요.",
   invalid_quiz: "퀴즈 문제나 정답을 다시 확인해 주세요.",
   queue_empty: "준비된 퀴즈가 없어요.",
+  secret_queue_empty: "준비된 비밀 단어가 없어요.",
 };
 
 // Sends through the session that runs the DJ's bot, so a press on another of the
@@ -180,6 +186,48 @@ export async function adjustCounter(sessionKey: string, counterId: number, delta
   return true;
 }
 
+function formatDuration(milliseconds: number) {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  return seconds < 60 ? `${seconds}초` : `${Math.floor(seconds / 60)}분 ${seconds % 60}초`;
+}
+
+export async function startSecretWord(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const blocked = checkChatGame(sessionKey);
+  if (blocked) return fail(blocked);
+  const started = startNextSecretWordByKey(sessionKey);
+  if (started.kind === "empty") return fail("secret_queue_empty");
+  if (started.kind === "already_active") return fail("already_active");
+  await announce(sessionKey, [
+    `[비밀 단어] 찾기 시작! 채팅 속에 숨은 비밀 단어(${started.length}글자)를 먼저 말한 분이 이겨요.`,
+  ]);
+  return { ok: true, status: "started" };
+}
+
+export async function revealSecretWordHint(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const active = getActiveSecretWordByKey(sessionKey);
+  if (!active) return fail("not_active");
+  await announce(sessionKey, [active.hint ? `[비밀 단어] 힌트: ${active.hint}` : "[비밀 단어] 이번 단어는 힌트가 없어요."]);
+  return { ok: true, status: "hint_sent" };
+}
+
+export async function finishSecretWord(sessionKey: string): Promise<LiveActionResult> {
+  sessionKey = botSessionOf(sessionKey);
+  const round = finishSecretWordByKey(sessionKey);
+  if (!round) return fail("not_active");
+  await announce(sessionKey, [`[비밀 단어] 아무도 찾지 못했어요. 비밀 단어: ${round.word}`]);
+  return { ok: true, status: "finished" };
+}
+
+// Called by the bot runtime when a listener's chat message found the word.
+export function announceSecretWordFound(sessionKey: string, round: { word: string; winnerNickname: string | null; startedAt: number; foundAt: number | null }) {
+  const elapsed = formatDuration((round.foundAt ?? Date.now()) - round.startedAt);
+  void announce(sessionKey, [
+    `[비밀 단어] ${round.winnerNickname ?? "청취자"}님이 비밀 단어를 찾았어요! 정답: ${round.word} (${elapsed} 만에)`,
+  ]);
+}
+
 export function setRouletteEnabled(sessionKey: string, enabled: boolean) {
   const current = getRouletteSettingsByKey(sessionKey);
   updateRouletteSettingsByKey(sessionKey, { ...current, enabled });
@@ -209,11 +257,12 @@ export function formatLiveStatus(sessionKey: string) {
     rps?.active && `가위바위보(${rps.entries.length}명)`,
     raffle?.active && `추첨(${raffle.entries.length}명)`,
     quiz?.active && `퀴즈(${quiz.submissions.length}명)`,
+    getActiveSecretWordByKey(sessionKey) && "비밀 단어",
   ].filter(Boolean);
   const settings = getBotSettingsByKey(sessionKey);
   const roulette = getRouletteSettingsByKey(sessionKey);
   return [
-    `[봇 상태] 진행 중: ${games.length > 0 ? games.join(", ") : "없음"} · 대기 퀴즈 ${listQuizQueueByKey(sessionKey).length}개`,
+    `[봇 상태] 진행 중: ${games.length > 0 ? games.join(", ") : "없음"} · 대기 퀴즈 ${listQuizQueueByKey(sessionKey).length}개 · 대기 비밀 단어 ${listSecretWordQueueByKey(sessionKey).length}개`,
     `룰렛 ${onOff(roulette.enabled)} · 입장 환영 ${onOff(settings.welcomeEnabled)} · 후원 감사 ${onOff(settings.donationEnabled)} · 하트 감사 ${onOff(settings.heartEnabled)} · 팔로우 감사 ${onOff(settings.followEnabled)} · 반복 공지 ${onOff(settings.repeatEnabled)}`,
   ];
 }
@@ -245,6 +294,12 @@ export async function runDjCommand(sessionKey: string, command: DjCommand) {
       return replyResult(sessionKey, await startNextQuiz(sessionKey));
     case "quiz_finish":
       return replyResult(sessionKey, await finishQuiz(sessionKey));
+    case "secret_start":
+      return replyResult(sessionKey, await startSecretWord(sessionKey));
+    case "secret_hint":
+      return replyResult(sessionKey, await revealSecretWordHint(sessionKey));
+    case "secret_finish":
+      return replyResult(sessionKey, await finishSecretWord(sessionKey));
     case "roulette_toggle":
       setRouletteEnabled(sessionKey, command.enabled);
       await sendBotChat(sessionKey, command.enabled

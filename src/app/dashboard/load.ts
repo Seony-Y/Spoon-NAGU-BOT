@@ -13,6 +13,8 @@ import {
   listBotCommands,
   listBotCounters,
   listQuizQueue,
+  listSecretWordQueue,
+  listSecretWordRounds,
   listQuizRounds,
   listRaffleRounds,
   listSongRequests,
@@ -47,6 +49,7 @@ export type DashboardSearchParams = {
   follow?: string;
   raffle?: string;
   quiz?: string;
+  secret?: string;
   roulette?: string;
   rouletteEdit?: string;
   preview?: string;
@@ -62,6 +65,8 @@ export async function loadDashboardView(params: DashboardSearchParams) {
   const isDashboardTab = !isBotTab && !isGameTab && !isBackupTab;
   const gameTab = params.game === "roulette"
     ? "roulette"
+    : params.game === "secret"
+      ? "secret"
     : params.game === "quiz"
       ? "quiz"
     : params.game === "raffle"
@@ -189,6 +194,11 @@ export async function loadDashboardView(params: DashboardSearchParams) {
   const quizQueue = isGameTab && gameTab === "quiz" && connected && sessionId && !previewConnected
     ? listQuizQueue(sessionId)
     : [];
+  const isSecretPage = isGameTab && gameTab === "secret" && connected && sessionId && !previewConnected;
+  const secretWordQueue = isSecretPage ? listSecretWordQueue(sessionId) : [];
+  const secretWordRounds = isSecretPage ? listSecretWordRounds(sessionId) : [];
+  const secretWordRound = secretWordRounds.find((round) => round.active) ?? null;
+  const secretWordHistory = secretWordRounds.filter((round) => !round.active);
   const isRoulettePage = isGameTab && gameTab === "roulette" && connected && sessionId;
   const rouletteSettings = isRoulettePage
     ? previewConnected
@@ -272,6 +282,9 @@ export async function loadDashboardView(params: DashboardSearchParams) {
     quizRound,
     quizHistory,
     quizQueue,
+    secretWordQueue,
+    secretWordRound,
+    secretWordHistory,
     isRoulettePage,
     rouletteSettings,
     rouletteItems,

@@ -9,6 +9,9 @@ export type DjCommand =
   | { kind: "raffle_finish" }
   | { kind: "quiz_start" }
   | { kind: "quiz_finish" }
+  | { kind: "secret_start" }
+  | { kind: "secret_hint" }
+  | { kind: "secret_finish" }
   | { kind: "roulette_toggle"; enabled: boolean }
   | { kind: "automation_toggle"; feature: AutomationFeature; enabled: boolean }
   | { kind: "usage"; usage: string };
@@ -47,6 +50,7 @@ export const DJ_COMMAND_HELP = [
   "!가위바위보 시작 / 종료",
   "!추첨 시작 [인원] / 종료",
   "!퀴즈 시작 / 종료 (대시보드에 등록한 문제 순서대로)",
+  "!비밀단어 시작 / 힌트 / 종료 (대시보드에 등록한 단어 순서대로)",
   "!룰렛 켜기 / 끄기",
   "!환영 · !후원 · !하트 · !팔로우 · !공지 켜기 / 끄기",
   "!봇 상태",
@@ -92,6 +96,14 @@ export function parseDjCommand(message: string): DjCommand | null {
     if (argument !== undefined || !action) return null;
     if (START_WORDS.has(action)) return { kind: "quiz_start" };
     if (FINISH_WORDS.has(action)) return { kind: "quiz_finish" };
+    return null;
+  }
+
+  if (name === "비밀단어") {
+    if (argument !== undefined || !action) return null;
+    if (START_WORDS.has(action)) return { kind: "secret_start" };
+    if (action === "힌트") return { kind: "secret_hint" };
+    if (FINISH_WORDS.has(action)) return { kind: "secret_finish" };
     return null;
   }
 

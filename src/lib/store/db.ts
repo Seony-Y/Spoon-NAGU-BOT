@@ -202,6 +202,28 @@ function migrateDatabase(database: DatabaseSync) {
       correct_at INTEGER,
       PRIMARY KEY (workspace_key, round_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS secret_word_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_key TEXT NOT NULL,
+      word TEXT NOT NULL,
+      hint TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS secret_word_rounds (
+      workspace_key TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      word TEXT NOT NULL,
+      hint TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      winner_user_id TEXT,
+      winner_nickname TEXT,
+      found_at INTEGER,
+      PRIMARY KEY (workspace_key, round_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS secret_word_rounds_active_idx
+      ON secret_word_rounds (workspace_key) WHERE active = 1;
     -- Kept out of bot_settings so older backups (fixed bot_settings columns) still restore.
     CREATE TABLE IF NOT EXISTS follow_settings (
       workspace_key TEXT PRIMARY KEY,

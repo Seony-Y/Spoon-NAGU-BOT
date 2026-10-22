@@ -13,7 +13,9 @@ import {
   getRpsRound,
   getSessionKey,
   listBotCounters,
+  getActiveSecretWordByKey,
   listQuizQueue,
+  listSecretWordQueue,
 } from "@/lib/session-store";
 import { ClearStatusParams } from "../clear-status-params";
 import { AutoRefresh } from "../refresh-live-button";
@@ -35,6 +37,10 @@ const RESULT_NOTICES: Record<string, { tone: "success" | "error"; text: string }
   raffle_finished: { tone: "success", text: "당첨자를 채팅에 공개했습니다." },
   quiz_started: { tone: "success", text: "다음 대기 문제를 출제했습니다." },
   quiz_finished: { tone: "success", text: "퀴즈 정답과 결과를 공개했습니다." },
+  secret_started: { tone: "success", text: "비밀 단어 찾기를 시작했습니다." },
+  secret_hint_sent: { tone: "success", text: "힌트를 채팅에 공개했습니다." },
+  secret_finished: { tone: "success", text: "비밀 단어를 공개하고 종료했습니다." },
+  secret_secret_queue_empty: { tone: "error", text: "대기 단어가 없습니다. 대시보드 게임 > 비밀 단어에서 먼저 등록해 주세요." },
   quiz_queue_empty: { tone: "error", text: "대기 문제가 없습니다. 대시보드 게임 > 퀴즈에서 먼저 등록해 주세요." },
   raffle_invalid_winner_count: { tone: "error", text: `당첨 인원은 1~${MAX_RAFFLE_WINNERS.toLocaleString("ko-KR")}명으로 입력해 주세요.` },
   counter_saved: { tone: "success", text: "변경한 값을 채팅에 알렸습니다." },
@@ -118,6 +124,8 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
   const raffle = getRaffleRoundByKey(sessionKey);
   const quiz = getQuizRoundByKey(sessionKey);
   const quizQueue = listQuizQueue(sessionId);
+  const secretWord = getActiveSecretWordByKey(sessionKey);
+  const secretWordQueue = listSecretWordQueue(sessionId);
   const counters = listBotCounters(sessionId);
   const settings = getBotSettings(sessionId);
   const roulette = getRouletteSettings(sessionId);
@@ -200,6 +208,25 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
           </>
         ) : (
           <p className="remote-empty">대시보드 게임 &gt; 퀴즈에서 대기 문제를 먼저 등록해 주세요.</p>
+        )}
+      </section>
+
+      <section className="remote-card" aria-labelledby="remote-secret">
+        <div className="remote-card-heading">
+          <h2 id="remote-secret">비밀 단어</h2>
+          <span>{secretWord ? "진행 중" : `대기 단어 ${secretWordQueue.length}개`}</span>
+        </div>
+        {secretWord ? (
+          <>
+            <p className="remote-quiz-question">정답: {secretWord.word} <small>(이 화면에만 표시)</small></p>
+            {secretWord.hint && <p className="remote-quiz-answer">힌트: {secretWord.hint}</p>}
+            {secretWord.hint && <ActionButton action="secret_hint" label="힌트 공개" />}
+            <ActionButton action="secret_finish" label="종료하고 정답 공개" tone="finish" />
+          </>
+        ) : secretWordQueue.length > 0 ? (
+          <ActionButton action="secret_start" label="다음 단어로 시작" disabled={gameDisabled} />
+        ) : (
+          <p className="remote-empty">대시보드 게임 &gt; 비밀 단어에서 대기 단어를 먼저 등록해 주세요.</p>
         )}
       </section>
 

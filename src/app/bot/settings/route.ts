@@ -34,6 +34,7 @@ const RESERVED_COMMANDS = [
   "!정답",
   "!킵",
   "!봇",
+  "!비밀단어",
 ];
 
 function isReservedCommand(command: string) {

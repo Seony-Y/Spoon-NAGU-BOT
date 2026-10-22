@@ -8,7 +8,10 @@ import {
   finishRps,
   setAutomationEnabled,
   setRouletteEnabled,
+  finishSecretWord,
+  revealSecretWordHint,
   startNextQuiz,
+  startSecretWord,
   startRaffle,
   startRps,
   type LiveActionResult,
@@ -58,6 +61,12 @@ export async function POST(request: NextRequest) {
       return redirect(request, fromResult("quiz", await startNextQuiz(sessionKey)));
     case "quiz_finish":
       return redirect(request, fromResult("quiz", await finishQuiz(sessionKey)));
+    case "secret_start":
+      return redirect(request, fromResult("secret", await startSecretWord(sessionKey)));
+    case "secret_hint":
+      return redirect(request, fromResult("secret", await revealSecretWordHint(sessionKey)));
+    case "secret_finish":
+      return redirect(request, fromResult("secret", await finishSecretWord(sessionKey)));
     case "counter": {
       const id = Number(formData.get("id"));
       const delta = Number(formData.get("delta"));

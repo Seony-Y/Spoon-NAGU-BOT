@@ -72,7 +72,7 @@ try {
   }
 
   // --- Read: pages render with the session -----------------------------------
-  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
+  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
     reseed();
     const response = await fetch(BASE + path, { headers: { cookie } });
     const html = await response.text();
@@ -150,6 +150,24 @@ try {
   check("퀴즈 대기 문제 삭제", r.params.quiz === "queue_deleted" && store.listQuizQueue(sessionId).length === 0, JSON.stringify(r.params));
   r = await post("/game/rps", { action: "start", choice: "random" });
   check("봇 없이 게임 시작 차단", r.params.rps === "bot_required", JSON.stringify(r.params));
+
+  // --- Secret word: queue, start, hint, finish -------------------------------
+  r = await post("/game/secret-word", { action: "queue_add", word: "고구마", hint: "겨울 간식" });
+  check("비밀 단어 추가", r.params.secret === "queued" && store.listSecretWordQueue(sessionId).length === 1, JSON.stringify(r.params));
+  r = await post("/game/secret-word", { action: "queue_add", word: "!!!", hint: "" });
+  check("비밀 단어 빈 단어 거부", r.params.secret === "invalid_word", JSON.stringify(r.params));
+  r = await post("/game/secret-word", { action: "queue_add", word: "노을", hint: "" });
+  const secondWord = store.listSecretWordQueue(sessionId).find((item) => item.word === "노을");
+  r = await post("/game/secret-word", { action: "queue_delete", id: secondWord.id });
+  check("비밀 단어 삭제", r.params.secret === "queue_deleted" && store.listSecretWordQueue(sessionId).length === 1, JSON.stringify(r.params));
+  store.setBotEnabled(sessionId, true);
+  r = await post("/game/secret-word", { action: "start" });
+  check("비밀 단어 시작", r.params.secret === "started" && store.getActiveSecretWordByKey(sessionKey)?.word === "고구마", JSON.stringify(r.params));
+  r = await post("/game/secret-word", { action: "hint" });
+  check("비밀 단어 힌트", r.params.secret === "hint_sent", JSON.stringify(r.params));
+  r = await post("/game/secret-word", { action: "finish" });
+  check("비밀 단어 종료", r.params.secret === "finished" && store.getActiveSecretWordByKey(sessionKey) === null, JSON.stringify(r.params));
+  store.setBotEnabled(sessionId, false);
 
   // --- Roulette: settings, prizes, keeps ------------------------------------
   r = await post("/game/roulette", { action: "settings", cost: 30, enabled: "on" });

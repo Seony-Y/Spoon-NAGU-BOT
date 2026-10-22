@@ -594,6 +594,29 @@ store.invalidateDjSessionsByKey(store.getSessionKey(peerA));
 assert.equal(store.getSession(peerA), null);
 assert.equal(store.getSession(peerB), null);
 
+// Secret word: queued in advance, first listener whose chat contains it wins.
+assert.equal(store.normalizeSecretText("고 구 마!! 🍠"), "고구마");
+assert.equal(store.addSecretWord(firstSessionId, "  ", ""), "invalid");
+assert.equal(store.addSecretWord(firstSessionId, "고구마", "겨울 간식"), "added");
+assert.equal(store.addSecretWord(firstSessionId, "Spoon", ""), "added");
+assert.deepEqual(store.startNextSecretWordByKey(firstSessionKey, 1_000), { kind: "started", length: 3 });
+assert.deepEqual(store.startNextSecretWordByKey(firstSessionKey), { kind: "already_active" });
+assert.equal(store.applySecretWordChat(firstSessionKey, "고구마 맛있다", true, "dj", "DJ"), null, "DJ chat is not judged");
+assert.equal(store.applySecretWordChat(firstSessionKey, "감자 좋아요", false, "fan-1", "팬1"), null);
+const found = store.applySecretWordChat(firstSessionKey, "저는 고 구 마! 먹었어요", false, "fan-2", "팬2", 6_000);
+assert.equal(found.winnerNickname, "팬2");
+assert.equal(found.foundAt - found.startedAt, 5_000);
+assert.equal(store.applySecretWordChat(firstSessionKey, "고구마", false, "fan-3", "팬3"), null, "only the first finder wins");
+assert.equal(store.getActiveSecretWordByKey(firstSessionKey), null);
+assert.deepEqual(store.startNextSecretWordByKey(firstSessionKey, 7_000), { kind: "started", length: 5 });
+assert.ok(store.applySecretWordChat(firstSessionKey, "i love SPOON", false, "fan-4", "팬4"), "case is ignored");
+assert.deepEqual(store.startNextSecretWordByKey(firstSessionKey), { kind: "empty" });
+store.addSecretWord(firstSessionId, "노을", "");
+store.startNextSecretWordByKey(firstSessionKey);
+assert.equal(store.finishSecretWordByKey(firstSessionKey).word, "노을");
+assert.equal(store.finishSecretWordByKey(firstSessionKey), null);
+assert.deepEqual(store.listSecretWordRounds(firstSessionId).map((round) => [round.word, round.winnerNickname]), [["노을", null], ["Spoon", "팬4"], ["고구마", "팬2"]]);
+
 // Admin block by DJ: every device of the DJ and later logins are blocked.
 store.saveSession("block-a", token);
 store.linkDjWorkspaceByKey(store.getSessionKey("block-a"), "block-dj", null);

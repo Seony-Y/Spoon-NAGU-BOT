@@ -16,7 +16,7 @@ import { isRecentBotMessage, sendBotChat } from "./chat";
 import { clearGameAcks, flushAllGameAcks, queueGameAck } from "./chat-acks";
 import { formatMultilineMessages, resolveCommandFallback } from "./chat-message";
 import { parseDjCommand } from "./dj-command";
-import { runDjCommand } from "./live-actions";
+import { announceSecretWordFound, runDjCommand } from "./live-actions";
 import {
   applyBotCounterCommand,
   applyQuizCommand,
@@ -24,6 +24,7 @@ import {
   applyRpsCommand,
   applyRouletteDonation,
   applyRouletteKeepCommand,
+  applySecretWordChat,
   applySongRequestCommand,
   findBotCommandResponse,
   getAvailableCommandRepliesByKey,
@@ -402,6 +403,16 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       });
       return;
     }
+    // Does not consume the message: a found word may sit inside any chat.
+    const foundSecret = applySecretWordChat(
+      sessionKey,
+      event.data.message,
+      event.data.isDj,
+      event.data.user.id,
+      event.data.user.nickname,
+      Number.isNaN(Date.parse(event.data.sentTime)) ? Date.now() : Date.parse(event.data.sentTime),
+    );
+    if (foundSecret) announceSecretWordFound(sessionKey, foundSecret);
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
     if (command === "!명령어") {
       for (const message of getAvailableCommandRepliesByKey(sessionKey)) {

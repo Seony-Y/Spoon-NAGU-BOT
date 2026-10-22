@@ -10,6 +10,7 @@ export {
   setAppState,
 } from "./store/db";
 export * from "./store/maintenance";
+export * from "./store/events";
 export * from "./store/sessions";
 export * from "./store/settings";
 export * from "./store/workspace";

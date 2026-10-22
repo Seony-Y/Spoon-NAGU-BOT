@@ -159,6 +159,10 @@ assert.deepEqual(parseDjCommand("!룰렛 OFF"), { kind: "roulette_toggle", enabl
 assert.deepEqual(parseDjCommand("!환영 끄기"), { kind: "automation_toggle", feature: "welcome", enabled: false });
 assert.deepEqual(parseDjCommand("!공지 켜"), { kind: "automation_toggle", feature: "repeat", enabled: true });
 assert.equal(parseDjCommand("!공지"), null);
+assert.deepEqual(parseDjCommand("!비밀단어 시작"), { kind: "secret_start" });
+assert.deepEqual(parseDjCommand("!비밀단어 힌트"), { kind: "secret_hint" });
+assert.deepEqual(parseDjCommand("!비밀단어 종료"), { kind: "secret_finish" });
+assert.equal(parseDjCommand("!비밀단어 고구마"), null);
 assert.deepEqual(parseDjCommand("!팔로우 켜기"), { kind: "automation_toggle", feature: "follow", enabled: true });
 assert.equal(parseDjCommand("!실드 +1"), null);
 assert.equal(parseDjCommand("!참여"), null);

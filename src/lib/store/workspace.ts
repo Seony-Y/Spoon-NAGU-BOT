@@ -25,6 +25,8 @@ const CORE_BACKUP_TABLES = [
   { name: "quiz_submissions", key: "workspace_key", columns: ["round_id", "user_id", "nickname", "answer", "answer_normalized", "submitted_at", "correct", "correct_at"] },
   { name: "quiz_queue", key: "workspace_key", columns: ["question", "answer", "created_at"] },
   { name: "follow_settings", key: "workspace_key", columns: ["enabled", "message"] },
+  { name: "secret_word_queue", key: "workspace_key", columns: ["word", "hint", "created_at"] },
+  { name: "secret_word_rounds", key: "workspace_key", columns: ["round_id", "word", "hint", "active", "started_at", "ended_at", "winner_user_id", "winner_nickname", "found_at"] },
   { name: "roulette_settings", key: "workspace_key", columns: ["enabled", "cost", "miss_weight"] },
   { name: "roulette_items", key: "workspace_key", columns: ["label", "weight", "created_at"] },
   { name: "roulette_results", key: "workspace_key", columns: ["live_id", "event_id", "user_id", "nickname", "item_label", "is_miss", "spoons", "created_at"] },
@@ -303,6 +305,15 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
     SELECT ?, enabled, message FROM follow_settings WHERE workspace_key = ?
   `).run(targetKey, sourceKey);
   database.prepare("DELETE FROM follow_settings WHERE workspace_key = ?").run(sourceKey);
+  database.prepare("UPDATE secret_word_queue SET workspace_key = ? WHERE workspace_key = ?").run(targetKey, sourceKey);
+  // Merged rounds are renumbered after the target's and never left active.
+  database.prepare(`
+    INSERT INTO secret_word_rounds (workspace_key, round_id, word, hint, active, started_at, ended_at, winner_user_id, winner_nickname, found_at)
+    SELECT ?, round_id + (SELECT COALESCE(MAX(round_id), 0) FROM secret_word_rounds WHERE workspace_key = ?),
+           word, hint, 0, started_at, COALESCE(ended_at, started_at), winner_user_id, winner_nickname, found_at
+    FROM secret_word_rounds WHERE workspace_key = ?
+  `).run(targetKey, targetKey, sourceKey);
+  database.prepare("DELETE FROM secret_word_rounds WHERE workspace_key = ?").run(sourceKey);
 
   database.prepare("DELETE FROM bot_commands WHERE session_key = ?").run(sourceKey);
   database.prepare("DELETE FROM bot_counters WHERE session_key = ?").run(sourceKey);

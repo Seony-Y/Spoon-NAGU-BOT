@@ -551,3 +551,63 @@
   vertical-align: middle;
   white-space: nowrap;
 }
+
+/* 비밀 단어 찾기 */
+.secret-word-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.secret-word-actions button,
+.secret-word-start {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--accent);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secret-word-actions button:disabled,
+.secret-word-start:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secret-word-start {
+  margin-top: 16px;
+}
+
+.secret-word-history {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.secret-word-history li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.secret-word-history li span,
+.secret-word-history li time {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .secret-word-history li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
