@@ -768,3 +768,35 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.remote-counters li.remote-counter-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.remote-counter-form {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) 80px;
+  gap: 8px;
+}
+
+.remote-counter-form input {
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.remote-counter-form button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}

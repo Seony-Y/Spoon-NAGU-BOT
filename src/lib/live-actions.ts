@@ -200,6 +200,17 @@ export async function adjustCounter(sessionKey: string, counterId: number, delta
   return true;
 }
 
+// One change in chat may move a counter by at most 1,000,000.
+export const MAX_COUNTER_VALUE = 1_000_000;
+
+// The remote's "type the new value" path: announced like `!이름 +N`.
+export async function setCounterValue(sessionKey: string, counterId: number, value: number) {
+  const counter = listBotCountersByKey(botSessionOf(sessionKey)).find((item) => item.id === counterId);
+  if (!counter || !Number.isSafeInteger(value) || value < 0 || value > MAX_COUNTER_VALUE) return "invalid" as const;
+  if (value === counter.value) return "unchanged" as const;
+  return await adjustCounter(sessionKey, counterId, value - counter.value) ? "saved" as const : "invalid" as const;
+}
+
 function formatDuration(milliseconds: number) {
   const seconds = Math.max(0, Math.round(milliseconds / 1000));
   return seconds < 60 ? `${seconds}초` : `${Math.floor(seconds / 60)}분 ${seconds % 60}초`;

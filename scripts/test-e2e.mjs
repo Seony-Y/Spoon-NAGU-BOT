@@ -227,6 +227,12 @@ try {
   const shieldBefore = store.listBotCounters(sessionId).find((c) => c.name === "실드").value;
   r = await post("/remote/action", { action: "counter", id: shield.id, delta: 1 });
   check("리모컨: 카운터 +1", r.params.r === "counter_saved" && store.listBotCounters(sessionId).find((c) => c.name === "실드").value === shieldBefore + 1, JSON.stringify(r.params));
+  r = await post("/remote/action", { action: "counter_set", id: shield.id, value: 250 });
+  check("리모컨: 카운터 값 직접 입력", r.params.r === "counter_saved" && store.listBotCounters(sessionId).find((c) => c.name === "실드").value === 250, JSON.stringify(r.params));
+  r = await post("/remote/action", { action: "counter_set", id: shield.id, value: 250 });
+  check("리모컨: 같은 값은 그대로", r.params.r === "counter_unchanged", JSON.stringify(r.params));
+  r = await post("/remote/action", { action: "counter_set", id: shield.id, value: -3 });
+  check("리모컨: 음수 값 거부", r.params.r === "counter_invalid" && store.listBotCounters(sessionId).find((c) => c.name === "실드").value === 250, JSON.stringify(r.params));
 
   // --- Backup: export, change, restore --------------------------------------
   reseed();

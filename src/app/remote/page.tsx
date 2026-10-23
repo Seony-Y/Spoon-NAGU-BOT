@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { getAuthSession } from "@/lib/auth";
 import { ensureBotRunning, getBotSnapshot } from "@/lib/bot-runtime";
 import { AUTOMATION_LABELS, MAX_RAFFLE_WINNERS, type AutomationFeature } from "@/lib/dj-command";
+import { MAX_COUNTER_VALUE } from "@/lib/live-actions";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
   getBotSettings,
@@ -49,6 +50,8 @@ const RESULT_NOTICES: Record<string, { tone: "success" | "error"; text: string }
   quiz_queue_empty: { tone: "error", text: "대기 문제가 없습니다. 대시보드 게임 > 퀴즈에서 먼저 등록해 주세요." },
   raffle_invalid_winner_count: { tone: "error", text: `당첨 인원은 1~${MAX_RAFFLE_WINNERS.toLocaleString("ko-KR")}명으로 입력해 주세요.` },
   counter_saved: { tone: "success", text: "변경한 값을 채팅에 알렸습니다." },
+  counter_unchanged: { tone: "success", text: "현재 값과 같아서 바꾸지 않았습니다." },
+  counter_invalid: { tone: "error", text: `카운터 값은 0~${MAX_COUNTER_VALUE.toLocaleString("ko-KR")} 사이 정수로 입력해 주세요.` },
   switch_saved: { tone: "success", text: "켜기·끄기를 반영했습니다." },
   authentication_required: { tone: "error", text: "연결이 만료되었습니다. 대시보드에서 다시 연결해 주세요." },
   invalid: { tone: "error", text: "처리하지 못했습니다. 화면을 새로고침한 뒤 다시 눌러 주세요." },
@@ -266,28 +269,31 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
         <section className="remote-card" aria-labelledby="remote-counters">
           <div className="remote-card-heading">
             <h2 id="remote-counters">카운터</h2>
-            <span>변경 시 채팅에 알림</span>
+            <span>값을 입력하고 적용 · 채팅에 알림</span>
           </div>
           <ul className="remote-counters">
             {counters.map((counter) => (
-              <li key={counter.id}>
+              <li key={counter.id} className="remote-counter-row">
                 <span>{counter.name}</span>
                 <strong>{counter.value.toLocaleString("ko-KR")}</strong>
-                {[-1, 1].map((delta) => (
-                  <form key={delta} action="/remote/action" method="post">
-                    <input type="hidden" name="action" value="counter" />
-                    <input type="hidden" name="id" value={counter.id} />
-                    <input type="hidden" name="delta" value={delta} />
-                    <button
-                      className="remote-step"
-                      type="submit"
-                      disabled={delta < 0 && counter.value === 0}
-                      aria-label={`${counter.name} ${delta > 0 ? "1 늘리기" : "1 줄이기"}`}
-                    >
-                      {delta > 0 ? "+1" : "−1"}
-                    </button>
-                  </form>
-                ))}
+                <form className="remote-counter-form" action="/remote/action" method="post">
+                  <input type="hidden" name="action" value="counter_set" />
+                  <input type="hidden" name="id" value={counter.id} />
+                  {/* Keyed by the value so a change from chat replaces the field. */}
+                  <input
+                    key={counter.value}
+                    name="value"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={MAX_COUNTER_VALUE}
+                    step={1}
+                    required
+                    defaultValue={counter.value}
+                    aria-label={`${counter.name} 새 값`}
+                  />
+                  <button type="submit">적용</button>
+                </form>
               </li>
             ))}
           </ul>

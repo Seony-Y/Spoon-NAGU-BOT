@@ -3,6 +3,8 @@ import { getAuthSession } from "@/lib/auth";
 import { MAX_RAFFLE_WINNERS, type AutomationFeature } from "@/lib/dj-command";
 import {
   adjustCounter,
+  MAX_COUNTER_VALUE,
+  setCounterValue,
   finishQuiz,
   finishRaffle,
   finishRps,
@@ -76,6 +78,14 @@ export async function POST(request: NextRequest) {
       return redirect(request, fromResult("team", await announceTeamBattleStatus(sessionKey)));
     case "team_finish":
       return redirect(request, fromResult("team", await finishTeamBattle(sessionKey)));
+    case "counter_set": {
+      const id = Number(formData.get("id"));
+      const value = Number(formData.get("value"));
+      if (!Number.isSafeInteger(id)) return redirect(request, "invalid");
+      if (!Number.isSafeInteger(value) || value < 0 || value > MAX_COUNTER_VALUE) return redirect(request, "counter_invalid");
+      const result = await setCounterValue(sessionKey, id, value);
+      return redirect(request, result === "saved" ? "counter_saved" : result === "unchanged" ? "counter_unchanged" : "invalid");
+    }
     case "counter": {
       const id = Number(formData.get("id"));
       const delta = Number(formData.get("delta"));
