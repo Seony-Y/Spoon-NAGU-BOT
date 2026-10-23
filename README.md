@@ -111,8 +111,9 @@ Listener commands:
 
 - `!명령어` — commands and counters available now
 - `!안녕` — greeting
-- `!실드` (and every named counter) — show the value; `!실드 +2` / `!실드 -1` change it (DJ only, never below 0)
-- `!신청곡 곡명-가수`, `!신청곡 목록`; `!신청곡 삭제 번호` (DJ only)
+- `!실드` (and every named counter) — show the value ("실드 8개"); `!실드 +2` / `!실드 -1` change it (DJ only, never below 0). A counter with a goal is a funding counter ("펀딩 [1,200 / 5,000 스푼]", goal stored in `counter_goals`); with 후원 자동 반영 each new donation in a live broadcast (recovered ones included) adds its spoons, and reaching the goal is announced once
+- `!` commands typed in the dashboard chat box run as DJ chat while the bot is live (Spoon never echoes API-sent messages)
+- `!신청곡 곡명-가수`, `!신청곡 목록`; `!신청곡 삭제 번호` (DJ only). Numbers are positions in the DJ's current list (1, 2, 3 …), not database ids
 - `!가위바위보 가위·바위·보`, `!참여` (raffle), `!정답 (답)` (quiz), `!팀 (번호|이름)` (team battle, once per battle)
 - `!출석` — "출석 완료!" the first time in a broadcast, "이미 출석했어요." after that, both with streak and total (the DJ is told the DJ is not counted); `!출석왕` — this month's top 5
 - `!내 킵`; `!킵 삭제 닉네임 / 경품 이름 / 수량` (DJ only)

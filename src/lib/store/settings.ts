@@ -43,10 +43,19 @@ export type BotCounter = {
   id: number;
   name: string;
   value: number;
+  // Funding counters count spoons toward a goal; null for plain counters.
+  goal: number | null;
+  // Donations add their spoons automatically (funding counters only).
+  autoSpoons: boolean;
 };
+
+export type CounterGoal = { goal: number; autoSpoons: boolean } | null;
 
 export type SongRequest = {
   id: number;
+  // Position in this DJ's list (1, 2, 3 …): what listeners and the DJ see and
+  // what `!신청곡 삭제 N` uses. ids are shared by all DJs and grow large.
+  number: number;
   requesterNickname: string;
   title: string;
   artist: string;
@@ -233,18 +242,23 @@ export function getAvailableCommandRepliesByKey(sessionKey: string) {
 export function listBotCountersByKey(sessionKey: string): BotCounter[] {
   const workspaceKey = getWorkspaceKey(sessionKey);
   return (getDatabase().prepare(`
-    SELECT id, name, value
-    FROM bot_counters
-    WHERE session_key = ?
-    ORDER BY id
+    SELECT c.id, c.name, c.value, g.goal, g.auto_spoons
+    FROM bot_counters c
+    LEFT JOIN counter_goals g ON g.workspace_key = c.session_key AND g.name = c.name COLLATE NOCASE
+    WHERE c.session_key = ?
+    ORDER BY c.id
   `).all(workspaceKey) as Array<{
     id: number;
     name: string;
     value: number;
+    goal: number | null;
+    auto_spoons: number | null;
   }>).map((row) => ({
     id: row.id,
     name: row.name,
     value: row.value,
+    goal: row.goal,
+    autoSpoons: row.goal !== null && Boolean(row.auto_spoons),
   }));
 }
 
@@ -257,39 +271,87 @@ export function saveBotCounter(
   id: number | null,
   name: string,
   value: number,
+  goal: CounterGoal = null,
 ) {
   const database = getDatabase();
   const sessionKey = getWorkspaceKey(getSessionKey(sessionId));
+  const saveGoal = (oldName: string | null, newName: string) => {
+    if (oldName !== null) database.prepare("DELETE FROM counter_goals WHERE workspace_key = ? AND name = ?").run(sessionKey, oldName);
+    database.prepare("DELETE FROM counter_goals WHERE workspace_key = ? AND name = ?").run(sessionKey, newName);
+    if (goal) {
+      database.prepare("INSERT INTO counter_goals (workspace_key, name, goal, auto_spoons) VALUES (?, ?, ?, ?)")
+        .run(sessionKey, newName, goal.goal, goal.autoSpoons ? 1 : 0);
+    }
+  };
+  database.exec("BEGIN IMMEDIATE");
   try {
     if (id === null) {
       database.prepare(`
         INSERT INTO bot_counters (session_key, name, initial_value, value)
         VALUES (?, ?, ?, ?)
       `).run(sessionKey, name, value, value);
+      saveGoal(null, name);
+      database.exec("COMMIT");
       return true;
     }
 
     const existing = database.prepare(
       "SELECT name FROM bot_counters WHERE id = ? AND session_key = ?",
     ).get(id, sessionKey) as Pick<BotCounter, "name"> | undefined;
-    if (!existing) return false;
+    if (!existing) {
+      database.exec("ROLLBACK");
+      return false;
+    }
     const savedName = existing.name.toLocaleLowerCase("ko-KR") === "실드" ? "실드" : name;
-    const result = database.prepare(`
+    database.prepare(`
       UPDATE bot_counters
       SET name = ?, initial_value = ?, value = ?
       WHERE id = ? AND session_key = ?
     `).run(savedName, value, value, id, sessionKey);
-    return result.changes > 0;
+    saveGoal(existing.name, savedName);
+    database.exec("COMMIT");
+    return true;
   } catch {
+    database.exec("ROLLBACK");
     return false;
   }
 }
 
 export function deleteBotCounter(sessionId: string, id: number) {
-  const result = getDatabase().prepare(
-    "DELETE FROM bot_counters WHERE id = ? AND session_key = ? AND name != '실드' COLLATE NOCASE",
-  ).run(id, getWorkspaceKey(getSessionKey(sessionId)));
-  return result.changes > 0;
+  const database = getDatabase();
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const row = database.prepare(
+    "DELETE FROM bot_counters WHERE id = ? AND session_key = ? AND name != '실드' COLLATE NOCASE RETURNING name",
+  ).get(id, workspaceKey) as { name: string } | undefined;
+  if (row) database.prepare("DELETE FROM counter_goals WHERE workspace_key = ? AND name = ?").run(workspaceKey, row.name);
+  return Boolean(row);
+}
+
+// Adds a donation's spoons to every funding counter set to follow donations.
+// Returns the counters that reached their goal with this donation.
+export function addFundingSpoonsByKey(sessionKey: string, spoons: number) {
+  if (!Number.isSafeInteger(spoons) || spoons <= 0) return [];
+  const workspaceKey = getWorkspaceKey(sessionKey);
+  const rows = getDatabase().prepare(`
+    UPDATE bot_counters
+    SET value = MIN(1000000, value + ?)
+    WHERE session_key = ? AND name IN (
+      SELECT name FROM counter_goals WHERE workspace_key = ? AND auto_spoons = 1
+    )
+    RETURNING name, value
+  `).all(spoons, workspaceKey, workspaceKey) as Array<{ name: string; value: number }>;
+  const reached: Array<{ name: string; value: number; goal: number }> = [];
+  for (const row of rows) {
+    const goal = getCounterGoal(workspaceKey, row.name);
+    if (goal && row.value >= goal.goal && row.value - spoons < goal.goal) reached.push({ ...row, goal: goal.goal });
+  }
+  return reached;
+}
+
+function getCounterGoal(workspaceKey: string, name: string): CounterGoal {
+  const row = getDatabase().prepare("SELECT goal, auto_spoons FROM counter_goals WHERE workspace_key = ? AND name = ? COLLATE NOCASE")
+    .get(workspaceKey, name) as { goal: number; auto_spoons: number } | undefined;
+  return row ? { goal: row.goal, autoSpoons: Boolean(row.auto_spoons) } : null;
 }
 
 export function applyBotCounterCommand(sessionKey: string, message: string, isDj: boolean) {
@@ -302,7 +364,7 @@ export function applyBotCounterCommand(sessionKey: string, message: string, isDj
       SELECT name, value FROM bot_counters
       WHERE session_key = ? AND name = ? COLLATE NOCASE
     `).get(workspaceKey, command.name) as Pick<BotCounter, "name" | "value"> | undefined;
-    return row ? formatCounterAdjustment(row.name, row.value) : null;
+    return row ? formatCounterAdjustment(row.name, row.value, getCounterGoal(workspaceKey, row.name)?.goal) : null;
   }
 
   const counter = getDatabase().prepare(`
@@ -318,7 +380,7 @@ export function applyBotCounterCommand(sessionKey: string, message: string, isDj
     WHERE session_key = ? AND name = ? COLLATE NOCASE
     RETURNING name, value
   `).get(command.adjustment.delta, workspaceKey, command.adjustment.name) as Pick<BotCounter, "name" | "value"> | undefined;
-  return row ? formatCounterAdjustment(row.name, row.value) : null;
+  return row ? formatCounterAdjustment(row.name, row.value, getCounterGoal(workspaceKey, row.name)?.goal) : null;
 }
 
 export function listSongRequestsByKey(sessionKey: string): SongRequest[] {
@@ -328,7 +390,7 @@ export function listSongRequestsByKey(sessionKey: string): SongRequest[] {
     FROM song_requests
     WHERE session_key = ?
     ORDER BY id
-  `).all(workspaceKey).map((row) => {
+  `).all(workspaceKey).map((row, index) => {
     const request = row as {
       id: number;
       requester_nickname: string;
@@ -338,6 +400,7 @@ export function listSongRequestsByKey(sessionKey: string): SongRequest[] {
     };
     return {
       id: request.id,
+      number: index + 1,
       requesterNickname: request.requester_nickname,
       title: request.title,
       artist: request.artist,
@@ -382,30 +445,29 @@ export function applySongRequestCommand(
     if (requests.length === 0) return ["아직 신청곡이 없어요."];
 
     const labels = requests.map((request) => (
-      `#${request.id} ${request.title}${request.artist ? ` - ${request.artist}` : ""}`
+      `#${request.number} ${request.title}${request.artist ? ` - ${request.artist}` : ""}`
     ));
     return formatMultilineMessages("신청곡 목록:", "신청곡 (이어서)", labels);
   }
   if (command.kind === "delete") {
     if (!isDj) return "신청곡 삭제는 DJ만 할 수 있어요.";
-    const result = database.prepare(
-      "DELETE FROM song_requests WHERE id = ? AND session_key = ?",
-    ).run(command.id, workspaceKey);
-    return result.changes > 0
-      ? `신청곡 ${command.id}번을 삭제했어요.`
-      : `신청곡 ${command.id}번을 찾지 못했어요.`;
+    const target = listSongRequestsByKey(sessionKey).find((request) => request.number === command.id);
+    if (!target) return `신청곡 ${command.id}번을 찾지 못했어요.`;
+    database.prepare("DELETE FROM song_requests WHERE id = ? AND session_key = ?").run(target.id, workspaceKey);
+    return `신청곡 ${command.id}번(${target.title})을 삭제했어요. 뒤 번호는 하나씩 당겨져요.`;
   }
 
-  const row = database.prepare(`
+  database.prepare(`
     INSERT INTO song_requests (session_key, requester_nickname, title, artist, created_at)
     VALUES (?, ?, ?, ?, ?)
-    RETURNING id
-  `).get(
+  `).run(
     workspaceKey,
     requesterNickname?.trim().slice(0, 50) || "청취자",
     command.title,
     command.artist,
     Date.now(),
-  ) as { id: number };
-  return `신청곡 ${row.id}번 ${command.title} - ${command.artist} 접수 완료!`;
+  );
+  const { count } = database.prepare("SELECT COUNT(*) AS count FROM song_requests WHERE session_key = ?")
+    .get(workspaceKey) as { count: number };
+  return `신청곡 ${count}번 ${command.title} - ${command.artist} 접수 완료!`;
 }

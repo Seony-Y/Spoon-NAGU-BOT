@@ -15,6 +15,7 @@ import {
 import { isRecentBotMessage, sendBotChat } from "./chat";
 import { clearGameAcks, flushAllGameAcks, flushGameAcks, queueGameAck } from "./chat-acks";
 import { formatMultilineMessages, resolveCommandFallback, truncateChatMessage } from "./chat-message";
+import { formatCounterAdjustment } from "./counter-command";
 import { parseDjCommand } from "./dj-command";
 import { announceSecretWordFound, announceTeamBattleOutcome, runDjCommand } from "./live-actions";
 import {
@@ -26,6 +27,7 @@ import {
   applyRouletteKeepCommand,
   addTeamBattlePoints,
   applyAttendanceCommand,
+  addFundingSpoonsByKey,
   applySecretWordChat,
   attendanceMilestoneLabel,
   getAttendanceAnnounceByKey,
@@ -39,6 +41,7 @@ import {
   getAvailableCommandRepliesByKey,
   getBotSettingsByKey,
   getCurrentLiveIdByKey,
+  getSessionDjUserIdByKey,
   getLatestAudienceLiveIdByKey,
   getLiveAutomationStateByKey,
   getRouletteKeepCommandRepliesByKey,
@@ -344,6 +347,7 @@ async function backfillDonations(sessionKey: string, accessToken: string, liveId
       Number.isNaN(donatedAt) ? Date.now() : donatedAt,
     );
     if (teamOutcome) announceTeamBattleOutcome(sessionKey, teamOutcome);
+    addFundingSpoons(sessionKey, donation.amount);
     recovered.push(donation);
     const draw = applyRouletteDonation(sessionKey, liveId, event);
     if (draw) void sendBotChat(sessionKey, formatRouletteDraw(draw));
@@ -393,7 +397,14 @@ function recordAttendance(sessionKey: string, runtime: BotRuntime, user: { id: s
   }
 }
 
-function recordEvent(sessionKey: string, event: ParsedSseEvent) {
+// Funding counters that follow donations; a reached goal is announced once.
+function addFundingSpoons(sessionKey: string, spoons: number) {
+  for (const counter of addFundingSpoonsByKey(sessionKey, spoons)) {
+    void sendBotChat(sessionKey, `[${counter.name}] 목표 달성! ${formatCounterAdjustment(counter.name, counter.value, counter.goal)} 감사합니다!`);
+  }
+}
+
+function recordEvent(sessionKey: string, event: ParsedSseEvent, { fromDashboard = false } = {}) {
   if (event.event === "end") return;
 
   const runtime = runtimes.get(sessionKey);
@@ -441,11 +452,15 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       : addTeamBattlePoints(sessionKey, event.data.user.id, "spoons", event.data.amount);
     if (outcome) announceTeamBattleOutcome(sessionKey, outcome);
   }
+  if (isNewAudienceEvent && event.event === "donation" && runtime.currentLiveId !== undefined) {
+    addFundingSpoons(sessionKey, event.data.amount);
+  }
 
   const settings = getBotSettingsByKey(sessionKey);
   let reply: string | null;
   if (event.event === "chat") {
-    if (event.data.isDj && isRecentBotMessage(sessionKey, event.data.message)) return;
+    // fromDashboard: the DJ's own message, which the echo guard has remembered.
+    if (event.data.isDj && !fromDashboard && isRecentBotMessage(sessionKey, event.data.message)) return;
     const djCommand = event.data.isDj ? parseDjCommand(event.data.message) : null;
     if (djCommand) {
       void runDjCommand(sessionKey, djCommand).catch((error: unknown) => {
@@ -925,6 +940,28 @@ export async function announceInLiveBroadcast(sessionId: string, message: string
     new Promise((resolve) => { timer = setTimeout(resolve, ANNOUNCE_TIMEOUT_MS); }),
   ]);
   clearTimeout(timer);
+}
+
+// Spoon never echoes messages sent through the API, so a command the DJ types in
+// the dashboard chat box (e.g. "!실드 +1", "!퀴즈 시작") would otherwise never
+// run. It is handled here as the DJ's chat. Without a known DJ identity the
+// nickname stays null, so it never links a workspace.
+export function handleDashboardDjChat(sessionId: string, message: string) {
+  const text = message.trim();
+  if (!text.startsWith("!")) return;
+  const sessionKey = getSessionKey(sessionId);
+  const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
+  const runtime = runtimes.get(botKey);
+  if (!runtime?.enabled || runtime.currentLiveId === undefined) return;
+  recordEvent(botKey, {
+    event: "chat",
+    data: {
+      user: { id: getSessionDjUserIdByKey(botKey) ?? "dashboard-dj", nickname: null },
+      isDj: true,
+      message: text,
+      sentTime: new Date().toISOString(),
+    },
+  }, { fromDashboard: true });
 }
 
 // After a data reset or restore: donations so far are not "missed" (their

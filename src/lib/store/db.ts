@@ -276,6 +276,15 @@ function migrateDatabase(database: DatabaseSync) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS secret_word_rounds_active_idx
       ON secret_word_rounds (workspace_key) WHERE active = 1;
+    -- Funding goals for counters (e.g. 펀딩 [1,200 / 5,000 스푼]), by counter name.
+    -- Kept out of bot_counters so older backups (fixed columns) still restore.
+    CREATE TABLE IF NOT EXISTS counter_goals (
+      workspace_key TEXT NOT NULL,
+      name TEXT NOT NULL COLLATE NOCASE,
+      goal INTEGER NOT NULL,
+      auto_spoons INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (workspace_key, name)
+    );
     -- Kept out of bot_settings so older backups (fixed bot_settings columns) still restore.
     CREATE TABLE IF NOT EXISTS follow_settings (
       workspace_key TEXT PRIMARY KEY,

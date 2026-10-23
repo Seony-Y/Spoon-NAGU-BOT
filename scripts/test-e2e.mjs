@@ -120,6 +120,12 @@ try {
   r = await post("/bot/settings", { mode: "save_counter", id: funding.id, name: "펀딩", value: 9 });
   funding = store.listBotCounters(sessionId).find((c) => c.id === funding.id);
   check("카운터 수정", r.params.settings === "counter_saved" && funding?.value === 9, JSON.stringify(r.params));
+  r = await post("/bot/settings", { mode: "save_counter", id: funding.id, name: "펀딩", value: 9, goal: "5000", autoSpoons: "on" });
+  funding = store.listBotCounters(sessionId).find((c) => c.id === funding.id);
+  check("펀딩 목표 저장", r.params.settings === "counter_saved" && funding?.goal === 5000 && funding.autoSpoons
+    && store.applyBotCounterCommand(sessionKey, "!펀딩", false) === "펀딩 [9 / 5,000 스푼]", JSON.stringify(r.params));
+  r = await post("/bot/settings", { mode: "save_counter", id: funding.id, name: "펀딩", value: 9, goal: "0" });
+  check("잘못된 펀딩 목표 거부", r.params.settings === "invalid_counter_goal" && r.params.automation === "counters", JSON.stringify(r.params));
   r = await post("/bot/settings", { mode: "upsert_command", command: "!펀딩", response: "x" });
   check("카운터와 같은 이름 명령어 거부", r.params.settings === "command_counter_conflict", JSON.stringify(r.params));
   r = await post("/bot/settings", { mode: "save_counter", name: "참여", value: 1 });
@@ -272,6 +278,7 @@ try {
   store.addTeamBattlePoints(sessionKey, "fan-a", "hearts", 5);
   store.finishTeamBattleByKey(sessionKey);
   store.addSecretWord(sessionId, "노을", "하늘");
+  store.saveBotCounter(sessionId, null, "펀딩", 100, { goal: 1000, autoSpoons: true });
   store.recordAudienceEvent(sessionKey, 5001, {
     event: "like",
     id: "e2e-like-1",
@@ -284,7 +291,7 @@ try {
   const allTables = [...store.WORKSPACE_BACKUP_TABLES.core, ...store.WORKSPACE_BACKUP_TABLES.audience].map((table) => table.name);
   const missing = allTables.filter((name) => !Array.isArray(full.data.tables[name]));
   check("전체 백업: 모든 테이블 포함", missing.length === 0, missing.join(","));
-  const mustHaveRows = ["bot_settings", "bot_counters", "secret_word_queue", "secret_word_rounds", "team_battle_settings", "team_battles", "team_members", "broadcasts", "attendance_settings", "attendance", "audience_events", "roulette_items"];
+  const mustHaveRows = ["bot_settings", "bot_counters", "counter_goals", "secret_word_queue", "secret_word_rounds", "team_battle_settings", "team_battles", "team_members", "broadcasts", "attendance_settings", "attendance", "audience_events", "roulette_items"];
   const empty = mustHaveRows.filter((name) => !(full.data.tables[name]?.length > 0));
   check("전체 백업: 새 기능 데이터 포함", empty.length === 0, empty.join(","));
   check("기본 백업: 청취자 기록 제외", !("attendance" in coreBackup.data.tables) && !("audience_events" in coreBackup.data.tables) && "team_members" in coreBackup.data.tables);

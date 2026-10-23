@@ -16,6 +16,7 @@ const CORE_BACKUP_TABLES = [
   { name: "bot_settings", key: "session_key", columns: ["dj_nickname", "greeting_message", "donation_message", "heart_message", "hourly_enabled", "hourly_message", "repeat_interval_minutes", "commands_enabled", "welcome_enabled", "donation_enabled", "heart_enabled", "commands_initialized"] },
   { name: "bot_commands", key: "session_key", columns: ["command", "response"] },
   { name: "bot_counters", key: "session_key", columns: ["name", "initial_value", "value"] },
+  { name: "counter_goals", key: "workspace_key", columns: ["name", "goal", "auto_spoons"] },
   { name: "song_requests", key: "session_key", columns: ["requester_nickname", "title", "artist", "created_at"] },
   { name: "rps_rounds", key: "workspace_key", columns: ["round_id", "dj_choice", "active", "started_at", "ended_at"] },
   { name: "rps_entries", key: "workspace_key", columns: ["round_id", "user_id", "nickname", "choice", "result", "created_at"] },
@@ -342,6 +343,7 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
     ["broadcasts", "live_id, started_at"],
     ["attendance", "user_id, live_id, nickname, attended_at, month, checked_in"],
     ["attendance_settings", "announce"],
+    ["counter_goals", "name, goal, auto_spoons"],
   ]) {
     database.prepare(`INSERT OR IGNORE INTO ${table} (workspace_key, ${columns}) SELECT ?, ${columns} FROM ${table} WHERE workspace_key = ?`)
       .run(targetKey, sourceKey);

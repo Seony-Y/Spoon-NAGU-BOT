@@ -32,7 +32,7 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
         <input type="hidden" name="automation" value={automationTab} />
         <div>
           <label htmlFor="dj-display-name">DJ 표시 이름 <span>선택</span></label>
-          <p>봇 인사말에 쓸 DJ 이름입니다. 비워 두면 <strong>DJ</strong>로 표시하고, 방송에서 DJ가 처음 채팅하면 자동으로 채워집니다.</p>
+          <p>봇 인사말에 쓸 DJ 이름입니다. 비워 두면 <strong>DJ</strong>로 표시합니다. 봇이 방송에 들어가 있을 때 DJ가 <strong>Spoon 앱의 방송 채팅</strong>에 글을 쓰면 그 닉네임으로 자동으로 채워지고, 새로고침하면 여기에 보입니다. 대시보드 채팅창으로 보낸 메시지는 Spoon이 봇에게 다시 알려 주지 않아 채워지지 않습니다.</p>
         </div>
         <div className="dj-name-field">
           <input id="dj-display-name" name="djNickname" defaultValue={botSettings.djNickname} maxLength={50} placeholder="DJ" />
@@ -108,13 +108,16 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
         <div className="counter-guide">
           <h4>카운터 관리</h4>
           <p><code>!실드</code> 조회는 누구나 사용할 수 있고, <code>!실드 +2</code> 또는 <code>!실드 -1</code> 증감은 DJ만 사용할 수 있습니다. 이 규칙은 추가한 모든 카운터에 동일하게 적용됩니다.</p>
+          <p><strong>펀딩</strong>: 목표 스푼을 입력하면 <code>!펀딩</code>에 <code>펀딩 [1,200 / 5,000 스푼]</code>처럼 답합니다. 후원 자동 반영을 켜 두면 방송 중 받은 스푼이 자동으로 더해지고, 목표에 도달하면 채팅으로 알립니다.</p>
         </div>
         {botCounters.length > 0 && <div className="counter-list">
           {botCounters.map((counter) => <section key={counter.id} className="counter-item">
             <form action="/bot/settings" method="post">
               <input type="hidden" name="mode" value="save_counter" /><input type="hidden" name="id" value={counter.id} />
               <label>이름<input name="name" defaultValue={counter.name} maxLength={20} readOnly={counter.name === "실드"} required /></label>
-              <label>개수<input type="number" name="value" min={0} max={1000000} defaultValue={counter.value} required /></label>
+              <label>{counter.goal === null ? "개수" : "받은 스푼"}<input type="number" name="value" min={0} max={1000000} defaultValue={counter.value} required /></label>
+              <label>목표 스푼<input type="number" name="goal" min={1} max={1000000} defaultValue={counter.goal ?? ""} placeholder="펀딩일 때만" /></label>
+              <label className="counter-auto"><input type="checkbox" name="autoSpoons" defaultChecked={counter.goal === null || counter.autoSpoons} />후원 자동 반영</label>
               <button type="submit">수정</button>
             </form>
             {counter.name !== "실드" && <div className="counter-actions">
@@ -126,6 +129,8 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
           <input type="hidden" name="mode" value="save_counter" />
           <label htmlFor="counter-name">새 이름</label><input id="counter-name" name="name" placeholder="실드" maxLength={20} required />
           <label htmlFor="counter-value">개수</label><input id="counter-value" type="number" name="value" min={0} max={1000000} defaultValue={0} required />
+          <label htmlFor="counter-goal">목표 스푼</label><input id="counter-goal" type="number" name="goal" min={1} max={1000000} placeholder="펀딩일 때만" />
+          <label className="counter-auto"><input type="checkbox" name="autoSpoons" defaultChecked />후원 자동 반영</label>
           <button type="submit">카운터 추가</button>
         </form>
       </div>}
@@ -204,7 +209,7 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
         </div>
         {songRequests.length > 0 ? <ol className="song-request-list">
           {songRequests.map((request) => <li key={request.id}>
-            <span className="song-request-number">#{request.id}</span>
+            <span className="song-request-number">#{request.number}</span>
             <div><strong>{request.artist ? `${request.title} - ${request.artist}` : request.title}</strong><span>{request.requesterNickname} · {formatDateTime(request.createdAt)}</span></div>
             <form action="/bot/settings" method="post">
               <input type="hidden" name="mode" value="delete_song_request" />

@@ -354,7 +354,7 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
               {counters.map((counter) => (
                 <li key={counter.id} className="remote-counter-row">
                   <span>{counter.name}</span>
-                  <strong>{counter.value.toLocaleString("ko-KR")}</strong>
+                  <strong>{counter.value.toLocaleString("ko-KR")}{counter.goal !== null && <small> / {counter.goal.toLocaleString("ko-KR")}</small>}</strong>
                   <form className="remote-counter-form" action="/remote/action" method="post">
                     <input type="hidden" name="action" value="counter_set" />
                     <input type="hidden" name="id" value={counter.id} />

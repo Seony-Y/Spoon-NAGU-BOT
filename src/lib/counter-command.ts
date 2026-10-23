@@ -23,8 +23,11 @@ export function parseCounterAdjustment(message: string): CounterAdjustment | nul
   return { name: match[1], delta };
 }
 
-export function formatCounterAdjustment(name: string, value: number) {
-  return `${name} ${value.toLocaleString("ko-KR")}개 남았어요.`;
+// "실드 8개", or for a funding counter "펀딩 [1,200 / 5,000 스푼]".
+export function formatCounterAdjustment(name: string, value: number, goal: number | null = null) {
+  return goal === null
+    ? `${name} ${value.toLocaleString("ko-KR")}개`
+    : `${name} [${value.toLocaleString("ko-KR")} / ${goal.toLocaleString("ko-KR")} 스푼]`;
 }
 
 export function parseCounterQuery(message: string) {

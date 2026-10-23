@@ -159,6 +159,13 @@ export async function POST(request: NextRequest) {
     const id = rawId ? Number(rawId) : null;
     const name = String(formData.get("name") ?? "").trim();
     const value = Number(formData.get("value"));
+    // A goal makes it a funding counter: 펀딩 [1,200 / 5,000 스푼].
+    const rawGoal = String(formData.get("goal") ?? "").trim();
+    const goalValue = rawGoal ? Number(rawGoal) : null;
+    if (goalValue !== null && (!Number.isInteger(goalValue) || goalValue < 1 || goalValue > 1_000_000)) {
+      return redirect(request, "invalid_counter_goal", "counters");
+    }
+    const goal = goalValue === null ? null : { goal: goalValue, autoSpoons: formData.get("autoSpoons") === "on" };
     if (
       (id !== null && (!Number.isInteger(id) || id < 1))
       || !/^[^\s!]{1,20}$/u.test(name)
@@ -174,7 +181,7 @@ export async function POST(request: NextRequest) {
     ) {
       return redirect(request, "counter_name_taken", "counters");
     }
-    const saved = saveBotCounter(sessionId, id, name, value);
+    const saved = saveBotCounter(sessionId, id, name, value, goal);
     return redirect(request, saved ? "counter_saved" : "counter_conflict", "counters");
   }
 

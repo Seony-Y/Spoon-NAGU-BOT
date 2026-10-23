@@ -136,7 +136,7 @@ export function isRecentBotMessage(sessionKey: string, message: string) {
     .some((entry) => entry.text === text && now - entry.at < SENT_ECHO_WINDOW_MS);
 }
 
-function enqueueChat(sessionKey: string, message: string, rememberAsBot = true) {
+function enqueueChat(sessionKey: string, message: string) {
   const previous = chatQueues.get(sessionKey) ?? Promise.resolve<ChatSendResult>({ kind: "sent" });
   const queued = previous
     .catch(() => ({ kind: "unavailable" }) as ChatSendResult)
@@ -144,9 +144,9 @@ function enqueueChat(sessionKey: string, message: string, rememberAsBot = true) 
       try {
         // Remembered before sending: Spoon may echo the message on the event
         // stream before the send request returns.
-        const entry = rememberAsBot ? rememberSentMessage(sessionKey, message) : null;
+        const entry = rememberSentMessage(sessionKey, message);
         const result = await sendChatBySessionKey(sessionKey, message);
-        if (result.kind !== "sent" && entry) forgetSentMessage(sessionKey, entry);
+        if (result.kind !== "sent") forgetSentMessage(sessionKey, entry);
         return result;
       } catch {
         return { kind: "unavailable" } as ChatSendResult;
@@ -160,12 +160,11 @@ function enqueueChat(sessionKey: string, message: string, rememberAsBot = true) 
   return queued;
 }
 
-// The DJ's own message from the dashboard. A command typed there (e.g.
-// "!실드 +1") should run like one typed in the broadcast, so it is not
-// remembered as a bot message whose echo would be ignored.
+// The DJ's own message from the dashboard (commands in it are run by
+// handleDashboardDjChat, since Spoon does not echo messages sent via the API).
 export function sendChat(sessionId: string, message: string) {
   const sessionKey = getSessionKey(sessionId);
-  return enqueueChat(getWorkspaceBotSessionKey(sessionKey) ?? sessionKey, message, !message.trim().startsWith("!"));
+  return enqueueChat(getWorkspaceBotSessionKey(sessionKey) ?? sessionKey, message);
 }
 
 export function sendBotChat(sessionKey: string, message: string) {

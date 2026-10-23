@@ -284,7 +284,7 @@ assert.equal(store.getBotSettings(firstSessionId).followEnabled, false);
 assert.equal(store.getBotSettings(firstSessionId).followMessage, "{nickname}님 팔로우 고마워요");
 const shield = store.listBotCounters(firstSessionId).find((counter) => counter.name === "실드");
 assert.equal(store.saveBotCounter(firstSessionId, shield.id, shield.name, 5), true);
-assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드 +2", true), "실드 7개 남았어요.");
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드 +2", true), "실드 7개");
 assert.equal(store.listBotCounters(firstSessionId).find((counter) => counter.id === shield.id).value, 7);
 assert.deepEqual(
 	store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A"),
@@ -295,6 +295,35 @@ assert.match(
 	store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A").join(" "),
 	/#\d+ 밤편지 - 아이유/,
 );
+
+// Song requests are numbered per DJ list (1, 2, 3 …), not by the shared id.
+store.clearSongRequests(firstSessionId);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 밤편지-아이유", false, "청취자 A"), /^신청곡 1번 밤편지 - 아이유 접수 완료!$/);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 좋은날-아이유", false, "청취자 B"), /^신청곡 2번 /);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 너랑나-아이유", false, "청취자 C"), /^신청곡 3번 /);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A").join(" "), /#1 밤편지 - 아이유\n#2 좋은날 - 아이유\n#3 너랑나/);
+assert.equal(store.applySongRequestCommand(firstSessionKey, "!신청곡 삭제 2", false, "청취자 A"), "신청곡 삭제는 DJ만 할 수 있어요.");
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 삭제 2", true, "DJ"), /^신청곡 2번\(좋은날\)을 삭제했어요/);
+assert.deepEqual(store.listSongRequests(firstSessionId).map((request) => [request.number, request.title]), [[1, "밤편지"], [2, "너랑나"]]);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 삭제 9", true, "DJ"), /찾지 못했어요/);
+store.clearSongRequests(firstSessionId);
+store.applySongRequestCommand(firstSessionKey, "!신청곡 밤편지-아이유", false, "청취자 A");
+
+// Funding counter: goal display, donations add spoons, the goal is reported once.
+assert.equal(store.saveBotCounter(firstSessionId, null, "펀딩", 0, { goal: 1000, autoSpoons: true }), true);
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!펀딩", false), "펀딩 [0 / 1,000 스푼]");
+assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 600), []);
+assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 500), [{ name: "펀딩", value: 1100, goal: 1000 }]);
+assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 10), [], "goal reported once");
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!펀딩 -110", true), "펀딩 [1,000 / 1,000 스푼]");
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!실드", false), "실드 7개", "plain counters are not funded");
+const funding = store.listBotCounters(firstSessionId).find((counter) => counter.name === "펀딩");
+assert.deepEqual([funding.goal, funding.autoSpoons], [1000, true]);
+// Renaming keeps the goal; turning auto off stops donations from counting.
+assert.equal(store.saveBotCounter(firstSessionId, funding.id, "후원목표", 1000, { goal: 2000, autoSpoons: false }), true);
+assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 100), []);
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!후원목표", false), "후원목표 [1,000 / 2,000 스푼]");
+assert.equal(store.saveBotCounter(firstSessionId, funding.id, "펀딩", 1000, { goal: 2000, autoSpoons: true }), true);
 
 const donation = {
 	id: "event-donation-1",

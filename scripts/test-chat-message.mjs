@@ -65,7 +65,7 @@ assert.deepEqual(parseCounterCommand("!실드 -1", false), {
 	kind: "denied",
 	adjustment: { name: "실드", delta: -1 },
 });
-assert.equal(formatCounterAdjustment("실드", 8), "실드 8개 남았어요.");
+assert.equal(formatCounterAdjustment("실드", 8), "실드 8개");
 
 const raffleParticipants = [
 	{ userId: "one", nickname: "첫 번째" },

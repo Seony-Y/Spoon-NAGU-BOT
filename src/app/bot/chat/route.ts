@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { handleDashboardDjChat } from "@/lib/bot-runtime";
 import { sendChat } from "@/lib/chat";
 import { SESSION_COOKIE } from "@/lib/session";
 import { buildApplicationUrl } from "@/lib/spoon";
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
   const message = formData.get("message");
   const chatMessage = typeof message === "string" ? message : "";
   const result = await sendChat(sessionId, chatMessage);
+  if (result.kind === "sent") handleDashboardDjChat(sessionId, chatMessage);
   const target = buildApplicationUrl("/", request.url);
   target.searchParams.set("tab", "bot");
   target.searchParams.set("chat", result.kind);
