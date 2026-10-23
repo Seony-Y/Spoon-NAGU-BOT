@@ -323,6 +323,19 @@
     padding-left: 14px;
   }
 
+  .guide-quickstart {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .guide-accordion-content:has(.guide-commands) {
+    margin-left: 0;
+  }
+
+  .guide-commands td {
+    padding: 8px 6px;
+  }
+
   .information-content section {
     grid-template-columns: 34px minmax(0, 1fr);
     gap: 10px;

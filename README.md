@@ -31,7 +31,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs all four on every push to `main
 - Configure every variable from `.env.example` in Railway. `SPOON_REDIRECT_URI` is the production callback, e.g. `https://spoon-nagu-bot-production.up.railway.app/oauth/callback`, and must match the URL registered in Spoon Developers.
 - Attach a volume at `/data` and set `SESSION_STORE_PATH=/data/nagu.db` (the default on Railway). Sessions, settings, game history, roulette data, audience events, and rotated refresh tokens live in this SQLite file.
 - Run a **single replica**: SQLite is local to the volume, bot workers live in process memory, and Spoon allows one event stream per app and DJ.
-- Point the health check at `/api/health`; it queries SQLite. Without a volume the database still works but lives in the container and is **wiped on every deploy** (everyone is logged out, all data is gone). `/api/health` reports `persistentStorage: false` in that case (Railway sets `RAILWAY_VOLUME_MOUNT_PATH` only when a volume is attached, and the DB path must be inside it), and an alert is sent at startup.
+- Point the health check at `/api/health`; it queries SQLite. Without a volume the database still works but lives in the container and is **wiped on every deploy** (everyone is logged out, all data is gone). `/api/health` reports `persistentStorage: false` in that case (Railway sets `RAILWAY_VOLUME_MOUNT_PATH` only when a volume is attached, and the DB path must be inside it), an alert is sent at startup, and every boot logs `[storage] database=… volume=… persistent=…` so the deploy log shows where the data lives.
 - Node.js 22.13 or newer is required (`node:sqlite`).
 
 ### Staging
@@ -50,7 +50,7 @@ Create the staging environment in Railway with its **own volume**, its own `SESS
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ALERT_WEBHOOK_URL` | unset | Discord/Slack webhook for operator alerts: bot worker stopped, 5 failed reconnects in a row, Spoon daily API or chat limit, token decryption failure (check `SESSION_SECRET`), bot restore failure, backup or cleanup failure. Each kind is sent at most once per 30 minutes. |
+| `ALERT_WEBHOOK_URL` | unset | Discord/Slack webhook for operator alerts: database not on a Railway volume (at startup), bot worker stopped, 5 failed reconnects in a row, Spoon daily API or chat limit, token decryption failure (check `SESSION_SECRET`), bot restore failure, backup or cleanup failure. Each kind is sent at most once per 30 minutes. |
 | `APP_ENV_LABEL` | unset | Badge text shown in the header and remote (e.g. `스테이징`, `로컬`) |
 | `DB_BACKUP_DISABLED` | unset | `1` turns off the daily backup |
 | `DB_BACKUP_KEEP` | `7` | Daily backup files to keep |
@@ -187,6 +187,7 @@ The **데이터 백업** tab downloads a signed JSON backup of the DJ display na
 - `src/lib/store/*` — SQLite persistence by domain (`db`, `sessions`, `settings`, `workspace`, `audience`, `roulette`, `games`, `maintenance`), imported through `src/lib/session-store.ts`
 - `src/lib/maintenance.ts` — daily backup and cleanup; `src/lib/alerts.ts` — webhook alerts
 - `src/app/page.tsx` — dashboard shell (header, login card, bot bar, tabs). Data comes from `src/app/dashboard/load.ts` (`loadDashboardView`, typed as `DashboardView`); each tab section is a server component in `src/app/dashboard/` (`live-card`, `audience-card`, `recent-events-card`, `game-card` with `rps`/`raffle`/`quiz`/`secret-word`/`team-battle`/`attendance`/`roulette` panels, `bot-card` with `automation-settings`, `backup-card`); notice texts live in `labels.ts`, display helpers in `format.ts`
+- `src/app/dashboard/scroll-tabs.tsx` — one-row tab bar (game, automation, attendance period) that scrolls sideways on narrow screens, shows ‹ › buttons on the side with more tabs, and keeps the active tab in view
 - `src/app/form-navigation.tsx` with `src/proxy.ts` — dashboard and remote forms (POST to `/bot/*`, `/game/*`, `/remote/*`) are sent with fetch and the 303 target is opened with the router, so the page keeps its scroll position; the proxy answers that followed GET with an empty 204 so the page is not rendered twice. The router target gets a fresh `fn` param, and both pages key `<main>` on it, so the content remounts with the new data as after a reload (cleared inputs, selects and client editors seeded from saved values, notice timers restarted). Further submits wait until the new page is in. Read form attributes with `getAttribute`, since fields named `action` shadow `form.action`
 - `src/app/globals.css` plus `src/app/styles/*.css` — global styles split in cascade order and imported in that order by `src/app/layout.tsx`; keep the order when adding files
 

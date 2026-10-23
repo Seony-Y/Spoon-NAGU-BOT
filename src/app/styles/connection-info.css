@@ -377,13 +377,14 @@
 
 .guide-topic h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .guide-topic p,
-.guide-topic li {
-  color: #626267;
-  font-size: 13px;
+.guide-topic li,
+.guide-accordion-content > .guide-note {
+  color: #45454a;
+  font-size: 14.5px;
   line-height: 1.75;
 }
 
@@ -391,18 +392,145 @@
   margin: 8px 0 0;
 }
 
-.guide-topic ol {
+.guide-topic ol,
+.guide-topic ul {
   display: grid;
   margin: 10px 0 0;
   padding-left: 20px;
   gap: 6px;
 }
 
-.guide-topic code {
-  padding: 2px 5px;
+.guide-sections code {
+  padding: 2px 6px;
   border-radius: 4px;
   background: #f1f1f3;
+  color: var(--text);
+  /* Monospace fonts space Hangul out awkwardly. */
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Side remarks: smaller, so the main instruction stands out. */
+.guide-topic .guide-note,
+.guide-accordion-content > .guide-note {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.guide-topic .guide-warning {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--red-soft);
+  color: var(--red);
+  font-weight: 700;
+}
+
+.guide-quickstart {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 28px 0 36px;
+  padding: 0;
+  list-style: none;
+  counter-reset: quickstart;
+}
+
+.guide-quickstart li {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  counter-increment: quickstart;
+}
+
+.guide-quickstart li::before {
+  content: "STEP " counter(quickstart);
+  color: var(--accent);
   font-size: 11px;
+  font-weight: 800;
+}
+
+.guide-quickstart strong {
+  font-size: 15px;
+}
+
+.guide-quickstart span {
+  color: #626267;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.guide-commands {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.guide-commands caption {
+  padding-bottom: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.guide-commands th {
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.guide-commands td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  color: #45454a;
+  line-height: 1.5;
+  vertical-align: top;
+}
+
+.guide-commands td:first-child {
+  width: 46%;
+}
+
+.guide-commands code {
+  white-space: normal;
+}
+
+.guide-steps {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.guide-steps > div {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.guide-steps dt {
+  align-self: start;
+  margin-top: 3px;
+  padding: 2px 0;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.guide-steps dd {
+  margin: 0;
+  color: #45454a;
+  font-size: 14.5px;
+  line-height: 1.7;
 }
 
 .contact-band {
