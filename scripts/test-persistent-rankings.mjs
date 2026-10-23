@@ -324,6 +324,23 @@ assert.equal(store.saveBotCounter(firstSessionId, funding.id, "후원목표", 10
 assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 100), []);
 assert.equal(store.applyBotCounterCommand(firstSessionKey, "!후원목표", false), "후원목표 [1,000 / 2,000 스푼]");
 assert.equal(store.saveBotCounter(firstSessionId, funding.id, "펀딩", 1000, { goal: 2000, autoSpoons: true }), true);
+// An edit that leaves the value alone keeps donations received meanwhile.
+store.addFundingSpoonsByKey(firstSessionKey, 300);
+assert.equal(store.saveBotCounter(firstSessionId, funding.id, "펀딩", null, { goal: 3000, autoSpoons: true }), true);
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!펀딩", false), "펀딩 [1,300 / 3,000 스푼]");
+// At the 1,000,000 cap the goal is announced once, not on every donation.
+assert.equal(store.saveBotCounter(firstSessionId, null, "큰펀딩", 999_000, { goal: 999_500, autoSpoons: true }), true);
+assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 600).map((counter) => counter.name), ["큰펀딩"]);
+assert.deepEqual(store.addFundingSpoonsByKey(firstSessionKey, 600).map((counter) => counter.name), []);
+store.deleteBotCounter(firstSessionId, store.listBotCounters(firstSessionId).find((counter) => counter.name === "큰펀딩").id);
+// An older backup without counter_goals restores plain counters.
+{
+  const before = store.exportWorkspaceData(firstSessionId, false).tables;
+  store.restoreWorkspaceData(firstSessionId, { tables: { bot_counters: before.bot_counters } });
+  assert.equal(store.listBotCounters(firstSessionId).find((counter) => counter.name === "펀딩").goal, null);
+  store.restoreWorkspaceData(firstSessionId, { tables: { bot_counters: before.bot_counters, counter_goals: before.counter_goals } });
+  assert.equal(store.listBotCounters(firstSessionId).find((counter) => counter.name === "펀딩").goal, 3000);
+}
 
 const donation = {
 	id: "event-donation-1",

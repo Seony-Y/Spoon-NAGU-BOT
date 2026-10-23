@@ -70,7 +70,7 @@ export function normalizeRoulettePercentages(
 }
 
 export function summarizeEvent(event: BotEvent) {
-  const name = event.data.user.nickname ?? "익명";
+  const name = event.data.user.nickname ?? (event.type === "chat" && event.data.isDj ? "DJ" : "익명");
 
   switch (event.type) {
     case "chat":

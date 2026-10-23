@@ -96,6 +96,7 @@ const LISTENER_POLL_MS = 10_000;
 // means a half-open connection that would otherwise look "connected".
 const STREAM_IDLE_MS = 45_000;
 const BACKFILL_SLACK_MS = 30_000;
+const REFRESH_BACKFILL_INTERVAL_MS = 5 * 60_000;
 const MAX_DAILY_LIMIT_WAIT_MS = 60 * 60 * 1000;
 const RECONNECT_ALERT_ATTEMPTS = 5;
 
@@ -155,9 +156,12 @@ type BotRuntime = BotSnapshot & {
   heartBatcher: ReturnType<typeof createHeartBatcher>;
   // Set whenever the stream may have missed events (start, reconnect, new live).
   needsDonationBackfill: boolean;
-  // Donations before this time were covered by the stream or are not the bot's
-  // to handle (before 봇 입장, or erased by a reset/restore); backfill skips them.
+  // Last moment the stream was known to be delivering (or 봇 입장 / a data
+  // reset): donations before it were seen or are not the bot's to handle.
   donationsCoveredUntil: number;
+  // Start of the oldest reconnect gap not yet recovered by a backfill.
+  pendingBackfillFrom?: number;
+  lastBackfillAt?: number;
 };
 
 const globalForBots = globalThis as typeof globalThis & {
@@ -319,12 +323,12 @@ async function getAllLiveDonations(accessToken: string) {
 
 // Records donations received while the bot was away, runs the roulette for
 // them, and thanks those donors in one message instead of one per donation.
-async function backfillDonations(sessionKey: string, accessToken: string, liveId: number) {
+async function backfillDonations(sessionKey: string, accessToken: string, liveId: number, from: number) {
   const donations = await getAllLiveDonations(accessToken);
   const runtime = runtimes.get(sessionKey);
   if (!runtime || runtime.currentLiveId !== liveId) return;
   // A little slack for clock differences; donations already recorded are skipped.
-  const floor = runtime.donationsCoveredUntil - BACKFILL_SLACK_MS;
+  const floor = from - BACKFILL_SLACK_MS;
   const recovered: SpoonDonation[] = [];
   for (const donation of donations) {
     const time = Date.parse(donation.time);
@@ -411,7 +415,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent, { fromDashboard 
   if (!runtime) return;
 
   const receivedAt = new Date().toISOString();
-  runtime.lastEventAt = receivedAt;
+  if (!fromDashboard) runtime.lastEventAt = receivedAt;
   runtime.events.unshift({
     id: event.id,
     type: event.event,
@@ -724,9 +728,21 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       if (runtime) {
         runtime.state = "connected";
         runtime.connectedAt = new Date().toISOString();
-        if (runtime.needsDonationBackfill && hasScope(session.scope, "donations.read")) {
+        // Every reconnect leaves a gap the stream will not replay; remember where
+        // it started (before resetIdle moves the coverage mark to now). Real
+        // drops are recovered at once; the minute-by-minute permission refresh
+        // only leaves sub-second gaps, so those are swept every few minutes.
+        runtime.pendingBackfillFrom = Math.min(runtime.pendingBackfillFrom ?? runtime.donationsCoveredUntil, runtime.donationsCoveredUntil);
+        const backfillDue = runtime.needsDonationBackfill
+          || Date.now() - (runtime.lastBackfillAt ?? 0) >= REFRESH_BACKFILL_INTERVAL_MS;
+        if (backfillDue && hasScope(session.scope, "donations.read")) {
+          const from = runtime.pendingBackfillFrom;
           runtime.needsDonationBackfill = false;
-          void backfillDonations(sessionKey, session.access_token, live.liveId).catch((error: unknown) => {
+          runtime.lastBackfillAt = Date.now();
+          void backfillDonations(sessionKey, session.access_token, live.liveId, from).then(() => {
+            // Gaps opened while it ran stay pending for the next sweep.
+            if (runtime.pendingBackfillFrom === from) runtime.pendingBackfillFrom = undefined;
+          }).catch((error: unknown) => {
             runtime.needsDonationBackfill = true;
             console.error("Donation backfill failed", error instanceof Error ? error.message : error);
           });
@@ -947,16 +963,18 @@ export async function announceInLiveBroadcast(sessionId: string, message: string
 // run. It is handled here as the DJ's chat. Without a known DJ identity the
 // nickname stays null, so it never links a workspace.
 export function handleDashboardDjChat(sessionId: string, message: string) {
-  const text = message.trim();
+  const text = truncateChatMessage(message.trim());
   if (!text.startsWith("!")) return;
   const sessionKey = getSessionKey(sessionId);
   const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
   const runtime = runtimes.get(botKey);
   if (!runtime?.enabled || runtime.currentLiveId === undefined) return;
+  // The DJ's display name only with a known identity (a nickname links it).
+  const djUserId = getSessionDjUserIdByKey(botKey);
   recordEvent(botKey, {
     event: "chat",
     data: {
-      user: { id: getSessionDjUserIdByKey(botKey) ?? "dashboard-dj", nickname: null },
+      user: { id: djUserId ?? "dashboard-dj", nickname: djUserId ? getBotSettingsByKey(botKey).djNickname || null : null },
       isDj: true,
       message: text,
       sentTime: new Date().toISOString(),
@@ -970,7 +988,10 @@ export function settleBotAfterDataChange(sessionId: string) {
   const sessionKey = getSessionKey(sessionId);
   const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
   const runtime = runtimes.get(botKey);
-  if (runtime) runtime.donationsCoveredUntil = Date.now();
+  if (runtime) {
+    runtime.donationsCoveredUntil = Date.now();
+    runtime.pendingBackfillFrom = undefined;
+  }
   clearGameAcks(botKey);
   // Keep the broadcast in progress counted for attendance streaks.
   const liveId = runtime?.currentLiveId ?? getCurrentLiveIdByKey(botKey);

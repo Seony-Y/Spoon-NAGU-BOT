@@ -124,6 +124,13 @@ try {
   funding = store.listBotCounters(sessionId).find((c) => c.id === funding.id);
   check("펀딩 목표 저장", r.params.settings === "counter_saved" && funding?.goal === 5000 && funding.autoSpoons
     && store.applyBotCounterCommand(sessionKey, "!펀딩", false) === "펀딩 [9 / 5,000 스푼]", JSON.stringify(r.params));
+  // Donations arrive while the edit form is open; saving only the goal keeps them.
+  store.addFundingSpoonsByKey(sessionKey, 500);
+  r = await post("/bot/settings", { mode: "save_counter", id: funding.id, name: "펀딩", value: 9, originalValue: 9, goal: "6000", autoSpoons: "on" });
+  check("펀딩 수정: 그 사이 후원 유지", r.params.settings === "counter_saved"
+    && store.applyBotCounterCommand(sessionKey, "!펀딩", false) === "펀딩 [509 / 6,000 스푼]", JSON.stringify(r.params));
+  r = await post("/bot/settings", { mode: "save_counter", id: funding.id, name: "펀딩", value: 9, originalValue: 509, goal: "6000", autoSpoons: "on" });
+  check("펀딩 수정: 값을 바꾸면 그 값으로", store.applyBotCounterCommand(sessionKey, "!펀딩", false) === "펀딩 [9 / 6,000 스푼]");
   r = await post("/bot/settings", { mode: "save_counter", id: funding.id, name: "펀딩", value: 9, goal: "0" });
   check("잘못된 펀딩 목표 거부", r.params.settings === "invalid_counter_goal" && r.params.automation === "counters", JSON.stringify(r.params));
   r = await post("/bot/settings", { mode: "upsert_command", command: "!펀딩", response: "x" });

@@ -478,6 +478,11 @@ export function resetWorkspaceData(sessionId: string) {
 }
 
 export function restoreWorkspaceData(sessionId: string, backup: WorkspaceBackupData) {
+  // Goals belong to counters by name: an older backup without counter_goals
+  // restores plain counters, so today's goals must not attach to them.
+  if (Object.hasOwn(backup.tables, "bot_counters") && !Object.hasOwn(backup.tables, "counter_goals")) {
+    backup = { tables: { ...backup.tables, counter_goals: [] } };
+  }
   const sessionKey = getSessionKey(sessionId);
   const workspaceKey = getWorkspaceKey(sessionKey);
   const database = getDatabase();

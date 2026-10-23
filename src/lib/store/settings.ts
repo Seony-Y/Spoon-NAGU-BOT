@@ -270,7 +270,9 @@ export function saveBotCounter(
   sessionId: string,
   id: number | null,
   name: string,
-  value: number,
+  // null keeps the stored value (an edit that only changed the name or goal
+  // must not undo donations a funding counter received meanwhile).
+  value: number | null,
   goal: CounterGoal = null,
 ) {
   const database = getDatabase();
@@ -289,7 +291,7 @@ export function saveBotCounter(
       database.prepare(`
         INSERT INTO bot_counters (session_key, name, initial_value, value)
         VALUES (?, ?, ?, ?)
-      `).run(sessionKey, name, value, value);
+      `).run(sessionKey, name, value ?? 0, value ?? 0);
       saveGoal(null, name);
       database.exec("COMMIT");
       return true;
@@ -305,7 +307,7 @@ export function saveBotCounter(
     const savedName = existing.name.toLocaleLowerCase("ko-KR") === "실드" ? "실드" : name;
     database.prepare(`
       UPDATE bot_counters
-      SET name = ?, initial_value = ?, value = ?
+      SET name = ?, initial_value = COALESCE(?, initial_value), value = COALESCE(?, value)
       WHERE id = ? AND session_key = ?
     `).run(savedName, value, value, id, sessionKey);
     saveGoal(existing.name, savedName);
@@ -332,18 +334,23 @@ export function deleteBotCounter(sessionId: string, id: number) {
 export function addFundingSpoonsByKey(sessionKey: string, spoons: number) {
   if (!Number.isSafeInteger(spoons) || spoons <= 0) return [];
   const workspaceKey = getWorkspaceKey(sessionKey);
-  const rows = getDatabase().prepare(`
-    UPDATE bot_counters
-    SET value = MIN(1000000, value + ?)
-    WHERE session_key = ? AND name IN (
-      SELECT name FROM counter_goals WHERE workspace_key = ? AND auto_spoons = 1
-    )
-    RETURNING name, value
-  `).all(spoons, workspaceKey, workspaceKey) as Array<{ name: string; value: number }>;
+  const database = getDatabase();
+  const funded = database.prepare(`
+    SELECT c.name, c.value AS before, g.goal
+    FROM bot_counters c
+    JOIN counter_goals g ON g.workspace_key = c.session_key AND g.name = c.name COLLATE NOCASE
+    WHERE c.session_key = ? AND g.auto_spoons = 1
+  `).all(workspaceKey) as Array<{ name: string; before: number; goal: number }>;
+  const update = database.prepare(`
+    UPDATE bot_counters SET value = MIN(1000000, value + ?)
+    WHERE session_key = ? AND name = ? COLLATE NOCASE
+    RETURNING value
+  `);
   const reached: Array<{ name: string; value: number; goal: number }> = [];
-  for (const row of rows) {
-    const goal = getCounterGoal(workspaceKey, row.name);
-    if (goal && row.value >= goal.goal && row.value - spoons < goal.goal) reached.push({ ...row, goal: goal.goal });
+  for (const counter of funded) {
+    const { value } = update.get(spoons, workspaceKey, counter.name) as { value: number };
+    // Only the donation that crosses the goal (a counter stuck at the cap does not repeat it).
+    if (counter.before < counter.goal && value >= counter.goal) reached.push({ name: counter.name, value, goal: counter.goal });
   }
   return reached;
 }

@@ -181,7 +181,10 @@ export async function POST(request: NextRequest) {
     ) {
       return redirect(request, "counter_name_taken", "counters");
     }
-    const saved = saveBotCounter(sessionId, id, name, value, goal);
+    // Unchanged value on an edit: keep what is stored now (a funding counter
+    // may have received donations since the page was opened).
+    const unchanged = id !== null && String(formData.get("originalValue") ?? "") === String(value);
+    const saved = saveBotCounter(sessionId, id, name, unchanged ? null : value, goal);
     return redirect(request, saved ? "counter_saved" : "counter_conflict", "counters");
   }
 

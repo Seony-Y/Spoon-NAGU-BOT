@@ -776,6 +776,14 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+/* A long name next to a funding total ("999,999 / 1,000,000"): the total moves
+   under the name instead of squeezing it to one letter per line. */
+@media (max-width: 360px) {
+  .remote-counters li.remote-counter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .remote-counter-form {
   display: grid;
   grid-column: 1 / -1;

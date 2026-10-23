@@ -16,7 +16,15 @@ export async function POST(request: NextRequest) {
   const message = formData.get("message");
   const chatMessage = typeof message === "string" ? message : "";
   const result = await sendChat(sessionId, chatMessage);
-  if (result.kind === "sent") handleDashboardDjChat(sessionId, chatMessage);
+  if (result.kind === "sent") {
+    // The message went out; a failure running it as a command must not look
+    // like a failed send (the DJ would resend it).
+    try {
+      handleDashboardDjChat(sessionId, chatMessage);
+    } catch (error) {
+      console.error("Dashboard command failed", error instanceof Error ? error.message : error);
+    }
+  }
   const target = buildApplicationUrl("/", request.url);
   target.searchParams.set("tab", "bot");
   target.searchParams.set("chat", result.kind);
