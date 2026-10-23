@@ -224,7 +224,8 @@ export async function startSecretWord(sessionKey: string): Promise<LiveActionRes
   if (started.kind === "empty") return fail("secret_queue_empty");
   if (started.kind === "already_active") return fail("already_active");
   await announce(sessionKey, [
-    `[비밀 단어] 찾기 시작! 채팅 속에 숨은 비밀 단어(${started.length}글자)를 먼저 말한 분이 이겨요.`,
+    `[비밀 단어] 찾기 시작!
+채팅 속에 숨은 비밀 단어(${started.length}글자)를 먼저 말한 분이 이겨요.`,
   ]);
   return { ok: true, status: "started" };
 }

@@ -672,6 +672,17 @@ assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "nobody", "새손님"), "새손님님은 아직 출석 기록이 없어요.");
 assert.match(store.applyAttendanceCommand(firstSessionKey, "!출석왕", "a1", "출석러"), /^\[출석왕\] 이번 달: 1\. 출석러 새닉 4회/);
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석 해요", "a1", "출석러"), null);
+// In a broadcast: first !출석 confirms, later ones say already attended.
+assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러", 9005), "[출석] 출석러님 출석 완료! 연속 3회 (누적 4회)");
+assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러", 9005), "[출석] 출석러님은 이미 출석했어요. 연속 3회 (누적 4회)");
+assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a2", "하루", 9005), "[출석] 하루님 출석 완료! 연속 1회 (누적 1회)");
+{
+  const { formatAckMessages } = await import("../src/lib/chat-acks.ts");
+  assert.deepEqual(formatAckMessages("[가위바위보] 참여 완료!", ["GULING", "청취자2"]), ["[가위바위보] 참여 완료! (GULING, 청취자2)"]);
+  const many = formatAckMessages("[추첨] 응모 완료!", Array.from({ length: 40 }, (_, index) => `청취자${index}`));
+  assert.ok(many.length > 1 && many.every((message) => message.length <= 200 && message.startsWith("[추첨] 응모 완료! (")));
+  assert.equal(many.join("").split("청취자").length - 1, 40);
+}
 assert.equal(store.getAttendanceAnnounceByKey(firstSessionKey), true);
 store.setAttendanceAnnounce(firstSessionId, false);
 assert.equal(store.getAttendanceAnnounceByKey(firstSessionKey), false);

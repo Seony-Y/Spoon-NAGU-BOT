@@ -114,10 +114,10 @@ Listener commands:
 - `!실드` (and every named counter) — show the value; `!실드 +2` / `!실드 -1` change it (DJ only, never below 0)
 - `!신청곡 곡명-가수`, `!신청곡 목록`; `!신청곡 삭제 번호` (DJ only)
 - `!가위바위보 가위·바위·보`, `!참여` (raffle), `!정답 (답)` (quiz), `!팀 (번호|이름)` (team battle, once per battle)
-- `!출석` — own attendance count and streak; `!출석왕` — this month's top 5
+- `!출석` — "출석 완료!" the first time in a broadcast, "이미 출석했어요." after that, both with streak and total; `!출석왕` — this month's top 5
 - `!내 킵`; `!킵 삭제 닉네임 / 경품 이름 / 수량` (DJ only)
 
-Successful game entries are acknowledged in one message per game every few seconds ("[추첨] 응모 완료! A님, B님 …"), and pending acknowledgements are sent before that game's results. Error replies stay immediate.
+Successful game entries are acknowledged in one message per game every few seconds ("[추첨] 응모 완료! (A, B, …)", split over several messages when long), and pending acknowledgements are sent before that game's results. Error replies stay immediate.
 
 ## DJ chat control and remote
 
@@ -151,7 +151,7 @@ Rock-paper-scissors, raffle, and quiz rounds are kept per workspace; the dashboa
 
 **비밀 단어** — the DJ queues words (and optional hints) before a broadcast; while a round is active, the first listener whose chat contains the word (spaces, punctuation and case ignored; the DJ's own chat never counts) wins and the bot announces it with the elapsed time. Matching chat is still processed as usual.
 
-**팀 대항전** — 2 to 4 teams, scored by hearts, spoons, or both (1 spoon = 10 points), with an optional goal. Listeners join with `!팀` once; only hearts and donations sent after joining count (recovered donations included, replayed events excluded). Lead changes are announced at most once a minute (a lead that still holds after the minute is announced on the next point), the first team to reach the goal wins automatically, and the result names the MVP.
+**팀 대항전** — 2 to 4 teams, scored by hearts, spoons, or both (1 spoon = 10 points), with an optional goal picked from presets (none, 100 to 100,000). Listeners join with `!팀` once; only hearts and donations sent after joining count (recovered donations included, replayed events excluded). Lead changes are announced at most once a minute (a lead that still holds after the minute is announced on the next point), the first team to reach the goal wins automatically, and the result names the MVP.
 
 **출석** — a listener who enters (presence event, or the listener list when the bot gets no presence events), chats, sends hearts or donations, or follows while the bot is in the broadcast attends that broadcast once (the DJ is excluded). Streaks count the DJ's broadcasts rather than calendar days. Milestones (total 10/30/50/100/200/300/500/1000, streak 5/10/20/30/50/100) are congratulated in chat unless turned off on the dashboard, which also shows the monthly and all-time ranking.
 

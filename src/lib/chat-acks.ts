@@ -2,16 +2,15 @@ import "server-only";
 
 import { createAckBatcher } from "./bot-automation";
 import { sendBotChat } from "./chat";
-import { formatMultilineMessages } from "./chat-message";
 
 // Batched acknowledgements of game entries, kept per bot session. Lives outside
 // bot-runtime so live actions can flush pending acks before announcing results.
 
 const ACK_HEADINGS: Record<string, string> = {
-  rps: "[가위바위보] 참여 완료! 결과는 끝나고 알려 드려요.",
+  rps: "[가위바위보] 참여 완료!",
   raffle: "[추첨] 응모 완료!",
   quiz: "[퀴즈] 답 접수!",
-  team: "[팀 대항전] 팀 참여 완료!",
+  team: "[팀 대항전] 참여 완료!",
 };
 
 const globalForAcks = globalThis as typeof globalThis & {
@@ -20,16 +19,16 @@ const globalForAcks = globalThis as typeof globalThis & {
 const batchers = globalForAcks.naguAckBatchers ?? new Map<string, ReturnType<typeof createAckBatcher>>();
 globalForAcks.naguAckBatchers = batchers;
 
-// Joins names with commas into lines short enough that formatMultilineMessages
-// can spread them over several messages instead of truncating at 200.
-function joinIntoLines(names: string[], maxLength = 120) {
-  const lines: string[] = [];
+// "[추첨] 응모 완료! (A, B)": names go in parentheses after the heading, and
+// spill into further messages instead of being truncated at 200.
+export function formatAckMessages(heading: string, names: string[], maxLength = 200) {
+  const messages: string[][] = [];
   for (const name of names) {
-    const last = lines.at(-1);
-    if (last !== undefined && `${last}, ${name}`.length <= maxLength) lines[lines.length - 1] = `${last}, ${name}`;
-    else lines.push(name);
+    const current = messages.at(-1);
+    if (current && `${heading} (${[...current, name].join(", ")})`.length <= maxLength) current.push(name);
+    else messages.push([name]);
   }
-  return lines;
+  return messages.map((group) => `${heading} (${group.join(", ")})`);
 }
 
 function getBatcher(sessionKey: string) {
@@ -37,12 +36,10 @@ function getBatcher(sessionKey: string) {
   if (!batcher) {
     batcher = createAckBatcher((game, nicknames) => {
       const heading = ACK_HEADINGS[game] ?? "접수 완료!";
-      for (const message of formatMultilineMessages(
-        heading,
-        `${heading.split(" ")[0]} (이어서)`,
-        // Team entries arrive as "닉네임님(팀)" already.
-        joinIntoLines(nicknames.map((nickname) => game === "team" ? nickname : `${nickname.slice(0, 50)}님`)),
-      )) void sendBotChat(sessionKey, message);
+      // Team entries arrive as "닉네임→팀" already.
+      for (const message of formatAckMessages(heading, nicknames.map((nickname) => game === "team" ? nickname : nickname.slice(0, 50)))) {
+        void sendBotChat(sessionKey, message);
+      }
     });
     batchers.set(sessionKey, batcher);
   }

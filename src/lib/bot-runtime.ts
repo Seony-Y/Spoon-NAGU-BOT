@@ -456,7 +456,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     );
     if (foundSecret) announceSecretWordFound(sessionKey, foundSecret);
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
-    const attendanceReply = applyAttendanceCommand(sessionKey, event.data.message, event.data.user.id, event.data.user.nickname);
+    const attendanceReply = applyAttendanceCommand(sessionKey, event.data.message, event.data.user.id, event.data.user.nickname, runtime.currentLiveId);
     if (attendanceReply) {
       void sendBotChat(sessionKey, attendanceReply);
       return;
@@ -515,7 +515,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.isDj,
       event.data.user.id,
       event.data.user.nickname,
-      (nickname, teamName) => queueGameAck(sessionKey, "team", `${nickname}님(${teamName})`),
+      (nickname, teamName) => queueGameAck(sessionKey, "team", `${nickname.slice(0, 50)}→${teamName}`),
     );
     const songRequestReply = applySongRequestCommand(
       sessionKey,

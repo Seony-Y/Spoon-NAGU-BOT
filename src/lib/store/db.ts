@@ -414,6 +414,11 @@ function migrateDatabase(database: DatabaseSync) {
     database.exec("ALTER TABLE quiz_submissions ADD COLUMN correct_at INTEGER");
   }
 
+  const attendanceColumns = database.prepare("PRAGMA table_info(attendance)").all() as Array<{ name: string }>;
+  if (!attendanceColumns.some((column) => column.name === "checked_in")) {
+    database.exec("ALTER TABLE attendance ADD COLUMN checked_in INTEGER NOT NULL DEFAULT 0");
+  }
+
   const settingsColumns = database.prepare("PRAGMA table_info(bot_settings)").all() as Array<{
     name: string;
   }>;

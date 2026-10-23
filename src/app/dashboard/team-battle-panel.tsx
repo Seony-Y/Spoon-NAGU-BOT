@@ -23,6 +23,13 @@ const METRIC_OPTIONS = [
   ["spoons", "후원(스푼)만"],
 ] as const;
 
+const GOAL_PRESETS = [0, 100, 300, 500, 1_000, 2_000, 3_000, 5_000, 10_000, 30_000, 50_000, 100_000];
+
+// A goal saved before the presets existed stays selectable.
+function goalOptions(current: number) {
+  return GOAL_PRESETS.includes(current) ? GOAL_PRESETS : [...GOAL_PRESETS, current].sort((a, b) => a - b);
+}
+
 export function TeamBattlePanel({ view }: { view: DashboardView }) {
   const { params, scopes, bot, hasChatScope, teamBattle, teamBattleSettings, teamBattleHistory } = view;
   if (!bot) return null;
@@ -94,7 +101,13 @@ export function TeamBattlePanel({ view }: { view: DashboardView }) {
               {METRIC_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <label>목표 점수 (0 = 없음)<input name="goal" type="number" min={0} max={10_000_000} step={1} defaultValue={teamBattleSettings.goal} /></label>
+          <label>목표 점수
+            <select name="goal" defaultValue={String(teamBattleSettings.goal)}>
+              {goalOptions(teamBattleSettings.goal).map((goal) => (
+                <option key={goal} value={goal}>{goal === 0 ? "없음 (DJ가 직접 종료)" : `${goal.toLocaleString("ko-KR")}점`}</option>
+              ))}
+            </select>
+          </label>
           <div className="quiz-queue-actions">
             <button type="submit" name="action" value="settings" className="is-secondary">설정만 저장</button>
             <button type="submit" name="action" value="start" disabled={!canRun}>이 설정으로 시작</button>

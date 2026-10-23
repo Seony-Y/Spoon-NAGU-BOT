@@ -537,11 +537,27 @@ export function setAttendanceAnnounce(sessionId: string, announce: boolean) {
 }
 
 // Listener commands "!출석" (own totals) and "!출석왕" (this month's top 5).
-export function applyAttendanceCommand(sessionKey: string, message: string, userId: string, nickname: string | null) {
+// `!출석` answers "출석 완료" the first time in a broadcast and "이미 출석했어요"
+// after that. Attendance itself is recorded automatically (the command's chat
+// already counts), so the first reply is tracked separately as checked_in.
+export function applyAttendanceCommand(sessionKey: string, message: string, userId: string, nickname: string | null, liveId?: number) {
   const command = message.trim();
   if (command === "!출석") {
     const { total, streak } = getAttendanceSummaryByKey(sessionKey, userId);
     const name = nickname?.trim() || "청취자";
+    if (liveId !== undefined) {
+      const workspaceKey = getWorkspaceKey(sessionKey);
+      const database = getDatabase();
+      const row = database.prepare("SELECT checked_in FROM attendance WHERE workspace_key = ? AND user_id = ? AND live_id = ?")
+        .get(workspaceKey, userId, liveId) as { checked_in: number } | undefined;
+      if (row) {
+        const counts = `연속 ${streak}회 (누적 ${total.toLocaleString("ko-KR")}회)`;
+        if (row.checked_in) return `[출석] ${name}님은 이미 출석했어요. ${counts}`;
+        database.prepare("UPDATE attendance SET checked_in = 1 WHERE workspace_key = ? AND user_id = ? AND live_id = ?")
+          .run(workspaceKey, userId, liveId);
+        return `[출석] ${name}님 출석 완료! ${counts}`;
+      }
+    }
     return total === 0
       ? `${name}님은 아직 출석 기록이 없어요.`
       : `${name}님은 지금까지 ${total.toLocaleString("ko-KR")}번 출석했어요. (연속 ${streak}회)`;
