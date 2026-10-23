@@ -30,7 +30,7 @@ export function BackupCard({ view }: { view: DashboardView }) {
             <ul>
               <li>DJ 표시 이름과 자동화 문구·사용 여부·반복 간격</li>
               <li>사용자 명령어, 카운터, 신청곡 목록</li>
-              <li>가위바위보·추첨·퀴즈 라운드와 참여 기록</li>
+              <li>가위바위보·추첨·퀴즈·비밀 단어·팀 대항전 기록과 설정</li>
               <li>룰렛 설정·경품·당첨·킵 기록</li>
             </ul>
           </section>
@@ -39,6 +39,7 @@ export function BackupCard({ view }: { view: DashboardView }) {
             <ul>
               <li>청취자 ID·닉네임·최초/최근 확인 시각</li>
               <li>방송별 입장·하트·스푼 후원 이벤트</li>
+              <li>출석 기록</li>
               <li>현재 방송 스푼 랭킹 스냅샷</li>
             </ul>
           </section>
@@ -66,6 +67,19 @@ export function BackupCard({ view }: { view: DashboardView }) {
         </form>
         <p className="backup-privacy">두 백업 모두 신청곡·게임·룰렛 참여 닉네임을 포함할 수 있습니다. 청취자 기록 포함 백업에는 청취자 프로필과 후원 이벤트가 추가됩니다.</p>
         <p className="backup-privacy">복원하면 운영 데이터는 백업 시점 내용으로 교체됩니다. 운영 데이터 백업만 복원할 때는 서버의 기존 청취자 기록을 유지합니다.</p>
+      </section>
+
+      <section className="data-reset" aria-labelledby="data-reset-title">
+        <div>
+          <h3 id="data-reset-title">모든 데이터 초기화</h3>
+          <p>위 백업에 들어가는 데이터를 전부 지웁니다. 운영 데이터와 청취자 기록, 진행 중인 게임까지 모두 지워지고 설정은 기본값으로 돌아갑니다. 로그인과 봇 입장 상태는 유지됩니다.</p>
+          <p><strong>되돌릴 수 없습니다.</strong> 먼저 <a href="/bot/backup?audience=1">청취자 기록 포함 백업</a>을 내려받아 두세요.</p>
+        </div>
+        <form action="/bot/reset" method="post">
+          <label htmlFor="data-reset-confirm">확인을 위해 <strong>초기화</strong>를 입력하세요</label>
+          <input id="data-reset-confirm" name="confirm" required pattern="\s*초기화\s*" autoComplete="off" placeholder="초기화" />
+          <ConfirmButton type="submit" message="정말 모든 데이터를 지울까요? 운영 데이터, 청취자 기록, 진행 중인 게임이 모두 사라지고 되돌릴 수 없습니다.">모든 데이터 초기화</ConfirmButton>
+        </form>
       </section>
     </article>
   );

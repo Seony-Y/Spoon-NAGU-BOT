@@ -468,6 +468,13 @@ export function exportWorkspaceData(sessionId: string, includeAudience: boolean)
   return { tables };
 }
 
+// Deletes every backed-up table of the workspace (settings return to their
+// defaults). Login, bot state, and the DJ link are not workspace data.
+export function resetWorkspaceData(sessionId: string) {
+  const tables = Object.fromEntries([...CORE_BACKUP_TABLES, ...AUDIENCE_BACKUP_TABLES].map((specification) => [specification.name, []]));
+  return restoreWorkspaceData(sessionId, { tables });
+}
+
 export function restoreWorkspaceData(sessionId: string, backup: WorkspaceBackupData) {
   const sessionKey = getSessionKey(sessionId);
   const workspaceKey = getWorkspaceKey(sessionKey);

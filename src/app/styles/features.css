@@ -1079,3 +1079,59 @@
   background: var(--accent-soft);
   text-decoration: none;
 }
+
+/* Backup tab: reset everything */
+.data-reset {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid var(--red);
+  border-radius: 10px;
+}
+
+.data-reset h3 {
+  margin: 0 0 6px;
+  color: var(--red);
+  font-size: 16px;
+}
+
+.data-reset p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.data-reset form {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.data-reset label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.data-reset input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.data-reset button {
+  justify-self: start;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--red);
+  font-weight: 800;
+  cursor: pointer;
+}

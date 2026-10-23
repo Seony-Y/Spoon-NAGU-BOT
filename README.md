@@ -163,6 +163,8 @@ The roulette runs once per donation at or above the configured cost, with prize 
 
 The **데이터 백업** tab downloads a signed JSON backup of the DJ display name, automation settings (including follow thanks), commands, counters, song requests, game rounds and entries, the quiz queue, secret words, team battles, the attendance switch and broadcast list, and roulette settings, prizes, results, and keeps. The full download adds listener profiles, presence/heart/donation events, Spoon-ranking snapshots, and attendance records. Tokens, session cookies, admin state, bot participation, and recent events are never exported. Restoring replaces core workspace data after signature and schema validation; older backups without newer tables still restore. Uploads are limited to 10 MB.
 
+**모든 데이터 초기화** (same tab, `POST /bot/reset`) deletes every table in the full backup, running games included, and settings return to their defaults; login, the DJ link, and bot participation stay. It needs the word `초기화` typed into the form (checked on the server) and a confirm dialog.
+
 ## Administration
 
 `/admin` (with `ADMIN_PASSWORD`, rate limited) lists OAuth connections with the DJ they belong to and can block or unblock them. Nothing is stored in the browser; reopening the page asks for the password again. When the DJ is known, blocking applies to **every session of that DJ and to future logins** (rejected at the OAuth callback via `/v1/me`, or when a DJ chat links a new session); a connection whose DJ is not known yet is blocked on its own. Blocking stops the affected workers and rejects login, bot participation, chat, and settings changes.

@@ -91,6 +91,9 @@ export const settingsNotices: Record<string, { tone: "success" | "error"; text: 
   song_request_deleted: { tone: "success", text: "신청곡을 삭제했습니다." },
   song_requests_cleared: { tone: "success", text: "신청곡 목록을 모두 비웠습니다." },
   backup_restored: { tone: "success", text: "로컬 백업을 복원했습니다." },
+  data_reset: { tone: "success", text: "모든 데이터를 초기화했습니다. 설정은 기본값으로 돌아갔습니다." },
+  data_reset_unconfirmed: { tone: "error", text: "확인 단어가 맞지 않아 초기화하지 않았습니다. \"초기화\"를 정확히 입력해 주세요." },
+  data_reset_failed: { tone: "error", text: "초기화하지 못했습니다. 데이터는 그대로입니다. 잠시 후 다시 시도해 주세요." },
   backup_invalid: { tone: "error", text: "백업 파일이 올바르지 않습니다. NAGU BOT에서 내려받은 백업 파일인지 확인해 주세요." },
   backup_too_large: { tone: "error", text: "백업 파일은 10MB 이하만 복원할 수 있습니다." },
 };

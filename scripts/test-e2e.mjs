@@ -309,6 +309,27 @@ try {
   check("변조된 백업 거부", new URL(tamperedRestore.headers.get("location")).searchParams.get("settings") === "backup_invalid"
     && sortedTables(store.exportWorkspaceData(sessionId, true).tables) === sortedTables(full.data.tables));
 
+  // --- Reset all data: needs the typed word, then wipes every table ---------
+  {
+    const before = store.exportWorkspaceData(sessionId, true).tables;
+    reseed();
+    let reset = await post("/bot/reset", { confirm: "초기 화" });
+    const unchanged = store.exportWorkspaceData(sessionId, true).tables;
+    check("전체 초기화: 확인 단어 틀리면 거부", reset.params.settings === "data_reset_unconfirmed"
+      && JSON.stringify(unchanged) === JSON.stringify(before), JSON.stringify(reset.params));
+    reseed();
+    reset = await post("/bot/reset", { confirm: " 초기화 " });
+    const after = store.exportWorkspaceData(sessionId, true).tables;
+    const leftovers = Object.entries(after).filter(([name, rows]) => rows.length > 0 && !["bot_settings", "bot_counters", "bot_commands", "follow_settings", "broadcasts"].includes(name)).map(([name]) => name);
+    check("전체 초기화: 모든 데이터 삭제", reset.params.settings === "data_reset" && leftovers.length === 0
+      && before.team_battles.length > 0 && before.attendance.length > 0, leftovers.join(","));
+    check("전체 초기화: 로그인 유지", Boolean(store.getSession(sessionId)));
+    reseed();
+    const restoreAll = new FormData();
+    restoreAll.append("backup", new Blob([fullText], { type: "application/json" }), "backup-full.json");
+    await fetch(`${BASE}/bot/backup`, { method: "POST", body: restoreAll, redirect: "manual", headers: { cookie } });
+  }
+
   // --- Admin: list, block (requests rejected), unblock ----------------------
   let admin = await post("/admin/session", { password: ADMIN_PASSWORD, mode: "list" }, { asJson: true });
   check("관리자: 세션 목록", admin.status === 200 && admin.json?.sessions?.some((s) => s.sessionKey === sessionKey), `status ${admin.status}`);
