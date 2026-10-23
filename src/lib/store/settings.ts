@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatMultilineMessages } from "../chat-message";
-import { formatCounterAdjustment, parseCounterCommand } from "../counter-command";
+import { formatCounterAdjustment, formatFundingReached, parseCounterCommand } from "../counter-command";
 import { parseSongRequestCommand } from "../song-request-command";
 import { getDatabase, getSessionKey, getWorkspaceKey } from "./db";
 
@@ -375,9 +375,9 @@ export function applyBotCounterCommand(sessionKey: string, message: string, isDj
   }
 
   const counter = getDatabase().prepare(`
-    SELECT name FROM bot_counters
+    SELECT name, value FROM bot_counters
     WHERE session_key = ? AND name = ? COLLATE NOCASE
-  `).get(workspaceKey, command.adjustment.name) as Pick<BotCounter, "name"> | undefined;
+  `).get(workspaceKey, command.adjustment.name) as Pick<BotCounter, "name" | "value"> | undefined;
   if (!counter) return null;
   if (command.kind === "denied") return `${counter.name} 변경은 DJ만 할 수 있어요.`;
 
@@ -387,7 +387,11 @@ export function applyBotCounterCommand(sessionKey: string, message: string, isDj
     WHERE session_key = ? AND name = ? COLLATE NOCASE
     RETURNING name, value
   `).get(command.adjustment.delta, workspaceKey, command.adjustment.name) as Pick<BotCounter, "name" | "value"> | undefined;
-  return row ? formatCounterAdjustment(row.name, row.value, getCounterGoal(workspaceKey, row.name)?.goal) : null;
+  if (!row) return null;
+  // A DJ change (chat or remote) that crosses a funding goal is celebrated too.
+  const goal = getCounterGoal(workspaceKey, row.name)?.goal;
+  if (goal !== undefined && counter.value < goal && row.value >= goal) return formatFundingReached(row.name, row.value, goal);
+  return formatCounterAdjustment(row.name, row.value, goal);
 }
 
 export function listSongRequestsByKey(sessionKey: string): SongRequest[] {

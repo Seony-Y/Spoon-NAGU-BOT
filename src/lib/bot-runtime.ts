@@ -15,7 +15,7 @@ import {
 import { isRecentBotMessage, sendBotChat } from "./chat";
 import { clearGameAcks, flushAllGameAcks, flushGameAcks, queueGameAck } from "./chat-acks";
 import { formatMultilineMessages, resolveCommandFallback, truncateChatMessage } from "./chat-message";
-import { formatCounterAdjustment } from "./counter-command";
+import { formatFundingReached } from "./counter-command";
 import { parseDjCommand } from "./dj-command";
 import { announceSecretWordFound, announceTeamBattleOutcome, runDjCommand } from "./live-actions";
 import {
@@ -404,7 +404,7 @@ function recordAttendance(sessionKey: string, runtime: BotRuntime, user: { id: s
 // Funding counters that follow donations; a reached goal is announced once.
 function addFundingSpoons(sessionKey: string, spoons: number) {
   for (const counter of addFundingSpoonsByKey(sessionKey, spoons)) {
-    void sendBotChat(sessionKey, `[${counter.name}] 목표 달성! ${formatCounterAdjustment(counter.name, counter.value, counter.goal)} 감사합니다!`);
+    void sendBotChat(sessionKey, formatFundingReached(counter.name, counter.value, counter.goal));
   }
 }
 

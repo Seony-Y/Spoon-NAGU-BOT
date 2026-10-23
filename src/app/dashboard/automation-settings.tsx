@@ -108,7 +108,7 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
         <div className="counter-guide">
           <h4>카운터 관리</h4>
           <p><code>!실드</code> 조회는 누구나 사용할 수 있고, <code>!실드 +2</code> 또는 <code>!실드 -1</code> 증감은 DJ만 사용할 수 있습니다. 이 규칙은 추가한 모든 카운터에 동일하게 적용됩니다.</p>
-          <p><strong>펀딩</strong>: 카운터에 목표 스푼을 입력하면 그 카운터 명령어(예: 이름이 펀딩이면 <code>!펀딩</code>)에 <code>펀딩 [1,200 / 5,000 스푼]</code>처럼 답합니다. 후원 자동 반영을 켜 두면 방송 중 받은 스푼이 자동으로 더해지고, 후원으로 목표를 넘는 순간 채팅으로 알립니다. 목표를 비워 두면 일반 카운터이고 후원 자동 반영은 쓰이지 않습니다.</p>
+          <p><strong>펀딩</strong>: 카운터에 목표 스푼을 입력하면 그 카운터 명령어(예: 이름이 펀딩이면 <code>!펀딩</code>)에 <code>펀딩 [1,200 / 5,000 스푼]</code>처럼 답합니다. 후원 자동 반영을 켜 두면 방송 중 받은 스푼이 자동으로 더해지고, 후원이나 DJ 수정으로 목표를 넘는 순간 채팅으로 알립니다. 목표를 비워 두면 일반 카운터이고 후원 자동 반영은 쓰이지 않습니다.</p>
         </div>
         {botCounters.length > 0 && <div className="counter-list">
           {botCounters.map((counter) => <section key={counter.id} className="counter-item">

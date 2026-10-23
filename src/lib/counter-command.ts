@@ -30,6 +30,10 @@ export function formatCounterAdjustment(name: string, value: number, goal: numbe
     : `${name} [${value.toLocaleString("ko-KR")} / ${goal.toLocaleString("ko-KR")} 스푼]`;
 }
 
+export function formatFundingReached(name: string, value: number, goal: number) {
+  return `[${name}] 목표 달성! ${formatCounterAdjustment(name, value, goal)} 감사합니다!`;
+}
+
 export function parseCounterQuery(message: string) {
   return COUNTER_QUERY_PATTERN.exec(message.trim())?.[1] ?? null;
 }

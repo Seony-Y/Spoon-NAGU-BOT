@@ -341,6 +341,10 @@ store.deleteBotCounter(firstSessionId, store.listBotCounters(firstSessionId).fin
   store.restoreWorkspaceData(firstSessionId, { tables: { bot_counters: before.bot_counters, counter_goals: before.counter_goals } });
   assert.equal(store.listBotCounters(firstSessionId).find((counter) => counter.name === "펀딩").goal, 3000);
 }
+// A DJ change that crosses the goal is celebrated as well (once).
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!펀딩", false), "펀딩 [2,500 / 3,000 스푼]");
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!펀딩 +600", true), "[펀딩] 목표 달성! 펀딩 [3,100 / 3,000 스푼] 감사합니다!");
+assert.equal(store.applyBotCounterCommand(firstSessionKey, "!펀딩 +10", true), "펀딩 [3,110 / 3,000 스푼]");
 
 const donation = {
 	id: "event-donation-1",
