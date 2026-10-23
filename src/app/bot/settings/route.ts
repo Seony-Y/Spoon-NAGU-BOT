@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     const changed = deleteBotCounter(sessionId, id);
     return redirect(
       request,
-      changed ? "counter_deleted" : "invalid_counter",
+      changed ? "counter_deleted" : "counter_missing",
       "counters",
     );
   }
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
       return redirect(request, "reserved_command", "commands");
     }
     if (!/^![^\s]{1,19}$/.test(command) || !response || response.length > 200) {
-      return redirect(request, "invalid_command");
+      return redirect(request, "invalid_command", "commands");
     }
     if (listBotCounters(sessionId).some(({ name }) => `!${name.toLocaleLowerCase("ko-KR")}` === command)) {
       return redirect(request, "command_counter_conflict", "commands");

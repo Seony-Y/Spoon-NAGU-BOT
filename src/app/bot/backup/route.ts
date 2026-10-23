@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
-import { ensureBotRunning } from "@/lib/bot-runtime";
+import { ensureBotRunning, settleBotAfterDataChange } from "@/lib/bot-runtime";
 import { SESSION_COOKIE } from "@/lib/session";
 import { buildApplicationUrl } from "@/lib/spoon";
 import {
@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
     if (!restoreSignedWorkspaceBackup(sessionId, parsed)) {
       return redirect(request, "backup_invalid");
     }
+    settleBotAfterDataChange(sessionId);
     ensureBotRunning(sessionId);
     return redirect(request, "backup_restored");
   } catch {

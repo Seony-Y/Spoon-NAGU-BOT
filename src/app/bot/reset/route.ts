@@ -1,9 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
-import { announceInLiveBroadcast, ensureBotRunning } from "@/lib/bot-runtime";
-import { clearGameAcks } from "@/lib/chat-acks";
+import { announceInLiveBroadcast, ensureBotRunning, settleBotAfterDataChange } from "@/lib/bot-runtime";
 import { SESSION_COOKIE } from "@/lib/session";
-import { getCurrentLiveIdByKey, getSessionKey, getWorkspaceBotSessionKey, recordBroadcastByKey, resetWorkspaceData } from "@/lib/session-store";
+import { resetWorkspaceData } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
 
 export const runtime = "nodejs";
@@ -24,16 +23,8 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData().catch(() => new FormData());
   if (String(formData.get("confirm") ?? "").trim() !== RESET_CONFIRM_WORD) return redirect(request, "data_reset_unconfirmed");
-  // The bot may run on another of the DJ's devices, which holds the broadcast.
-  const sessionKey = getSessionKey(sessionId);
-  const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
   if (!resetWorkspaceData(sessionId)) return redirect(request, "data_reset_failed");
-  // Entry acknowledgements still waiting belong to games that no longer exist.
-  clearGameAcks(botKey);
-
-  // Keep the broadcast in progress counted for attendance streaks.
-  const liveId = getCurrentLiveIdByKey(botKey);
-  if (liveId !== undefined) recordBroadcastByKey(botKey, liveId);
+  settleBotAfterDataChange(sessionId);
   ensureBotRunning(sessionId);
   await announceInLiveBroadcast(sessionId, "[NAGU BOT] DJ가 봇 데이터를 초기화했어요. 진행 중이던 게임과 기록이 모두 지워졌어요.");
   return redirect(request, "data_reset");

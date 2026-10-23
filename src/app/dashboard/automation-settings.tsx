@@ -74,7 +74,7 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
           <AutomationToggle feature="heart" initialEnabled={botSettings.heartEnabled} label="하트 감사" />
           <label htmlFor="heart-message">하트 감사말</label>
           <textarea id="heart-message" name="message" defaultValue={botSettings.heartMessage} maxLength={200} rows={3} required />
-          <p><code>{"{nickname}"}</code>은 후원자, <code>{"{milestone}"}</code>은 보낸 하트 수입니다.</p><button type="submit">하트 후원 저장</button>
+          <p><code>{"{nickname}"}</code>은 하트를 보낸 청취자, <code>{"{milestone}"}</code>은 보낸 하트 수입니다.</p><button type="submit">하트 감사 저장</button>
         </form>
       )}
 
@@ -209,7 +209,7 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
             <form action="/bot/settings" method="post">
               <input type="hidden" name="mode" value="delete_song_request" />
               <input type="hidden" name="id" value={request.id} />
-              <button type="submit" aria-label={`${request.title}${request.artist ? ` - ${request.artist}` : ""} 신청곡 삭제`}>삭제</button>
+              <ConfirmButton type="submit" aria-label={`${request.title}${request.artist ? ` - ${request.artist}` : ""} 신청곡 삭제`} message={`${request.title} 신청곡을 삭제할까요?`}>삭제</ConfirmButton>
             </form>
           </li>)}
         </ol> : <p className="song-request-empty">접수된 신청곡이 없습니다.</p>}

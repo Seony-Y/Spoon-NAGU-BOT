@@ -64,6 +64,10 @@ export function GameCard({ view }: { view: DashboardView }) {
 
       {gameTab === "roulette" && <RoulettePanel view={view} />}
 
+      {[view.params.rps, view.params.raffle, view.params.quiz, view.params.secret, view.params.team, view.params.attendance, view.params.roulette, view.params.reset]
+        .some((status) => status === "invalid_action" || status === "invalid_choice" || status === "invalid") && (
+        <div className="settings-notice is-error" role="alert"><span aria-hidden="true">!</span><strong>요청을 처리하지 못했습니다. 이미 사용되었거나 삭제된 항목일 수 있으니 화면을 확인해 주세요.</strong></div>
+      )}
       {view.params.reset === "done" && (
         <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>{RESET_TARGETS[gameTab]?.label ?? "기록"}을 초기화했습니다.</strong></div>
       )}

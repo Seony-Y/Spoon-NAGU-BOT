@@ -32,6 +32,7 @@ export function BackupCard({ view }: { view: DashboardView }) {
               <li>사용자 명령어, 카운터, 신청곡 목록</li>
               <li>가위바위보·추첨·퀴즈·비밀 단어·팀 대항전 기록과 설정</li>
               <li>룰렛 설정·경품·당첨·킵 기록</li>
+              <li>출석 기념 메시지 설정과 방송 목록</li>
             </ul>
           </section>
           <section>

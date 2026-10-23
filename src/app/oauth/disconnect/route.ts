@@ -12,8 +12,8 @@ export async function POST(request: NextRequest) {
 
   try {
     if (sessionId) {
-      // Sent before the token is revoked; only when this device runs the bot.
-      await announceInLiveBroadcast(sessionId, BOT_LEAVING_MESSAGE, { ownSessionOnly: true });
+      // Sent before the token is revoked: every device signs out, bot included.
+      await announceInLiveBroadcast(sessionId, BOT_LEAVING_MESSAGE);
       suspendBotForAuthentication(sessionId);
       await disconnectAuthSession(sessionId);
     }

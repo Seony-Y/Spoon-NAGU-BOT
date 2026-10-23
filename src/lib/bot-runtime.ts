@@ -92,6 +92,7 @@ const LISTENER_POLL_MS = 10_000;
 // Spoon sends a `:heartbeat` comment about every 15 seconds; this much silence
 // means a half-open connection that would otherwise look "connected".
 const STREAM_IDLE_MS = 45_000;
+const BACKFILL_SLACK_MS = 30_000;
 const MAX_DAILY_LIMIT_WAIT_MS = 60 * 60 * 1000;
 const RECONNECT_ALERT_ATTEMPTS = 5;
 
@@ -151,6 +152,9 @@ type BotRuntime = BotSnapshot & {
   heartBatcher: ReturnType<typeof createHeartBatcher>;
   // Set whenever the stream may have missed events (start, reconnect, new live).
   needsDonationBackfill: boolean;
+  // Donations before this time were covered by the stream or are not the bot's
+  // to handle (before 봇 입장, or erased by a reset/restore); backfill skips them.
+  donationsCoveredUntil: number;
 };
 
 const globalForBots = globalThis as typeof globalThis & {
@@ -316,14 +320,19 @@ async function backfillDonations(sessionKey: string, accessToken: string, liveId
   const donations = await getAllLiveDonations(accessToken);
   const runtime = runtimes.get(sessionKey);
   if (!runtime || runtime.currentLiveId !== liveId) return;
+  // A little slack for clock differences; donations already recorded are skipped.
+  const floor = runtime.donationsCoveredUntil - BACKFILL_SLACK_MS;
   const recovered: SpoonDonation[] = [];
   for (const donation of donations) {
+    const time = Date.parse(donation.time);
+    if (!Number.isNaN(time) && time < floor) continue;
     const event = {
       event: "donation" as const,
       id: `donation:${donation.user.id}:${donation.time}`,
       data: { user: donation.user, amount: donation.amount, message: null, time: donation.time },
     };
     if (!recordAudienceEvent(sessionKey, liveId, event)) continue;
+    recordAttendance(sessionKey, runtime, donation.user);
     runtime.activity.spoons += donation.amount;
     const donatedAt = Date.parse(donation.time);
     const teamOutcome = addTeamBattlePoints(
@@ -628,6 +637,8 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       return;
     }
 
+    // Set when this connection is the periodic permission refresh (no gap).
+    let permissionRefresh: AbortSignal | undefined;
     try {
       const live = await getCurrentLive(session.access_token);
       const runtime = runtimes.get(sessionKey);
@@ -651,9 +662,8 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         scheduleRepeatAnnouncements(sessionKey, runtime);
       }
 
-      const streamSignal = runtime?.managerEventsConfirmed
-        ? signal
-        : AbortSignal.any([signal, AbortSignal.timeout(STREAM_PERMISSION_REFRESH_MS)]);
+      permissionRefresh = runtime?.managerEventsConfirmed ? undefined : AbortSignal.timeout(STREAM_PERMISSION_REFRESH_MS);
+      const streamSignal = permissionRefresh ? AbortSignal.any([signal, permissionRefresh]) : signal;
       const idleController = new AbortController();
       const connectionSignal = AbortSignal.any([streamSignal, idleController.signal]);
       const response = await fetch(`${getSpoonConfig().baseUrl}/v1/live/events`, {
@@ -716,6 +726,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       let reason;
       let idleTimer: ReturnType<typeof setTimeout> | undefined;
       const resetIdle = () => {
+        if (runtime) runtime.donationsCoveredUntil = Date.now();
         clearTimeout(idleTimer);
         idleTimer = setTimeout(() => idleController.abort(), STREAM_IDLE_MS);
       };
@@ -762,7 +773,9 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
     } catch (error) {
       if (signal.aborted) return;
       const failedRuntime = runtimes.get(sessionKey);
-      if (failedRuntime) failedRuntime.needsDonationBackfill = true;
+      // The permission refresh ends the stream by timing out its read; that
+      // reconnect has no gap, so it does not walk the donation list again.
+      if (failedRuntime && !permissionRefresh?.aborted) failedRuntime.needsDonationBackfill = true;
       if (error instanceof SpoonApiErrorResponse && error.status === 401) {
         if (retriedUnauthorized) {
           setRuntimeState(sessionKey, "authentication_required");
@@ -800,7 +813,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
   }
 }
 
-function startBotByKey(sessionKey: string) {
+function startBotByKey(sessionKey: string, { joinedNow = false } = {}) {
   const existing = runtimes.get(sessionKey);
   if (existing?.task && !existing.controller?.signal.aborted) return;
   if (existing?.repeatTimer) clearTimeout(existing.repeatTimer);
@@ -832,6 +845,10 @@ function startBotByKey(sessionKey: string) {
     subscriberIds: new Set(),
     controller,
     needsDonationBackfill: true,
+    // A DJ pressing 봇 입장 starts fresh; a restored bot recovers from its last event.
+    donationsCoveredUntil: joinedNow
+      ? Date.now()
+      : existing?.donationsCoveredUntil ?? (restoredEvents[0] ? Date.parse(restoredEvents[0].receivedAt) : Date.now()),
     heartBatcher: createHeartBatcher(({ nickname, amount }) => {
       if (runtime.currentLiveId === undefined) return;
       try {
@@ -880,7 +897,7 @@ export function startBot(sessionId: string) {
   // One bot per DJ: the device that presses join takes the bot over from the
   // DJ's other sessions instead of fighting them for Spoon's single stream.
   for (const otherKey of listOtherWorkspaceSessionKeys(sessionKey)) stopBotByKey(otherKey);
-  startBotByKey(sessionKey);
+  startBotByKey(sessionKey, { joinedNow: true });
   return true;
 }
 
@@ -894,14 +911,13 @@ const ANNOUNCE_TIMEOUT_MS = 5_000;
 
 // Tells the broadcast the DJ's bot is in (if it is in one) about a change made
 // from the dashboard. Waits for the send, at most a few seconds, so it goes out
-// before the bot stops or the token is revoked. With ownSessionOnly, only when
-// this session runs the bot (another device's bot keeps running).
-export async function announceInLiveBroadcast(sessionId: string, message: string, { ownSessionOnly = false } = {}) {
+// before the bot stops or the token is revoked.
+export async function announceInLiveBroadcast(sessionId: string, message: string) {
   const sessionKey = getSessionKey(sessionId);
   const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
-  if (ownSessionOnly && botKey !== sessionKey) return;
   const runtime = runtimes.get(botKey);
-  if (!runtime?.enabled || runtime.state !== "connected" || runtime.currentLiveId === undefined) return;
+  const inBroadcast = runtime?.state === "connected" || runtime?.state === "connecting" || runtime?.state === "reconnecting";
+  if (!runtime?.enabled || !inBroadcast || runtime.currentLiveId === undefined) return;
   flushGameAcks(botKey);
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
@@ -911,17 +927,36 @@ export async function announceInLiveBroadcast(sessionId: string, message: string
   clearTimeout(timer);
 }
 
+// After a data reset or restore: donations so far are not "missed" (their
+// records may be gone on purpose), and acks for replaced games are dropped.
+export function settleBotAfterDataChange(sessionId: string) {
+  const sessionKey = getSessionKey(sessionId);
+  const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
+  const runtime = runtimes.get(botKey);
+  if (runtime) runtime.donationsCoveredUntil = Date.now();
+  clearGameAcks(botKey);
+  // Keep the broadcast in progress counted for attendance streaks.
+  const liveId = runtime?.currentLiveId ?? getCurrentLiveIdByKey(botKey);
+  if (liveId !== undefined) recordBroadcastByKey(botKey, liveId);
+}
+
 // Stops the DJ's bot even when another of the DJ's devices is running it.
 export function stopBot(sessionId: string) {
   const sessionKey = getSessionKey(sessionId);
   stopBotByKey(getWorkspaceBotSessionKey(sessionKey) ?? sessionKey);
 }
 
+// Disconnecting signs out every device of the DJ, so the bot stops wherever it
+// runs (a bot on another device could no longer send anything).
 export function suspendBotForAuthentication(sessionId: string) {
-  const runtime = runtimes.get(getSessionKey(sessionId));
-  runtime?.controller?.abort();
-  if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
-  if (runtime) runtime.state = "authentication_required";
+  const sessionKey = getSessionKey(sessionId);
+  const botKey = getWorkspaceBotSessionKey(sessionKey);
+  for (const key of new Set([sessionKey, botKey ?? sessionKey])) {
+    const runtime = runtimes.get(key);
+    runtime?.controller?.abort();
+    if (runtime?.repeatTimer) clearTimeout(runtime.repeatTimer);
+    if (runtime) runtime.state = "authentication_required";
+  }
 }
 
 // Shows the DJ's bot even when another of the DJ's devices is running it.

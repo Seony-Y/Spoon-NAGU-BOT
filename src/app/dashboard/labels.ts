@@ -84,6 +84,8 @@ export const settingsNotices: Record<string, { tone: "success" | "error"; text: 
   invalid_interval: { tone: "error", text: "반복 간격은 1분 이상 1440분 이하로 입력해 주세요." },
   counter_saved: { tone: "success", text: "카운터를 저장했습니다." },
   counter_deleted: { tone: "success", text: "카운터를 삭제했습니다." },
+  counter_missing: { tone: "error", text: "이미 삭제된 카운터입니다." },
+  invalid_request: { tone: "error", text: "요청을 처리하지 못했습니다. 이미 삭제되었거나 바뀐 항목일 수 있으니 화면을 확인해 주세요." },
   counter_conflict: { tone: "error", text: "같은 이름의 카운터가 이미 있습니다." },
   counter_name_taken: { tone: "error", text: "기본 명령어나 등록된 채팅 명령어와 같은 이름은 쓸 수 없습니다." },
   command_counter_conflict: { tone: "error", text: "같은 이름의 카운터가 있어 명령어로 등록할 수 없습니다." },

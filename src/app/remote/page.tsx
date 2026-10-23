@@ -266,7 +266,7 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
       active: Boolean(teamBattle),
       node: (
         <GameCard key="team" id="remote-team" icon="🚩" title="팀 대항전" active={Boolean(teamBattle)}
-          status={teamBattle ? "진행 중" : teamSettings.teamNames.join(" vs ")}>
+          status={teamBattle ? "진행 중" : `${teamSettings.teamNames.length}개 팀`}>
           {teamBattle ? (
             <>
               <ul className="remote-scores">
@@ -380,7 +380,7 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
         ) : (
           <div className="remote-alert">
             <p>등록된 카운터가 없어요.</p>
-            <Link className="remote-button is-ghost" href="/?tab=bot">대시보드에서 카운터 만들기</Link>
+            <Link className="remote-button is-ghost" href="/?tab=bot&automation=counters">대시보드에서 카운터 만들기</Link>
           </div>
         )
       )}

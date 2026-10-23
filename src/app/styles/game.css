@@ -8,6 +8,7 @@
 .game-tabs {
   display: flex;
   gap: 24px;
+  overflow-x: auto;
   margin-top: 24px;
   border-bottom: 1px solid var(--line);
 }
@@ -15,6 +16,8 @@
 .game-tabs a {
   min-height: 44px;
   display: flex;
+  flex: 0 0 auto;
+  white-space: nowrap;
   align-items: center;
   border-bottom: 2px solid transparent;
   color: var(--muted);
