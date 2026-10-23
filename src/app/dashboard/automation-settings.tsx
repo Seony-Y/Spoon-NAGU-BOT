@@ -5,6 +5,7 @@ import { AutoRefresh } from "../refresh-live-button";
 import { formatDateTime } from "./format";
 import { automationTabs } from "./labels";
 import type { DashboardView } from "./load";
+import { ScrollTabs } from "./scroll-tabs";
 
 export function AutomationSettings({ view }: { view: DashboardView }) {
   const { automationTab, scopes, bot, settingsNotice, botSettings, botCommands, botCounters, songRequests } = view;
@@ -40,13 +41,13 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
         </div>
       </form>
 
-      <nav className="automation-tabs" aria-label="자동화 설정">
+      <ScrollTabs label="자동화 설정">
         {automationTabs.map(([key, label]) => (
           <Link scroll={false} key={key} className={automationTab === key ? "is-active" : ""} href={`/?tab=bot&automation=${key}`}>
             {label}
           </Link>
         ))}
-      </nav>
+      </ScrollTabs>
 
       {automationTab === "welcome" && (
         <form className="automation-feature-form" action="/bot/settings" method="post">

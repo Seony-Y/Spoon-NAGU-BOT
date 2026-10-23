@@ -5,8 +5,9 @@
   line-height: 1.4;
 }
 
-/* A grid item sized by its content would grow to fit the whole tab row. */
-.game-card {
+/* Dashboard cards are grid items; sized by their content they would grow to
+   fit a whole tab row (ScrollTabs) instead of letting it scroll. */
+.connection-section > * {
   min-width: 0;
 }
 
