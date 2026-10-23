@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { disconnectAuthSession } from "@/lib/auth";
-import { suspendBotForAuthentication } from "@/lib/bot-runtime";
+import { announceInLiveBroadcast, BOT_LEAVING_MESSAGE, suspendBotForAuthentication } from "@/lib/bot-runtime";
 import { SESSION_COOKIE, STATE_COOKIE } from "@/lib/session";
 import { buildApplicationUrl } from "@/lib/spoon";
 
@@ -12,6 +12,8 @@ export async function POST(request: NextRequest) {
 
   try {
     if (sessionId) {
+      // Sent before the token is revoked; only when this device runs the bot.
+      await announceInLiveBroadcast(sessionId, BOT_LEAVING_MESSAGE, { ownSessionOnly: true });
       suspendBotForAuthentication(sessionId);
       await disconnectAuthSession(sessionId);
     }

@@ -13,7 +13,7 @@ import {
   type BotActivity,
 } from "./bot-automation";
 import { isRecentBotMessage, sendBotChat } from "./chat";
-import { clearGameAcks, flushAllGameAcks, queueGameAck } from "./chat-acks";
+import { clearGameAcks, flushAllGameAcks, flushGameAcks, queueGameAck } from "./chat-acks";
 import { formatMultilineMessages, resolveCommandFallback, truncateChatMessage } from "./chat-message";
 import { parseDjCommand } from "./dj-command";
 import { announceSecretWordFound, announceTeamBattleOutcome, runDjCommand } from "./live-actions";
@@ -456,7 +456,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
     );
     if (foundSecret) announceSecretWordFound(sessionKey, foundSecret);
     const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
-    const attendanceReply = applyAttendanceCommand(sessionKey, event.data.message, event.data.user.id, event.data.user.nickname, runtime.currentLiveId);
+    const attendanceReply = applyAttendanceCommand(sessionKey, event.data.message, event.data.user.id, event.data.user.nickname, runtime.currentLiveId, event.data.isDj);
     if (attendanceReply) {
       void sendBotChat(sessionKey, attendanceReply);
       return;
@@ -887,6 +887,28 @@ export function startBot(sessionId: string) {
 export function ensureBotRunning(sessionId: string) {
   if (!isBotEnabled(sessionId)) return;
   startBotByKey(getSessionKey(sessionId));
+}
+
+export const BOT_LEAVING_MESSAGE = "[NAGU BOT] 봇이 방송에서 나갔어요. 다시 들어올 때까지 명령어와 게임에 응답하지 않아요.";
+const ANNOUNCE_TIMEOUT_MS = 5_000;
+
+// Tells the broadcast the DJ's bot is in (if it is in one) about a change made
+// from the dashboard. Waits for the send, at most a few seconds, so it goes out
+// before the bot stops or the token is revoked. With ownSessionOnly, only when
+// this session runs the bot (another device's bot keeps running).
+export async function announceInLiveBroadcast(sessionId: string, message: string, { ownSessionOnly = false } = {}) {
+  const sessionKey = getSessionKey(sessionId);
+  const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
+  if (ownSessionOnly && botKey !== sessionKey) return;
+  const runtime = runtimes.get(botKey);
+  if (!runtime?.enabled || runtime.state !== "connected" || runtime.currentLiveId === undefined) return;
+  flushGameAcks(botKey);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    sendBotChat(botKey, message),
+    new Promise((resolve) => { timer = setTimeout(resolve, ANNOUNCE_TIMEOUT_MS); }),
+  ]);
+  clearTimeout(timer);
 }
 
 // Stops the DJ's bot even when another of the DJ's devices is running it.

@@ -540,9 +540,10 @@ export function setAttendanceAnnounce(sessionId: string, announce: boolean) {
 // `!출석` answers "출석 완료" the first time in a broadcast and "이미 출석했어요"
 // after that. Attendance itself is recorded automatically (the command's chat
 // already counts), so the first reply is tracked separately as checked_in.
-export function applyAttendanceCommand(sessionKey: string, message: string, userId: string, nickname: string | null, liveId?: number) {
+export function applyAttendanceCommand(sessionKey: string, message: string, userId: string, nickname: string | null, liveId?: number, isDj = false) {
   const command = message.trim();
   if (command === "!출석") {
+    if (isDj) return "DJ는 출석 대상이 아니에요. 청취자 출석 순위는 !출석왕으로 볼 수 있어요.";
     const { total, streak } = getAttendanceSummaryByKey(sessionKey, userId);
     const name = nickname?.trim() || "청취자";
     if (liveId !== undefined) {

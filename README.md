@@ -101,7 +101,7 @@ Workspace data (settings, commands, counters, song requests, game history, quiz 
 - Enabled bots, the current broadcast, automation totals, greeted listeners, and the 50 most recent events are restored after a restart. Repeat announcements resume.
 - With `donations.read`, every (re)connect after a possible gap reads `GET /v1/live/donations`, records missed donations, runs the roulette for them, and thanks those donors in one message. Donations are matched by donor and time (Spoon's documented key), so one seen in both the stream and the API counts once.
 - On SIGTERM/SIGINT pending heart thanks and game acknowledgements are queued, streams close, and SQLite is checkpointed. Next exits right after, so this is best effort; bots stay enabled and are restored.
-- **봇 퇴장** closes the stream and disables restoration.
+- **봇 퇴장** closes the stream and disables restoration. While the bot is connected to a live broadcast, it first says in chat that it is leaving (also on 연동 해제 when this device runs the bot); a data reset is announced the same way.
 
 ## Chat
 
@@ -114,7 +114,7 @@ Listener commands:
 - `!실드` (and every named counter) — show the value; `!실드 +2` / `!실드 -1` change it (DJ only, never below 0)
 - `!신청곡 곡명-가수`, `!신청곡 목록`; `!신청곡 삭제 번호` (DJ only)
 - `!가위바위보 가위·바위·보`, `!참여` (raffle), `!정답 (답)` (quiz), `!팀 (번호|이름)` (team battle, once per battle)
-- `!출석` — "출석 완료!" the first time in a broadcast, "이미 출석했어요." after that, both with streak and total; `!출석왕` — this month's top 5
+- `!출석` — "출석 완료!" the first time in a broadcast, "이미 출석했어요." after that, both with streak and total (the DJ is told the DJ is not counted); `!출석왕` — this month's top 5
 - `!내 킵`; `!킵 삭제 닉네임 / 경품 이름 / 수량` (DJ only)
 
 Successful game entries are acknowledged in one message per game every few seconds ("[추첨] 응모 완료! (A, B, …)", split over several messages when long), and pending acknowledgements are sent before that game's results. Error replies stay immediate.

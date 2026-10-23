@@ -670,6 +670,7 @@ const attendanceRanking = store.listAttendanceRankingByKey(firstSessionKey, "mon
 assert.deepEqual(attendanceRanking.map((entry) => [entry.nickname, entry.count]), [["출석러 새닉", 4], ["하루", 1]]);
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러"), "출석러님은 지금까지 4번 출석했어요. (연속 3회)");
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "nobody", "새손님"), "새손님님은 아직 출석 기록이 없어요.");
+assert.match(store.applyAttendanceCommand(firstSessionKey, "!출석", "dj", "DJ", 9005, true), /^DJ는 출석 대상이 아니에요/);
 assert.match(store.applyAttendanceCommand(firstSessionKey, "!출석왕", "a1", "출석러"), /^\[출석왕\] 이번 달: 1\. 출석러 새닉 4회/);
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석 해요", "a1", "출석러"), null);
 // In a broadcast: first !출석 confirms, later ones say already attended.
