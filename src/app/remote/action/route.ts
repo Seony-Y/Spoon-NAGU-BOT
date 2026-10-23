@@ -29,8 +29,10 @@ export const runtime = "nodejs";
 
 const AUTOMATION_FEATURES: AutomationFeature[] = ["welcome", "donation", "heart", "repeat", "follow"];
 
-function redirect(request: NextRequest, result: string) {
+// Returns to the remote tab the button was on.
+function redirect(request: NextRequest, view: string | null, result: string) {
   const target = buildApplicationUrl("/remote", request.url);
+  if (view) target.searchParams.set("view", view);
   target.searchParams.set("r", result);
   return NextResponse.redirect(target, 303);
 }
@@ -42,66 +44,69 @@ function fromResult(game: string, result: LiveActionResult) {
 export async function POST(request: NextRequest) {
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);
-  if (!sessionId || !session) return redirect(request, "authentication_required");
+  if (!sessionId || !session) return redirect(request, null, "authentication_required");
   const sessionKey = getSessionKey(sessionId);
 
   const formData = await request.formData().catch(() => new FormData());
   const action = String(formData.get("action") ?? "");
+  const view = action.startsWith("counter") ? "counters"
+    : action === "roulette" || action === "automation" ? "switches"
+      : null;
 
   switch (action) {
     case "rps_start":
-      return redirect(request, fromResult("rps", await startRps(sessionKey)));
+      return redirect(request, view, fromResult("rps", await startRps(sessionKey)));
     case "rps_finish":
-      return redirect(request, fromResult("rps", await finishRps(sessionKey)));
+      return redirect(request, view, fromResult("rps", await finishRps(sessionKey)));
     case "raffle_start": {
       const winnerCount = Number(formData.get("winnerCount"));
       if (!Number.isSafeInteger(winnerCount) || winnerCount < 1 || winnerCount > MAX_RAFFLE_WINNERS) {
-        return redirect(request, "raffle_invalid_winner_count");
+        return redirect(request, view, "raffle_invalid_winner_count");
       }
-      return redirect(request, fromResult("raffle", await startRaffle(sessionKey, winnerCount)));
+      return redirect(request, view, fromResult("raffle", await startRaffle(sessionKey, winnerCount)));
     }
     case "raffle_finish":
-      return redirect(request, fromResult("raffle", await finishRaffle(sessionKey)));
+      return redirect(request, view, fromResult("raffle", await finishRaffle(sessionKey)));
     case "quiz_start":
-      return redirect(request, fromResult("quiz", await startNextQuiz(sessionKey)));
+      return redirect(request, view, fromResult("quiz", await startNextQuiz(sessionKey)));
     case "quiz_finish":
-      return redirect(request, fromResult("quiz", await finishQuiz(sessionKey)));
+      return redirect(request, view, fromResult("quiz", await finishQuiz(sessionKey)));
     case "secret_start":
-      return redirect(request, fromResult("secret", await startSecretWord(sessionKey)));
+      return redirect(request, view, fromResult("secret", await startSecretWord(sessionKey)));
     case "secret_hint":
-      return redirect(request, fromResult("secret", await revealSecretWordHint(sessionKey)));
+      return redirect(request, view, fromResult("secret", await revealSecretWordHint(sessionKey)));
     case "secret_finish":
-      return redirect(request, fromResult("secret", await finishSecretWord(sessionKey)));
+      return redirect(request, view, fromResult("secret", await finishSecretWord(sessionKey)));
     case "team_start":
-      return redirect(request, fromResult("team", await startTeamBattle(sessionKey)));
+      return redirect(request, view, fromResult("team", await startTeamBattle(sessionKey)));
     case "team_status":
-      return redirect(request, fromResult("team", await announceTeamBattleStatus(sessionKey)));
+      return redirect(request, view, fromResult("team", await announceTeamBattleStatus(sessionKey)));
     case "team_finish":
-      return redirect(request, fromResult("team", await finishTeamBattle(sessionKey)));
+      return redirect(request, view, fromResult("team", await finishTeamBattle(sessionKey)));
     case "counter_set": {
       const id = Number(formData.get("id"));
       const value = Number(formData.get("value"));
-      if (!Number.isSafeInteger(id)) return redirect(request, "invalid");
-      if (!Number.isSafeInteger(value) || value < 0 || value > MAX_COUNTER_VALUE) return redirect(request, "counter_invalid");
+      if (!Number.isSafeInteger(id)) return redirect(request, view, "invalid");
+      if (!Number.isSafeInteger(value) || value < 0 || value > MAX_COUNTER_VALUE) return redirect(request, view, "counter_invalid");
       const result = await setCounterValue(sessionKey, id, value);
-      return redirect(request, result === "saved" ? "counter_saved" : result === "unchanged" ? "counter_unchanged" : "invalid");
+      return redirect(request, view, result === "saved" ? "counter_saved" : result === "unchanged" ? "counter_unchanged" : "invalid");
     }
     case "counter": {
       const id = Number(formData.get("id"));
       const delta = Number(formData.get("delta"));
-      if (!Number.isSafeInteger(id) || ![1, -1].includes(delta)) return redirect(request, "invalid");
-      return redirect(request, await adjustCounter(sessionKey, id, delta) ? "counter_saved" : "invalid");
+      if (!Number.isSafeInteger(id) || ![1, -1].includes(delta)) return redirect(request, view, "invalid");
+      return redirect(request, view, await adjustCounter(sessionKey, id, delta) ? "counter_saved" : "invalid");
     }
     case "roulette":
       setRouletteEnabled(sessionKey, formData.get("enabled") === "true");
-      return redirect(request, "switch_saved");
+      return redirect(request, view, "switch_saved");
     case "automation": {
       const feature = String(formData.get("feature") ?? "") as AutomationFeature;
-      if (!AUTOMATION_FEATURES.includes(feature)) return redirect(request, "invalid");
+      if (!AUTOMATION_FEATURES.includes(feature)) return redirect(request, view, "invalid");
       setAutomationEnabled(sessionKey, feature, formData.get("enabled") === "true");
-      return redirect(request, "switch_saved");
+      return redirect(request, view, "switch_saved");
     }
     default:
-      return redirect(request, "invalid");
+      return redirect(request, view, "invalid");
   }
 }

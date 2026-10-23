@@ -158,7 +158,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   {bot.enabled ? "봇 퇴장" : "봇 입장"}
                 </ConfirmButton>
               </form>
-              <Link className="bot-bar-link" href="/remote">휴대폰 리모컨</Link>
+              <Link className="bot-bar-link" href="/remote">📱 휴대폰 리모컨</Link>
             </div>
           )}
           {connected && <nav className="dashboard-tabs" aria-label="운영 메뉴">

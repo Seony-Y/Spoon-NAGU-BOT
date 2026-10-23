@@ -131,7 +131,7 @@ DJ-only commands (other users' messages fall through to the listener commands) c
 - `!팀전 시작` / `상태` / `종료` — uses the team settings saved in the dashboard
 - `!룰렛`, `!환영`, `!후원`, `!하트`, `!팔로우`, `!공지` + `켜기` / `끄기`
 
-`/remote` is a phone-sized controller for DJs broadcasting from a PC: start and finish games (including the secret word, with its hint, and the team battle with live scores), set counters by typing the new value (announced in chat like `!실드 +N`), and flip the roulette and automation switches. It refreshes every 3 seconds and shows the active quiz answer and secret word only on screen.
+`/remote` is a phone-sized controller for DJs broadcasting from a PC, with three tab buttons (게임 / 카운터 / 자동 기능; running games are listed first): start and finish games (including the secret word, with its hint, and the team battle with live scores), set counters by typing the new value (announced in chat like `!실드 +N`), and flip the roulette and automation switches. It refreshes every 3 seconds and shows the active quiz answer and secret word only on screen.
 
 ## Automation
 

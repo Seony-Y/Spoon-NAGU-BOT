@@ -72,7 +72,7 @@ try {
   }
 
   // --- Read: pages render with the session -----------------------------------
-  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=team", "/?tab=game&game=attendance", "/?tab=game&game=attendance&period=all", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/guide"]) {
+  for (const path of ["/", "/?tab=bot&automation=follow", "/?tab=bot&automation=commands", "/?tab=game&game=quiz", "/?tab=game&game=secret", "/?tab=game&game=team", "/?tab=game&game=attendance", "/?tab=game&game=attendance&period=all", "/?tab=game&game=roulette", "/?tab=backup", "/remote", "/remote?view=counters", "/remote?view=switches", "/guide"]) {
     reseed();
     const response = await fetch(BASE + path, { headers: { cookie } });
     const html = await response.text();
@@ -228,7 +228,7 @@ try {
   r = await post("/remote/action", { action: "counter", id: shield.id, delta: 1 });
   check("리모컨: 카운터 +1", r.params.r === "counter_saved" && store.listBotCounters(sessionId).find((c) => c.name === "실드").value === shieldBefore + 1, JSON.stringify(r.params));
   r = await post("/remote/action", { action: "counter_set", id: shield.id, value: 250 });
-  check("리모컨: 카운터 값 직접 입력", r.params.r === "counter_saved" && store.listBotCounters(sessionId).find((c) => c.name === "실드").value === 250, JSON.stringify(r.params));
+  check("리모컨: 카운터 값 직접 입력", r.params.r === "counter_saved" && r.params.view === "counters" && store.listBotCounters(sessionId).find((c) => c.name === "실드").value === 250, JSON.stringify(r.params));
   r = await post("/remote/action", { action: "counter_set", id: shield.id, value: 250 });
   check("리모컨: 같은 값은 그대로", r.params.r === "counter_unchanged", JSON.stringify(r.params));
   r = await post("/remote/action", { action: "counter_set", id: shield.id, value: -3 });

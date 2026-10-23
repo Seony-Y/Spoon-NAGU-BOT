@@ -29,8 +29,10 @@ export const metadata: Metadata = {
   description: "방송 중 휴대폰으로 게임과 자동화를 조작하는 NAGU BOT 리모컨",
 };
 
+type RemoteView = "games" | "counters" | "switches";
+
 type RemoteProps = {
-  searchParams: Promise<{ r?: string }>;
+  searchParams: Promise<{ r?: string; view?: string }>;
 };
 
 const RESULT_NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
@@ -90,7 +92,7 @@ function Toggle({ action, feature, label, enabled }: {
         aria-label={`${label} ${enabled ? "끄기" : "켜기"}`}
       >
         <span>{label}</span>
-        <strong>{enabled ? "ON" : "OFF"}</strong>
+        <span className="remote-switch" aria-hidden="true"><span /></span>
       </button>
     </form>
   );
@@ -99,7 +101,7 @@ function Toggle({ action, feature, label, enabled }: {
 function ActionButton({ action, label, tone = "primary", disabled = false }: {
   action: string;
   label: string;
-  tone?: "primary" | "finish";
+  tone?: "primary" | "secondary" | "finish";
   disabled?: boolean;
 }) {
   return (
@@ -110,8 +112,34 @@ function ActionButton({ action, label, tone = "primary", disabled = false }: {
   );
 }
 
+const VIEWS: Array<{ key: RemoteView; icon: string; label: string }> = [
+  { key: "games", icon: "🎮", label: "게임" },
+  { key: "counters", icon: "🔢", label: "카운터" },
+  { key: "switches", icon: "⚙️", label: "자동 기능" },
+];
+
+function GameCard({ id, icon, title, status, active, children }: {
+  id: string;
+  icon: string;
+  title: string;
+  status: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={`remote-card${active ? " is-active" : ""}`} aria-labelledby={id}>
+      <div className="remote-card-heading">
+        <h2 id={id}><span className="remote-icon" aria-hidden="true">{icon}</span>{title}</h2>
+        <span className={`remote-pill${active ? " is-live" : ""}`}>{status}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export default async function RemotePage({ searchParams }: RemoteProps) {
-  const { r } = await searchParams;
+  const { r, view: viewParam } = await searchParams;
+  const view: RemoteView = viewParam === "counters" || viewParam === "switches" ? viewParam : "games";
   const sessionId = (await cookies()).get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);
 
@@ -119,9 +147,10 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
     return (
       <main className="remote">
         <h1 className="remote-title">NAGU BOT 리모컨</h1>
-        <p className="remote-empty">
-          이 브라우저에서 Spoon 계정이 연결되어 있지 않습니다. <Link href="/">대시보드</Link>에서 먼저 연결해 주세요.
-        </p>
+        <div className="remote-alert">
+          <p>이 브라우저에서 Spoon 계정이 연결되어 있지 않습니다.</p>
+          <Link className="remote-button is-primary" href="/">대시보드에서 연결하기</Link>
+        </div>
       </main>
     );
   }
@@ -149,16 +178,138 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
     ["follow", settings.followEnabled],
     ["repeat", settings.repeatEnabled],
   ];
+  const switchesOn = [roulette.enabled, ...automation.map(([, enabled]) => enabled)].filter(Boolean).length;
+
+  // Running games first, so the one being played is always on top.
+  const games = [
+    {
+      key: "rps",
+      active: Boolean(rps?.active),
+      node: (
+        <GameCard key="rps" id="remote-rps" icon="✊" title="가위바위보" active={Boolean(rps?.active)}
+          status={rps?.active ? `진행 중 · ${rps.entries.length}명` : "대기"}>
+          {rps?.active
+            ? <ActionButton action="rps_finish" label="종료하고 결과 공개" tone="finish" />
+            : <ActionButton action="rps_start" label="시작 (DJ 선택 랜덤)" disabled={gameDisabled} />}
+        </GameCard>
+      ),
+    },
+    {
+      key: "raffle",
+      active: Boolean(raffle?.active),
+      node: (
+        <GameCard key="raffle" id="remote-raffle" icon="🎁" title="추첨" active={Boolean(raffle?.active)}
+          status={raffle?.active ? `진행 중 · ${raffle.entries.length}명 · ${raffle.winnerCount}명 당첨` : "대기"}>
+          {raffle?.active ? (
+            <ActionButton action="raffle_finish" label="종료하고 당첨자 공개" tone="finish" />
+          ) : (
+            <form className="remote-inline-form" action="/remote/action" method="post">
+              <input type="hidden" name="action" value="raffle_start" />
+              <label>
+                <span>당첨 인원</span>
+                <input type="number" name="winnerCount" inputMode="numeric" min={1} max={MAX_RAFFLE_WINNERS} defaultValue={1} required />
+              </label>
+              <button className="remote-button is-primary" type="submit" disabled={gameDisabled}>시작</button>
+            </form>
+          )}
+        </GameCard>
+      ),
+    },
+    {
+      key: "quiz",
+      active: Boolean(quiz?.active),
+      node: (
+        <GameCard key="quiz" id="remote-quiz" icon="❓" title="퀴즈" active={Boolean(quiz?.active)}
+          status={quiz?.active ? `진행 중 · ${quiz.submissions.length}명 제출` : `대기 문제 ${quizQueue.length}개`}>
+          {quiz?.active ? (
+            <>
+              <p className="remote-quiz-question">{quiz.question}</p>
+              <p className="remote-secret">정답 <strong>{quiz.answer}</strong><small>이 화면에만 보여요</small></p>
+              <ActionButton action="quiz_finish" label="종료하고 정답 공개" tone="finish" />
+            </>
+          ) : quizQueue.length > 0 ? (
+            <>
+              <p className="remote-quiz-answer">다음 문제: {quizQueue[0].question}</p>
+              <ActionButton action="quiz_start" label="다음 문제 출제" disabled={gameDisabled} />
+            </>
+          ) : (
+            <Link className="remote-button is-ghost" href="/?tab=game&game=quiz">대시보드에서 문제 등록하기</Link>
+          )}
+        </GameCard>
+      ),
+    },
+    {
+      key: "secret",
+      active: Boolean(secretWord),
+      node: (
+        <GameCard key="secret" id="remote-secret" icon="🔍" title="비밀 단어" active={Boolean(secretWord)}
+          status={secretWord ? "진행 중" : `대기 단어 ${secretWordQueue.length}개`}>
+          {secretWord ? (
+            <>
+              <p className="remote-secret">정답 <strong>{secretWord.word}</strong><small>이 화면에만 보여요</small></p>
+              {secretWord.hint && <p className="remote-quiz-answer">힌트: {secretWord.hint}</p>}
+              <div className="remote-button-row">
+                {secretWord.hint && <ActionButton action="secret_hint" label="힌트 공개" tone="secondary" />}
+                <ActionButton action="secret_finish" label="종료하고 공개" tone="finish" />
+              </div>
+            </>
+          ) : secretWordQueue.length > 0 ? (
+            <ActionButton action="secret_start" label="다음 단어로 시작" disabled={gameDisabled} />
+          ) : (
+            <Link className="remote-button is-ghost" href="/?tab=game&game=secret">대시보드에서 단어 등록하기</Link>
+          )}
+        </GameCard>
+      ),
+    },
+    {
+      key: "team",
+      active: Boolean(teamBattle),
+      node: (
+        <GameCard key="team" id="remote-team" icon="🚩" title="팀 대항전" active={Boolean(teamBattle)}
+          status={teamBattle ? "진행 중" : teamSettings.teamNames.join(" vs ")}>
+          {teamBattle ? (
+            <>
+              <ul className="remote-scores">
+                {teamBattle.teams.map((team) => (
+                  <li key={team.index}>
+                    <span>{team.name}</span>
+                    <strong>{team.score.toLocaleString("ko-KR")}</strong>
+                    <small>{team.members}명</small>
+                  </li>
+                ))}
+              </ul>
+              <div className="remote-button-row">
+                <ActionButton action="team_status" label="점수 알리기" tone="secondary" />
+                <ActionButton action="team_finish" label="종료하고 발표" tone="finish" />
+              </div>
+            </>
+          ) : (
+            <ActionButton action="team_start" label="저장된 설정으로 시작" disabled={gameDisabled} />
+          )}
+        </GameCard>
+      ),
+    },
+  ].sort((left, right) => Number(right.active) - Number(left.active));
+  const activeGames = games.filter((game) => game.active).length;
+  const badges: Record<RemoteView, string | null> = {
+    games: activeGames > 0 ? `${activeGames}` : null,
+    counters: counters.length > 0 ? `${counters.length}` : null,
+    switches: `${switchesOn}`,
+  };
 
   return (
     <main className="remote">
       <AutoRefresh intervalMs={3000} />
       <ClearStatusParams keys="r" delayMs={4000} />
       <header className="remote-header">
-        <h1 className="remote-title">NAGU BOT 리모컨 <EnvironmentBadge /></h1>
-        <span className={`remote-state${bot.state === "connected" ? " is-live" : ""}`}>
-          {bot.state === "connected" ? "봇 입장 중" : bot.enabled ? "방송 기다리는 중" : "봇 꺼짐"}
-        </span>
+        <div>
+          <h1 className="remote-title">NAGU BOT 리모컨 <EnvironmentBadge /></h1>
+          <span className={`remote-state${bot.state === "connected" ? " is-live" : ""}`}>
+            <span className="status-dot" aria-hidden="true" />
+            {bot.state === "connected" ? "봇 입장 중" : bot.enabled ? "방송 기다리는 중" : "봇 꺼짐"}
+          </span>
+        </div>
+        <Link className="remote-nav-button" href="/">대시보드</Link>
       </header>
 
       {notice && (
@@ -167,154 +318,88 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
         </p>
       )}
       {!bot.enabled && (
-        <p className="remote-notice is-error" role="alert">
-          봇이 방송에 입장하지 않았습니다. <Link href="/?tab=bot">대시보드</Link>에서 [봇 입장]을 눌러 주세요.
-        </p>
+        <div className="remote-alert" role="alert">
+          <p>봇이 방송에 들어와 있지 않아요.</p>
+          <Link className="remote-button is-primary" href="/?tab=bot">봇 입장하러 가기</Link>
+        </div>
       )}
 
-      <section className="remote-card" aria-labelledby="remote-rps">
-        <div className="remote-card-heading">
-          <h2 id="remote-rps">가위바위보</h2>
-          <span>{rps?.active ? `진행 중 · ${rps.entries.length}명` : "대기"}</span>
-        </div>
-        {rps?.active
-          ? <ActionButton action="rps_finish" label="종료하고 결과 공개" tone="finish" />
-          : <ActionButton action="rps_start" label="시작 (DJ 선택 랜덤)" disabled={gameDisabled} />}
-      </section>
+      <nav className="remote-tabs" aria-label="리모컨 메뉴">
+        {VIEWS.map((item) => (
+          <Link
+            key={item.key}
+            className={view === item.key ? "is-active" : ""}
+            href={item.key === "games" ? "/remote" : `/remote?view=${item.key}`}
+            aria-current={view === item.key ? "page" : undefined}
+            scroll={false}
+          >
+            <span className="remote-tab-icon" aria-hidden="true">{item.icon}</span>
+            <span>{item.label}</span>
+            {badges[item.key] && <span className="remote-tab-badge">{badges[item.key]}</span>}
+          </Link>
+        ))}
+      </nav>
 
-      <section className="remote-card" aria-labelledby="remote-raffle">
-        <div className="remote-card-heading">
-          <h2 id="remote-raffle">추첨</h2>
-          <span>{raffle?.active ? `진행 중 · ${raffle.entries.length}명 참여 · ${raffle.winnerCount}명 당첨` : "대기"}</span>
-        </div>
-        {raffle?.active ? (
-          <ActionButton action="raffle_finish" label="종료하고 당첨자 공개" tone="finish" />
-        ) : (
-          <form className="remote-inline-form" action="/remote/action" method="post">
-            <input type="hidden" name="action" value="raffle_start" />
-            <label>
-              <span>당첨 인원</span>
-              <input type="number" name="winnerCount" inputMode="numeric" min={1} max={MAX_RAFFLE_WINNERS} defaultValue={1} required />
-            </label>
-            <button className="remote-button is-primary" type="submit" disabled={gameDisabled}>시작</button>
-          </form>
-        )}
-      </section>
+      {view === "games" && games.map((game) => game.node)}
 
-      <section className="remote-card" aria-labelledby="remote-quiz">
-        <div className="remote-card-heading">
-          <h2 id="remote-quiz">퀴즈</h2>
-          <span>{quiz?.active ? `진행 중 · ${quiz.submissions.length}명 제출` : `대기 문제 ${quizQueue.length}개`}</span>
-        </div>
-        {quiz?.active ? (
-          <>
-            <p className="remote-quiz-question">{quiz.question}</p>
-            <p className="remote-quiz-answer">정답: <strong>{quiz.answer}</strong> <small>(이 화면에만 표시)</small></p>
-            <ActionButton action="quiz_finish" label="종료하고 정답 공개" tone="finish" />
-          </>
-        ) : quizQueue.length > 0 ? (
-          <>
-            <p className="remote-quiz-question">다음 문제: {quizQueue[0].question}</p>
-            <ActionButton action="quiz_start" label="다음 문제 출제" disabled={gameDisabled} />
-          </>
-        ) : (
-          <p className="remote-empty">대시보드 게임 &gt; 퀴즈에서 대기 문제를 먼저 등록해 주세요.</p>
-        )}
-      </section>
-
-      <section className="remote-card" aria-labelledby="remote-secret">
-        <div className="remote-card-heading">
-          <h2 id="remote-secret">비밀 단어</h2>
-          <span>{secretWord ? "진행 중" : `대기 단어 ${secretWordQueue.length}개`}</span>
-        </div>
-        {secretWord ? (
-          <>
-            <p className="remote-quiz-question">정답: {secretWord.word} <small>(이 화면에만 표시)</small></p>
-            {secretWord.hint && <p className="remote-quiz-answer">힌트: {secretWord.hint}</p>}
-            {secretWord.hint && <ActionButton action="secret_hint" label="힌트 공개" />}
-            <ActionButton action="secret_finish" label="종료하고 정답 공개" tone="finish" />
-          </>
-        ) : secretWordQueue.length > 0 ? (
-          <ActionButton action="secret_start" label="다음 단어로 시작" disabled={gameDisabled} />
-        ) : (
-          <p className="remote-empty">대시보드 게임 &gt; 비밀 단어에서 대기 단어를 먼저 등록해 주세요.</p>
-        )}
-      </section>
-
-      <section className="remote-card" aria-labelledby="remote-team">
-        <div className="remote-card-heading">
-          <h2 id="remote-team">팀 대항전</h2>
-          <span>{teamBattle ? "진행 중" : teamSettings.teamNames.join(" vs ")}</span>
-        </div>
-        {teamBattle ? (
-          <>
+      {view === "counters" && (
+        counters.length > 0 ? (
+          <section className="remote-card" aria-labelledby="remote-counters">
+            <div className="remote-card-heading">
+              <h2 id="remote-counters"><span className="remote-icon" aria-hidden="true">🔢</span>카운터</h2>
+              <span className="remote-pill">적용하면 채팅에 알림</span>
+            </div>
             <ul className="remote-counters">
-              {teamBattle.teams.map((team) => (
-                <li key={team.index} className="remote-team-row">
-                  <span>{team.name}</span>
-                  <strong>{team.score.toLocaleString("ko-KR")}</strong>
-                  <small>{team.members}명</small>
+              {counters.map((counter) => (
+                <li key={counter.id} className="remote-counter-row">
+                  <span>{counter.name}</span>
+                  <strong>{counter.value.toLocaleString("ko-KR")}</strong>
+                  <form className="remote-counter-form" action="/remote/action" method="post">
+                    <input type="hidden" name="action" value="counter_set" />
+                    <input type="hidden" name="id" value={counter.id} />
+                    {/* Keyed by the value so a change from chat replaces the field. */}
+                    <input
+                      key={counter.value}
+                      name="value"
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={MAX_COUNTER_VALUE}
+                      step={1}
+                      required
+                      defaultValue={counter.value}
+                      aria-label={`${counter.name} 새 값`}
+                    />
+                    <button type="submit">적용</button>
+                  </form>
                 </li>
               ))}
             </ul>
-            <ActionButton action="team_status" label="채팅에 점수 알리기" />
-            <ActionButton action="team_finish" label="종료하고 결과 공개" tone="finish" />
-          </>
+          </section>
         ) : (
-          <ActionButton action="team_start" label="저장된 설정으로 시작" disabled={gameDisabled} />
-        )}
-      </section>
-
-      {counters.length > 0 && (
-        <section className="remote-card" aria-labelledby="remote-counters">
-          <div className="remote-card-heading">
-            <h2 id="remote-counters">카운터</h2>
-            <span>값을 입력하고 적용 · 채팅에 알림</span>
+          <div className="remote-alert">
+            <p>등록된 카운터가 없어요.</p>
+            <Link className="remote-button is-ghost" href="/?tab=bot">대시보드에서 카운터 만들기</Link>
           </div>
-          <ul className="remote-counters">
-            {counters.map((counter) => (
-              <li key={counter.id} className="remote-counter-row">
-                <span>{counter.name}</span>
-                <strong>{counter.value.toLocaleString("ko-KR")}</strong>
-                <form className="remote-counter-form" action="/remote/action" method="post">
-                  <input type="hidden" name="action" value="counter_set" />
-                  <input type="hidden" name="id" value={counter.id} />
-                  {/* Keyed by the value so a change from chat replaces the field. */}
-                  <input
-                    key={counter.value}
-                    name="value"
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    max={MAX_COUNTER_VALUE}
-                    step={1}
-                    required
-                    defaultValue={counter.value}
-                    aria-label={`${counter.name} 새 값`}
-                  />
-                  <button type="submit">적용</button>
-                </form>
-              </li>
+        )
+      )}
+
+      {view === "switches" && (
+        <section className="remote-card" aria-labelledby="remote-switches">
+          <div className="remote-card-heading">
+            <h2 id="remote-switches"><span className="remote-icon" aria-hidden="true">⚙️</span>자동 기능</h2>
+            <span className="remote-pill">눌러서 켜기·끄기</span>
+          </div>
+          <div className="remote-toggles">
+            <Toggle action="roulette" label="룰렛" enabled={roulette.enabled} />
+            {automation.map(([feature, enabled]) => (
+              <Toggle key={feature} action="automation" feature={feature} label={AUTOMATION_LABELS[feature]} enabled={enabled} />
             ))}
-          </ul>
+          </div>
         </section>
       )}
 
-      <section className="remote-card" aria-labelledby="remote-switches">
-        <div className="remote-card-heading">
-          <h2 id="remote-switches">자동 기능 켜기·끄기</h2>
-        </div>
-        <div className="remote-toggles">
-          <Toggle action="roulette" label="룰렛" enabled={roulette.enabled} />
-          {automation.map(([feature, enabled]) => (
-            <Toggle key={feature} action="automation" feature={feature} label={AUTOMATION_LABELS[feature]} enabled={enabled} />
-          ))}
-        </div>
-      </section>
-
-      <p className="remote-footer">
-        <Link href="/">대시보드로 이동</Link> · 채팅에 <code>!봇</code>을 입력해도 같은 조작을 할 수 있습니다.
-      </p>
+      <p className="remote-footer">채팅에 <code>!봇</code>을 입력해도 같은 조작을 할 수 있어요.</p>
     </main>
   );
 }
