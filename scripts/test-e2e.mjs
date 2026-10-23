@@ -193,6 +193,16 @@ try {
   r = await post("/game/attendance", { announce: "on" });
   check("출석 기념 메시지 켜기", r.params.attendance === "announce_on" && store.getAttendanceAnnounce(sessionId) === true, JSON.stringify(r.params));
 
+  // --- Form navigation: fetch posts follow the 303 to an empty answer ---------
+  {
+    const headers = { cookie, "x-nagu-form-navigation": "1" };
+    const followed = await fetch(`${BASE}/game/attendance`, { method: "POST", body: new URLSearchParams({ announce: "on" }), headers });
+    check("폼 이동: 실행 후 이동할 주소만 받음", followed.redirected && followed.status === 204
+      && new URL(followed.url).searchParams.get("attendance") === "announce_on" && (await followed.text()) === "", followed.url);
+    const page = await fetch(`${BASE}/?tab=game`, { headers: { cookie } });
+    check("폼 이동: 일반 페이지 요청은 그대로", page.status === 200 && (await page.text()).includes("NAGU BOT"));
+  }
+
   // --- Game history reset ----------------------------------------------------
   r = await post("/game/reset", { game: "team" });
   check("팀 대항전 기록 초기화", r.params.reset === "done" && r.params.game === "team" && store.listTeamBattles(sessionId).length === 0, JSON.stringify(r.params));

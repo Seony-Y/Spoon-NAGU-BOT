@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import favicon from "@/asset/favicon-48x48.png";
+import { FormNavigation } from "./form-navigation";
 // Global styles, in cascade order: later files override earlier ones.
 import "./globals.css";
 import "./styles/game.css";
@@ -21,7 +22,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        {children}
+        <FormNavigation />
+      </body>
     </html>
   );
 }

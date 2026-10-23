@@ -143,7 +143,7 @@ export default async function Home({ searchParams }: HomeProps) {
           )}
           {connected && bot && (
             <div className="bot-bar">
-              <ClearStatusParams keys="rps raffle quiz roulette settings chat chatMessage bot status follow" />
+              <ClearStatusParams keys="rps raffle quiz secret team attendance reset roulette settings chat chatMessage bot status follow" />
               <span className={`bot-bar-state${bot.state === "connected" ? " is-live" : ""}`}>
                 <span className="status-dot" aria-hidden="true" />
                 봇 {botStateLabels[bot.state]}

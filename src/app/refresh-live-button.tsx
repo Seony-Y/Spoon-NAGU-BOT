@@ -58,7 +58,10 @@ export function AutoRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const activeElement = document.activeElement;
-      const isUsingForm = activeElement instanceof HTMLElement && activeElement.closest("form");
+      // Only typing pauses refreshes; a focused button after a click does not.
+      const isUsingForm = activeElement instanceof HTMLElement
+        && activeElement.matches("input:not([type=hidden]), textarea, select")
+        && activeElement.closest("form");
       if (document.visibilityState === "visible" && !isUsingForm) router.refresh();
     }, intervalMs);
     return () => window.clearInterval(timer);

@@ -51,11 +51,11 @@ export function RouletteDistributionEditor({
         <div className="roulette-editor-heading-actions">
           {editing ? (
             <>
-              <Link href="/?tab=game&game=roulette">취소</Link>
+              <Link scroll={false} href="/?tab=game&game=roulette">취소</Link>
               <button type="submit" disabled={missPercentage < 0}>변경 사항 저장</button>
             </>
           ) : (
-            <Link href="/?tab=game&game=roulette&rouletteEdit=1">기존 경품 수정</Link>
+            <Link scroll={false} href="/?tab=game&game=roulette&rouletteEdit=1">기존 경품 수정</Link>
           )}
         </div>
       </div>
