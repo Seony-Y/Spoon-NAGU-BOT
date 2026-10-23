@@ -8,6 +8,7 @@ import { SecretWordPanel } from "./secret-word-panel";
 import { TeamBattlePanel } from "./team-battle-panel";
 import { AttendancePanel } from "./attendance-panel";
 import type { DashboardView } from "./load";
+import { ScrollTabs } from "./scroll-tabs";
 import { ConfirmButton } from "../confirm-button";
 
 const RESET_TARGETS: Record<string, { game: string; label: string; detail: string }> = {
@@ -32,7 +33,7 @@ export function GameCard({ view }: { view: DashboardView }) {
         <Link className="remote-link" href="/remote">휴대폰 리모컨 열기</Link>
       </div>
 
-      <nav className="game-tabs" aria-label="게임 선택">
+      <ScrollTabs label="게임 선택">
         <Link scroll={false} className={gameTab === "rps" ? "is-active" : ""} href="/?tab=game&game=rps">가위바위보</Link>
         <Link scroll={false} className={gameTab === "raffle" ? "is-active" : ""} href="/?tab=game&game=raffle">추첨</Link>
         <Link scroll={false} className={gameTab === "quiz" ? "is-active" : ""} href="/?tab=game&game=quiz">퀴즈</Link>
@@ -40,7 +41,7 @@ export function GameCard({ view }: { view: DashboardView }) {
         <Link scroll={false} className={gameTab === "team" ? "is-active" : ""} href="/?tab=game&game=team">팀 대항전</Link>
         <Link scroll={false} className={gameTab === "attendance" ? "is-active" : ""} href="/?tab=game&game=attendance">출석</Link>
         <Link scroll={false} className={gameTab === "roulette" ? "is-active" : ""} href="/?tab=game&game=roulette">룰렛</Link>
-      </nav>
+      </ScrollTabs>
 
       <details className="dj-command-help">
         <summary>방송 화면을 벗어나지 않고 채팅으로 진행하기 (DJ 전용 명령어)</summary>

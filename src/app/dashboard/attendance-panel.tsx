@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
+import { ScrollTabs } from "./scroll-tabs";
 
 const NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
   announce_on: { tone: "success", text: "출석 기념 메시지를 켰습니다." },
@@ -33,10 +34,10 @@ export function AttendancePanel({ view }: { view: DashboardView }) {
       </form>
       <p className="attendance-summary">기념 메시지: 누적 10·30·50·100·200·300·500·1000번째, 연속 5·10·20·30·50·100회 출석 때 채팅으로 축하합니다.</p>
 
-      <nav className="game-tabs" aria-label="출석 순위 기간">
+      <ScrollTabs label="출석 순위 기간">
         <Link scroll={false} className={attendancePeriod === "month" ? "is-active" : ""} href="/?tab=game&game=attendance">이번 달</Link>
         <Link scroll={false} className={attendancePeriod === "all" ? "is-active" : ""} href="/?tab=game&game=attendance&period=all">전체</Link>
-      </nav>
+      </ScrollTabs>
       {attendancePeriod === "month" && <p className="attendance-summary">이번 달 방송 {attendanceBroadcasts.toLocaleString("ko-KR")}회</p>}
 
       {attendanceRanking.length === 0 ? (
