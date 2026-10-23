@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkDatabase, getAppState } from "@/lib/session-store";
+import { checkDatabase, getAppState, isDatabaseOnPersistentVolume } from "@/lib/session-store";
 
 export const runtime = "nodejs";
 
@@ -12,6 +12,8 @@ export function GET() {
       service: "nagu-bot",
       status: "ok",
       lastBackup: getAppState("maintenance:last_backup"),
+      // false: the database is not on a Railway volume and resets on deploy.
+      persistentStorage: isDatabaseOnPersistentVolume(),
     });
   } catch {
     return NextResponse.json({ service: "nagu-bot", status: "database_unavailable" }, { status: 503 });

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type SessionRow = {
@@ -477,6 +477,18 @@ export function getDatabasePath() {
     /* turbopackIgnore: true */ process.env.SESSION_STORE_PATH
       || (isRailway ? "/data/nagu.db" : ".data/nagu.db"),
   );
+}
+
+// On Railway, a database outside the attached volume lives in the container
+// and is lost on every deploy (logins, settings, history). Railway sets
+// RAILWAY_VOLUME_MOUNT_PATH only when a volume is attached. null off Railway.
+export function isDatabaseOnPersistentVolume() {
+  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
+  if (!isRailway) return null;
+  const mount = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  if (!mount) return false;
+  const inside = relative(resolve(mount), getDatabasePath());
+  return inside !== "" && !inside.startsWith("..") && !isAbsolute(inside);
 }
 
 export function getDatabase() {

@@ -31,7 +31,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs all four on every push to `main
 - Configure every variable from `.env.example` in Railway. `SPOON_REDIRECT_URI` is the production callback, e.g. `https://spoon-nagu-bot-production.up.railway.app/oauth/callback`, and must match the URL registered in Spoon Developers.
 - Attach a volume at `/data` and set `SESSION_STORE_PATH=/data/nagu.db` (the default on Railway). Sessions, settings, game history, roulette data, audience events, and rotated refresh tokens live in this SQLite file.
 - Run a **single replica**: SQLite is local to the volume, bot workers live in process memory, and Spoon allows one event stream per app and DJ.
-- Point the health check at `/api/health`; it queries SQLite, so a missing volume fails it.
+- Point the health check at `/api/health`; it queries SQLite. Without a volume the database still works but lives in the container and is **wiped on every deploy** (everyone is logged out, all data is gone). `/api/health` reports `persistentStorage: false` in that case (Railway sets `RAILWAY_VOLUME_MOUNT_PATH` only when a volume is attached, and the DB path must be inside it), and an alert is sent at startup.
 - Node.js 22.13 or newer is required (`node:sqlite`).
 
 ### Staging

@@ -7,6 +7,7 @@ export {
   getAppState,
   getDatabasePath,
   getSessionKey,
+  isDatabaseOnPersistentVolume,
   setAppState,
 } from "./store/db";
 export * from "./store/maintenance";
