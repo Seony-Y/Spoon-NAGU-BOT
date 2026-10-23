@@ -676,6 +676,18 @@ assert.equal(store.getAttendanceAnnounceByKey(firstSessionKey), true);
 store.setAttendanceAnnounce(firstSessionId, false);
 assert.equal(store.getAttendanceAnnounceByKey(firstSessionKey), false);
 
+// Game history reset: finished records only, running rounds and queues stay.
+assert.ok(store.listTeamBattles(firstSessionId).length > 0);
+assert.equal(store.startTeamBattleByKey(firstSessionKey).kind, "started");
+assert.ok(store.resetGameHistory(firstSessionId, "team") > 0);
+assert.deepEqual(store.listTeamBattles(firstSessionId).map((battle) => battle.active), [true], "the running battle survives");
+store.finishTeamBattleByKey(firstSessionKey);
+assert.ok(store.listAttendanceRankingByKey(firstSessionKey, "all").length > 0);
+store.resetGameHistory(firstSessionId, "attendance");
+assert.equal(store.listAttendanceRankingByKey(firstSessionKey, "all").length, 0);
+assert.ok(store.resetGameHistory(firstSessionId, "secret") > 0);
+assert.equal(store.resetGameHistory(firstSessionId, "secret"), 0, "second reset removes nothing");
+
 // Admin block by DJ: every device of the DJ and later logins are blocked.
 store.saveSession("block-a", token);
 store.linkDjWorkspaceByKey(store.getSessionKey("block-a"), "block-dj", null);

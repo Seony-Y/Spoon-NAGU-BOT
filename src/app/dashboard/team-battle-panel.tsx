@@ -1,6 +1,7 @@
 import { ConfirmButton } from "../confirm-button";
 import { AutoRefresh } from "../refresh-live-button";
 import { formatDateTime } from "./format";
+import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
 
 const NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
@@ -119,7 +120,10 @@ export function TeamBattlePanel({ view }: { view: DashboardView }) {
         </section>
       )}
 
-      <p className="game-command">청취자: <code>!팀 1</code> <code>!팀 2</code> · DJ: <code>!팀전 시작</code> <code>!팀전 상태</code> <code>!팀전 종료</code></p>
+      <CommandGuide rows={[
+        { who: "청취자", commands: [{ command: "!팀 1", description: "번호나 팀 이름" }] },
+        { who: "DJ", commands: [{ command: "!팀전 시작" }, { command: "!팀전 상태" }, { command: "!팀전 종료" }] },
+      ]} />
     </section>
   );
 }

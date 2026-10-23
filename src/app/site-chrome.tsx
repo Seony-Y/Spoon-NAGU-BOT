@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import naguBotLogo from "@/asset/NAGU-BOT-LOGO.png";
+import { APP_VERSION } from "@/lib/version";
 
 type SiteHeaderProps = {
   connectionStatus?: "connected" | "waiting";
@@ -47,7 +48,7 @@ export function SiteFooter() {
     <footer className="footer">
       <div>
         <strong>© 2026 NAGU BOT. All rights reserved.</strong>
-        <span>운영자 나구링 · NAGU BOT v1.0.0</span>
+        <span>운영자 나구링 · NAGU BOT v{APP_VERSION}</span>
       </div>
       <div className="footer-links">
         <nav aria-label="정책 및 문의">

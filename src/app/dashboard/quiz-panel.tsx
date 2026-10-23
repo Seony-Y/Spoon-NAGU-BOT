@@ -1,6 +1,7 @@
 import { ConfirmButton } from "../confirm-button";
 import { AutoRefresh } from "../refresh-live-button";
 import { formatDateTime, formatElapsedTime, getFirstCorrectAt } from "./format";
+import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
 
 export function QuizPanel({ view }: { view: DashboardView }) {
@@ -154,7 +155,10 @@ export function QuizPanel({ view }: { view: DashboardView }) {
         </section>
       )}
 
-      <p className="game-command"><code>!정답 정답내용</code></p>
+      <CommandGuide rows={[
+        { who: "청취자", commands: [{ command: "!정답 (답)" }] },
+        { who: "DJ", commands: [{ command: "!퀴즈 시작", description: "대기 문제 출제" }, { command: "!퀴즈 종료" }] },
+      ]} />
     </section>
   );
 }

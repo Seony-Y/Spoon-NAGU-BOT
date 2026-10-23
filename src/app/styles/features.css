@@ -689,6 +689,9 @@
 
 .team-settings-form input,
 .team-settings-form select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   padding: 0 10px;
   border: 1px solid var(--line);

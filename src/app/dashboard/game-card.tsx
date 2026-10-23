@@ -8,6 +8,17 @@ import { SecretWordPanel } from "./secret-word-panel";
 import { TeamBattlePanel } from "./team-battle-panel";
 import { AttendancePanel } from "./attendance-panel";
 import type { DashboardView } from "./load";
+import { ConfirmButton } from "../confirm-button";
+
+const RESET_TARGETS: Record<string, { game: string; label: string; detail: string }> = {
+  rps: { game: "rps", label: "가위바위보 기록", detail: "종료된 라운드와 참가 기록" },
+  raffle: { game: "raffle", label: "추첨 기록", detail: "종료된 추첨과 응모·당첨 기록" },
+  quiz: { game: "quiz", label: "퀴즈 기록", detail: "종료된 퀴즈와 제출 기록 (대기 문제는 유지)" },
+  secret: { game: "secret", label: "비밀 단어 기록", detail: "종료된 라운드 기록 (대기 단어는 유지)" },
+  team: { game: "team", label: "팀 대항전 기록", detail: "종료된 대항전과 팀원 점수 (팀 설정은 유지)" },
+  attendance: { game: "attendance", label: "출석 기록", detail: "모든 청취자의 출석·연속 출석 횟수" },
+  roulette: { game: "roulette", label: "룰렛 당첨 이력", detail: "당첨 이력 (청취자 킵과 경품 설정은 유지)" },
+};
 
 export function GameCard({ view }: { view: DashboardView }) {
   const { gameTab } = view;
@@ -52,6 +63,20 @@ export function GameCard({ view }: { view: DashboardView }) {
       {gameTab === "attendance" && <AttendancePanel view={view} />}
 
       {gameTab === "roulette" && <RoulettePanel view={view} />}
+
+      {view.params.reset === "done" && (
+        <div className="settings-notice is-success" role="status"><span aria-hidden="true">✓</span><strong>{RESET_TARGETS[gameTab]?.label ?? "기록"}을 초기화했습니다.</strong></div>
+      )}
+      {RESET_TARGETS[gameTab] && view.bot && !view.previewConnected && (
+        <form className="game-reset" action="/game/reset" method="post">
+          <input type="hidden" name="game" value={RESET_TARGETS[gameTab].game} />
+          <div>
+            <strong>{RESET_TARGETS[gameTab].label} 초기화</strong>
+            <span>{RESET_TARGETS[gameTab].detail}을 지웁니다. 진행 중인 게임은 그대로 둡니다.</span>
+          </div>
+          <ConfirmButton type="submit" message={`${RESET_TARGETS[gameTab].label}을 모두 지울까요? 되돌릴 수 없습니다. 필요하면 먼저 데이터 백업을 받아 두세요.`}>기록 초기화</ConfirmButton>
+        </form>
+      )}
     </article>
   );
 }

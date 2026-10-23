@@ -711,3 +711,48 @@ export function applyQuizCommand(
     throw error;
   }
 }
+
+// ---- History reset (DJ) ---------------------------------------------------------
+// Clears finished records of one game shown on the dashboard. Running rounds,
+// queues, settings, and roulette keeps (prizes still owed) are never touched.
+
+export type ResettableGame = "rps" | "raffle" | "quiz" | "secret" | "team" | "attendance" | "roulette";
+export const RESETTABLE_GAMES: ResettableGame[] = ["rps", "raffle", "quiz", "secret", "team", "attendance", "roulette"];
+
+const FINISHED_ROUND_TABLES: Partial<Record<ResettableGame, { rounds: string; id: string; children: string[] }>> = {
+  rps: { rounds: "rps_rounds", id: "round_id", children: ["rps_entries"] },
+  raffle: { rounds: "raffle_rounds", id: "round_id", children: ["raffle_entries"] },
+  quiz: { rounds: "quiz_rounds", id: "round_id", children: ["quiz_submissions"] },
+  secret: { rounds: "secret_word_rounds", id: "round_id", children: [] },
+  team: { rounds: "team_battles", id: "battle_id", children: ["team_members"] },
+};
+
+export function resetGameHistory(sessionId: string, game: ResettableGame) {
+  const workspaceKey = getWorkspaceKey(getSessionKey(sessionId));
+  const database = getDatabase();
+  let removed = 0;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const rounds = FINISHED_ROUND_TABLES[game];
+    if (rounds) {
+      for (const child of rounds.children) {
+        removed += Number(database.prepare(`
+          DELETE FROM ${child} WHERE workspace_key = ? AND ${rounds.id} IN (
+            SELECT ${rounds.id} FROM ${rounds.rounds} WHERE workspace_key = ? AND active = 0
+          )
+        `).run(workspaceKey, workspaceKey).changes);
+      }
+      removed += Number(database.prepare(`DELETE FROM ${rounds.rounds} WHERE workspace_key = ? AND active = 0`)
+        .run(workspaceKey).changes);
+    } else if (game === "attendance") {
+      removed += Number(database.prepare("DELETE FROM attendance WHERE workspace_key = ?").run(workspaceKey).changes);
+    } else if (game === "roulette") {
+      removed += Number(database.prepare("DELETE FROM roulette_results WHERE workspace_key = ?").run(workspaceKey).changes);
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+  return removed;
+}

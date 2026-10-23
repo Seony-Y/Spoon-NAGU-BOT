@@ -1,6 +1,7 @@
 import { MAX_RAFFLE_WINNERS } from "@/lib/dj-command";
 import { AutoRefresh } from "../refresh-live-button";
 import { formatDateTime } from "./format";
+import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
 
 export function RafflePanel({ view }: { view: DashboardView }) {
@@ -89,7 +90,10 @@ export function RafflePanel({ view }: { view: DashboardView }) {
         </section>
       )}
 
-      <p className="game-command"><code>!참여</code></p>
+      <CommandGuide rows={[
+        { who: "청취자", commands: [{ command: "!참여", description: "응모" }] },
+        { who: "DJ", commands: [{ command: "!추첨 시작 3", description: "당첨 3명" }, { command: "!추첨 종료" }] },
+      ]} />
     </section>
   );
 }

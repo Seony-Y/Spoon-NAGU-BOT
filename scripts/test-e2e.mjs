@@ -193,6 +193,12 @@ try {
   r = await post("/game/attendance", { announce: "on" });
   check("출석 기념 메시지 켜기", r.params.attendance === "announce_on" && store.getAttendanceAnnounce(sessionId) === true, JSON.stringify(r.params));
 
+  // --- Game history reset ----------------------------------------------------
+  r = await post("/game/reset", { game: "team" });
+  check("팀 대항전 기록 초기화", r.params.reset === "done" && r.params.game === "team" && store.listTeamBattles(sessionId).length === 0, JSON.stringify(r.params));
+  r = await post("/game/reset", { game: "nope" });
+  check("잘못된 초기화 대상 거부", r.params.reset === "invalid", JSON.stringify(r.params));
+
   // --- Roulette: settings, prizes, keeps ------------------------------------
   r = await post("/game/roulette", { action: "settings", cost: 30, enabled: "on" });
   let roulette = store.getRouletteSettings(sessionId);

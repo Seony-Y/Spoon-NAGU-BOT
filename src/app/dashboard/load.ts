@@ -57,6 +57,7 @@ export type DashboardSearchParams = {
   quiz?: string;
   secret?: string;
   team?: string;
+  reset?: string;
   attendance?: string;
   period?: string;
   roulette?: string;

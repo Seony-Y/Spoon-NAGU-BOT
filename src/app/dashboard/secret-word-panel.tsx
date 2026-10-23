@@ -1,6 +1,7 @@
 import { ConfirmButton } from "../confirm-button";
 import { AutoRefresh } from "../refresh-live-button";
 import { formatDateTime } from "./format";
+import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
 
 const NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
@@ -121,7 +122,10 @@ export function SecretWordPanel({ view }: { view: DashboardView }) {
         </section>
       )}
 
-      <p className="game-command">청취자는 평소처럼 채팅하면 됩니다 · DJ: <code>!비밀단어 시작</code> <code>!비밀단어 힌트</code> <code>!비밀단어 종료</code></p>
+      <CommandGuide rows={[
+        { who: "청취자", note: "명령어 없이 평소처럼 채팅하면 돼요" },
+        { who: "DJ", commands: [{ command: "!비밀단어 시작" }, { command: "!비밀단어 힌트" }, { command: "!비밀단어 종료" }] },
+      ]} />
     </section>
   );
 }

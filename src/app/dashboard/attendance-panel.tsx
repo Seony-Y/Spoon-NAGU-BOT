@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
 
 const NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
@@ -52,7 +53,9 @@ export function AttendancePanel({ view }: { view: DashboardView }) {
         </ol>
       )}
 
-      <p className="game-command">청취자: <code>!출석</code> (내 출석·연속 횟수) <code>!출석왕</code> (이번 달 TOP 5)</p>
+      <CommandGuide rows={[
+        { who: "청취자", commands: [{ command: "!출석", description: "내 출석·연속 횟수" }, { command: "!출석왕", description: "이번 달 TOP 5" }] },
+      ]} />
     </section>
   );
 }

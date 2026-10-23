@@ -476,17 +476,106 @@
 }
 
 .game-command {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  gap: 10px;
   margin: 20px 0 0;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--background);
 }
 
-.game-command code {
-  padding: 5px 7px;
-  border-radius: 4px;
-  background: #f3f3f5;
+.game-command-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.game-command-who {
+  padding: 4px 0;
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.game-command-who.is-dj {
+  color: #fff;
+  background: var(--text);
+}
+
+.game-command-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.game-command-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 26px;
+}
+
+.game-command-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.game-command-chip code {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.game-command-chip small {
+  color: var(--muted);
   font-size: 11px;
+}
+
+.game-reset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+
+.game-reset div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.game-reset strong {
+  font-size: 14px;
+}
+
+.game-reset span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.game-reset button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  background: var(--surface);
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .roulette-settings-form {

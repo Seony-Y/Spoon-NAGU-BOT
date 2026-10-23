@@ -155,6 +155,8 @@ Rock-paper-scissors, raffle, and quiz rounds are kept per workspace; the dashboa
 
 **출석** — a listener who enters (presence event, or the listener list when the bot gets no presence events), chats, sends hearts or donations, or follows while the bot is in the broadcast attends that broadcast once (the DJ is excluded). Streaks count the DJ's broadcasts rather than calendar days. Milestones (total 10/30/50/100/200/300/500/1000, streak 5/10/20/30/50/100) are congratulated in chat unless turned off on the dashboard, which also shows the monthly and all-time ranking.
 
+Each game tab has a **기록 초기화** button (with confirmation) that clears that game's finished records: rounds and entries, secret word and team battle history, all attendance records, or roulette draw history. Running rounds, quiz and secret word queues, team settings, and roulette keeps and prizes are kept.
+
 The roulette runs once per donation at or above the configured cost, with prize percentages in 0.01% steps and the remainder as 꽝. Prizes go to per-listener keeps, deduplicated per donation.
 
 ## Backups

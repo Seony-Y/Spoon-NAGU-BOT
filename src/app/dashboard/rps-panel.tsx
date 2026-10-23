@@ -1,5 +1,6 @@
 import { AutoRefresh } from "../refresh-live-button";
 import { formatDateTime } from "./format";
+import { CommandGuide } from "./command-guide";
 import type { DashboardView } from "./load";
 
 export function RpsPanel({ view }: { view: DashboardView }) {
@@ -90,7 +91,10 @@ export function RpsPanel({ view }: { view: DashboardView }) {
         </section>
       )}
 
-      <p className="game-command"><code>!가위바위보 가위</code> <code>!가위바위보 바위</code> <code>!가위바위보 보</code></p>
+      <CommandGuide rows={[
+        { who: "청취자", commands: [{ command: "!가위바위보 가위" }, { command: "!가위바위보 바위" }, { command: "!가위바위보 보" }] },
+        { who: "DJ", commands: [{ command: "!가위바위보 시작" }, { command: "!가위바위보 종료" }] },
+      ]} />
     </section>
   );
 }
