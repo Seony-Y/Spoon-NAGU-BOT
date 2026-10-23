@@ -72,7 +72,7 @@ export function GameCard({ view }: { view: DashboardView }) {
           <input type="hidden" name="game" value={RESET_TARGETS[gameTab].game} />
           <div>
             <strong>{RESET_TARGETS[gameTab].label} 초기화</strong>
-            <span>{RESET_TARGETS[gameTab].detail}을 지웁니다. 진행 중인 게임은 그대로 둡니다.</span>
+            <span>{RESET_TARGETS[gameTab].detail}을 지웁니다.{gameTab === "attendance" || gameTab === "roulette" ? "" : " 진행 중인 게임은 그대로 둡니다."}</span>
           </div>
           <ConfirmButton type="submit" message={`${RESET_TARGETS[gameTab].label}을 모두 지울까요? 되돌릴 수 없습니다. 필요하면 먼저 데이터 백업을 받아 두세요.`}>기록 초기화</ConfirmButton>
         </form>

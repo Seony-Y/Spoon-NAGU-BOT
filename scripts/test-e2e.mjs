@@ -253,6 +253,52 @@ try {
   const restoreStatus = new URL(restore.headers.get("location")).searchParams;
   check("백업 복원", [...restoreStatus.values()].includes("backup_restored") && store.getBotSettings(sessionId).djNickname === "나구테스트", [...restoreStatus].join("&"));
 
+  // --- Backup round trip: every table, wipe everything, restore, identical ----
+  store.recordBroadcastByKey(sessionKey, 5001, Date.now() - 3_600_000);
+  store.markAttendanceByKey(sessionKey, 5001, "fan-a", "팬A");
+  store.setAttendanceAnnounce(sessionId, false);
+  store.startTeamBattleByKey(sessionKey);
+  store.applyTeamCommand(sessionKey, "!팀 1", false, "fan-a", "팬A");
+  store.addTeamBattlePoints(sessionKey, "fan-a", "hearts", 5);
+  store.finishTeamBattleByKey(sessionKey);
+  store.addSecretWord(sessionId, "노을", "하늘");
+  store.recordAudienceEvent(sessionKey, 5001, {
+    event: "like",
+    id: "e2e-like-1",
+    data: { user: { id: "fan-a", nickname: "팬A" }, type: "FREE", totalAmount: 3, amount: 3, extraAmount: 0, combo: null, time: new Date().toISOString() },
+  });
+  reseed();
+  const fullText = await (await fetch(`${BASE}/bot/backup?audience=1`, { headers: { cookie } })).text();
+  const full = JSON.parse(fullText);
+  const coreBackup = JSON.parse(await (await fetch(`${BASE}/bot/backup`, { headers: { cookie } })).text());
+  const allTables = [...store.WORKSPACE_BACKUP_TABLES.core, ...store.WORKSPACE_BACKUP_TABLES.audience].map((table) => table.name);
+  const missing = allTables.filter((name) => !Array.isArray(full.data.tables[name]));
+  check("전체 백업: 모든 테이블 포함", missing.length === 0, missing.join(","));
+  const mustHaveRows = ["bot_settings", "bot_counters", "secret_word_queue", "secret_word_rounds", "team_battle_settings", "team_battles", "team_members", "broadcasts", "attendance_settings", "attendance", "audience_events", "roulette_items"];
+  const empty = mustHaveRows.filter((name) => !(full.data.tables[name]?.length > 0));
+  check("전체 백업: 새 기능 데이터 포함", empty.length === 0, empty.join(","));
+  check("기본 백업: 청취자 기록 제외", !("attendance" in coreBackup.data.tables) && !("audience_events" in coreBackup.data.tables) && "team_members" in coreBackup.data.tables);
+  // Wipe every table of the workspace, then restore the file through the page.
+  store.restoreWorkspaceData(sessionId, { tables: Object.fromEntries(allTables.map((name) => [name, []])) });
+  const wiped = store.exportWorkspaceData(sessionId, true).tables;
+  check("복원 전: 데이터 비움", wiped.team_battles.length === 0 && wiped.attendance.length === 0 && wiped.secret_word_queue.length === 0 && wiped.roulette_items.length === 0);
+  const fullForm = new FormData();
+  fullForm.append("backup", new Blob([fullText], { type: "application/json" }), "backup-full.json");
+  reseed();
+  const fullRestore = await fetch(`${BASE}/bot/backup`, { method: "POST", body: fullForm, redirect: "manual", headers: { cookie } });
+  const sortedTables = (tables) => JSON.stringify(Object.keys(tables).sort().map((name) => [name, tables[name].map((row) => JSON.stringify(row)).sort()]));
+  const restoredTables = store.exportWorkspaceData(sessionId, true).tables;
+  check("전체 백업 복원: 원본과 동일", new URL(fullRestore.headers.get("location")).searchParams.get("settings") === "backup_restored"
+    && sortedTables(restoredTables) === sortedTables(full.data.tables));
+  const tampered = JSON.parse(fullText);
+  tampered.data.tables.bot_counters[0].value = 999_999;
+  const tamperedForm = new FormData();
+  tamperedForm.append("backup", new Blob([JSON.stringify(tampered)], { type: "application/json" }), "tampered.json");
+  reseed();
+  const tamperedRestore = await fetch(`${BASE}/bot/backup`, { method: "POST", body: tamperedForm, redirect: "manual", headers: { cookie } });
+  check("변조된 백업 거부", new URL(tamperedRestore.headers.get("location")).searchParams.get("settings") === "backup_invalid"
+    && sortedTables(store.exportWorkspaceData(sessionId, true).tables) === sortedTables(full.data.tables));
+
   // --- Admin: list, block (requests rejected), unblock ----------------------
   let admin = await post("/admin/session", { password: ADMIN_PASSWORD, mode: "list" }, { asJson: true });
   check("관리자: 세션 목록", admin.status === 200 && admin.json?.sessions?.some((s) => s.sessionKey === sessionKey), `status ${admin.status}`);

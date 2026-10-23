@@ -734,6 +734,22 @@ const backupFiles = readdirSync(maintenance.backupsDirectory()).filter((name) =>
 assert.equal(backupFiles.length, 7);
 assert.ok(!backupFiles.includes("nagu-2026-10-01.db"));
 assert.equal(store.getAppState("maintenance:last_backup") !== null, true);
+// The daily file is a complete, readable copy of the live database.
+{
+  const { DatabaseSync } = await import("node:sqlite");
+  const { join: joinPath } = await import("node:path");
+  const latest = backupFiles.sort().at(-1);
+  const copy = new DatabaseSync(joinPath(maintenance.backupsDirectory(), latest), { readOnly: true });
+  assert.equal(copy.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+  const live = new DatabaseSync(store.getDatabasePath(), { readOnly: true });
+  const tableNames = live.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((row) => row.name);
+  assert.deepEqual(copy.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((row) => row.name), tableNames);
+  for (const table of ["oauth_sessions", "bot_settings", "attendance", "team_battles", "secret_word_rounds"]) {
+    assert.ok(tableNames.includes(table), table);
+  }
+  copy.close();
+  live.close();
+}
 assert.notEqual(maintenance.runDailyCleanup(), null);
 assert.equal(maintenance.runDailyCleanup(), null);
 
