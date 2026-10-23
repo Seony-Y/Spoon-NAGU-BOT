@@ -340,7 +340,7 @@ function mergeWorkspaceData(database: DatabaseSync, sourceKey: string, targetKey
   database.prepare("DELETE FROM team_battles WHERE workspace_key = ?").run(sourceKey);
   for (const [table, columns] of [
     ["broadcasts", "live_id, started_at"],
-    ["attendance", "user_id, live_id, nickname, attended_at, month"],
+    ["attendance", "user_id, live_id, nickname, attended_at, month, checked_in"],
     ["attendance_settings", "announce"],
   ]) {
     database.prepare(`INSERT OR IGNORE INTO ${table} (workspace_key, ${columns}) SELECT ?, ${columns} FROM ${table} WHERE workspace_key = ?`)

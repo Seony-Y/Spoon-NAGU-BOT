@@ -14,7 +14,7 @@ import {
 } from "./bot-automation";
 import { isRecentBotMessage, sendBotChat } from "./chat";
 import { clearGameAcks, flushAllGameAcks, queueGameAck } from "./chat-acks";
-import { formatMultilineMessages, resolveCommandFallback } from "./chat-message";
+import { formatMultilineMessages, resolveCommandFallback, truncateChatMessage } from "./chat-message";
 import { parseDjCommand } from "./dj-command";
 import { announceSecretWordFound, announceTeamBattleOutcome, runDjCommand } from "./live-actions";
 import {
@@ -515,7 +515,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent) {
       event.data.isDj,
       event.data.user.id,
       event.data.user.nickname,
-      (nickname, teamName) => queueGameAck(sessionKey, "team", `${nickname.slice(0, 50)}→${teamName}`),
+      (nickname, teamName) => queueGameAck(sessionKey, "team", `${truncateChatMessage(nickname, 50)}→${teamName}`),
     );
     const songRequestReply = applySongRequestCommand(
       sessionKey,

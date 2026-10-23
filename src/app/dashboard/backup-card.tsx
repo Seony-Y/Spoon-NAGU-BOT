@@ -72,7 +72,7 @@ export function BackupCard({ view }: { view: DashboardView }) {
       <section className="data-reset" aria-labelledby="data-reset-title">
         <div>
           <h3 id="data-reset-title">모든 데이터 초기화</h3>
-          <p>위 백업에 들어가는 데이터를 전부 지웁니다. 운영 데이터와 청취자 기록, 진행 중인 게임까지 모두 지워지고 설정은 기본값으로 돌아갑니다. 로그인과 봇 입장 상태는 유지됩니다.</p>
+          <p>위 백업에 들어가는 데이터를 전부 지웁니다. 운영 데이터와 청취자 기록, 진행 중인 게임까지 모두 지워지고 설정은 기본값으로 돌아갑니다. 로그인과 봇 입장 상태는 유지됩니다. 방송 중이라면 화면의 최근 활동과 받은 하트 수는 방송이 끝날 때까지 남아 있습니다.</p>
           <p><strong>되돌릴 수 없습니다.</strong> 먼저 <a href="/bot/backup?audience=1">청취자 기록 포함 백업</a>을 내려받아 두세요.</p>
         </div>
         <form action="/bot/reset" method="post">

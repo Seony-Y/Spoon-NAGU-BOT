@@ -25,7 +25,8 @@ export default async function Home({ searchParams }: HomeProps) {
     <div className="site-shell">
       <SiteHeader connectionStatus={connected ? "connected" : "waiting"} />
 
-      <main>
+      {/* Remounted after each form submit, like the reload it replaces (form-navigation.tsx). */}
+      <main key={view.params.fn}>
         {isDashboardTab && !connected && <section className="hero" aria-labelledby="page-title">
           <div className="hero-inner">
             <div className="hero-copy">

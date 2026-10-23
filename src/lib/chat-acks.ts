@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAckBatcher } from "./bot-automation";
 import { sendBotChat } from "./chat";
+import { truncateChatMessage } from "./chat-message";
 
 // Batched acknowledgements of game entries, kept per bot session. Lives outside
 // bot-runtime so live actions can flush pending acks before announcing results.
@@ -37,7 +38,7 @@ function getBatcher(sessionKey: string) {
     batcher = createAckBatcher((game, nicknames) => {
       const heading = ACK_HEADINGS[game] ?? "접수 완료!";
       // Team entries arrive as "닉네임→팀" already.
-      for (const message of formatAckMessages(heading, nicknames.map((nickname) => game === "team" ? nickname : nickname.slice(0, 50)))) {
+      for (const message of formatAckMessages(heading, nicknames.map((nickname) => game === "team" ? nickname : truncateChatMessage(nickname, 50)))) {
         void sendBotChat(sessionKey, message);
       }
     });

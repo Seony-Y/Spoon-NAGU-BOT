@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 type RemoteView = "games" | "counters" | "switches";
 
 type RemoteProps = {
-  searchParams: Promise<{ r?: string; view?: string }>;
+  searchParams: Promise<{ r?: string; view?: string; fn?: string }>;
 };
 
 const RESULT_NOTICES: Record<string, { tone: "success" | "error"; text: string }> = {
@@ -138,7 +138,7 @@ function GameCard({ id, icon, title, status, active, children }: {
 }
 
 export default async function RemotePage({ searchParams }: RemoteProps) {
-  const { r, view: viewParam } = await searchParams;
+  const { r, view: viewParam, fn } = await searchParams;
   const view: RemoteView = viewParam === "counters" || viewParam === "switches" ? viewParam : "games";
   const sessionId = (await cookies()).get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);
@@ -297,8 +297,9 @@ export default async function RemotePage({ searchParams }: RemoteProps) {
     switches: `${switchesOn}`,
   };
 
+  // Remounted after each form submit, like the reload it replaces (form-navigation.tsx).
   return (
-    <main className="remote">
+    <main className="remote" key={fn}>
       <AutoRefresh intervalMs={3000} />
       <ClearStatusParams keys="r" delayMs={4000} />
       <header className="remote-header">

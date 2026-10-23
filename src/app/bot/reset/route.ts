@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { ensureBotRunning } from "@/lib/bot-runtime";
 import { SESSION_COOKIE } from "@/lib/session";
-import { getCurrentLiveIdByKey, getSessionKey, recordBroadcastByKey, resetWorkspaceData } from "@/lib/session-store";
+import { getCurrentLiveIdByKey, getSessionKey, getWorkspaceBotSessionKey, recordBroadcastByKey, resetWorkspaceData } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
 
 export const runtime = "nodejs";
@@ -25,10 +25,12 @@ export async function POST(request: NextRequest) {
   if (String(formData.get("confirm") ?? "").trim() !== RESET_CONFIRM_WORD) return redirect(request, "data_reset_unconfirmed");
   if (!resetWorkspaceData(sessionId)) return redirect(request, "data_reset_failed");
 
-  // Keep the broadcast in progress counted for attendance streaks.
+  // Keep the broadcast in progress counted for attendance streaks. The bot may
+  // run on another of the DJ's devices, which holds the current broadcast.
   const sessionKey = getSessionKey(sessionId);
-  const liveId = getCurrentLiveIdByKey(sessionKey);
-  if (liveId !== undefined) recordBroadcastByKey(sessionKey, liveId);
+  const botKey = getWorkspaceBotSessionKey(sessionKey) ?? sessionKey;
+  const liveId = getCurrentLiveIdByKey(botKey);
+  if (liveId !== undefined) recordBroadcastByKey(botKey, liveId);
   ensureBotRunning(sessionId);
   return redirect(request, "data_reset");
 }
