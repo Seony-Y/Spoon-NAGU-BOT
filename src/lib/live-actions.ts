@@ -250,7 +250,7 @@ export async function finishSecretWord(sessionKey: string): Promise<LiveActionRe
 export function announceSecretWordFound(sessionKey: string, round: { word: string; winnerNickname: string | null; startedAt: number; foundAt: number | null }) {
   const elapsed = formatDuration((round.foundAt ?? Date.now()) - round.startedAt);
   void announce(sessionKey, [
-    `[비밀 단어] ${round.winnerNickname ?? "청취자"}님이 비밀 단어를 찾았어요! 정답: ${round.word} (${elapsed} 만에)`,
+    `[비밀 단어] ${round.winnerNickname ?? "청취자"}님이 비밀 단어를 찾았어요! 정답: ${round.word} (${elapsed})`,
   ]);
 }
 

@@ -114,7 +114,7 @@ export function SecretWordPanel({ view }: { view: DashboardView }) {
             {secretWordHistory.map((round) => (
               <li key={round.roundId}>
                 <strong>{round.word}</strong>
-                <span>{round.winnerNickname ? `${round.winnerNickname}님 · ${formatDuration((round.foundAt ?? round.startedAt) - round.startedAt)} 만에` : "찾은 사람 없음"}</span>
+                <span>{round.winnerNickname ? `${round.winnerNickname}님 (${formatDuration((round.foundAt ?? round.startedAt) - round.startedAt)})` : "찾은 사람 없음"}</span>
                 <time dateTime={new Date(round.endedAt ?? round.startedAt).toISOString()}>{formatDateTime(round.endedAt ?? round.startedAt)}</time>
               </li>
             ))}
