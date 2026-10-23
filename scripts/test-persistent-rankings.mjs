@@ -676,6 +676,9 @@ assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석 해요", "a1
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러", 9005), "[출석] 출석러님 출석 완료! 연속 3회 (누적 4회)");
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러", 9005), "[출석] 출석러님은 이미 출석했어요. 연속 3회 (누적 4회)");
 assert.equal(store.applyAttendanceCommand(firstSessionKey, "!출석", "a2", "하루", 9005), "[출석] 하루님 출석 완료! 연속 1회 (누적 1회)");
+// A restore keeps who already checked in, even though backups do not carry it.
+store.restoreWorkspaceData(firstSessionId, { tables: { attendance: store.exportWorkspaceData(firstSessionId, true).tables.attendance } });
+assert.match(store.applyAttendanceCommand(firstSessionKey, "!출석", "a1", "출석러", 9005), /이미 출석했어요/);
 {
   const { formatAckMessages } = await import("../src/lib/chat-acks.ts");
   assert.deepEqual(formatAckMessages("[가위바위보] 참여 완료!", ["GULING", "청취자2"]), ["[가위바위보] 참여 완료! (GULING, 청취자2)"]);

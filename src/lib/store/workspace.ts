@@ -484,6 +484,11 @@ export function restoreWorkspaceData(sessionId: string, backup: WorkspaceBackupD
 
   database.exec("BEGIN IMMEDIATE");
   try {
+    // checked_in (whether `!출석` was answered this broadcast) is not in backups;
+    // keep it for rows the restore brings back so "출석 완료!" is not repeated.
+    const checkedIn = Object.hasOwn(backup.tables, "attendance")
+      ? database.prepare("SELECT user_id, live_id FROM attendance WHERE workspace_key = ? AND checked_in = 1").all(workspaceKey) as Array<{ user_id: string; live_id: number }>
+      : [];
     for (const specification of [...includedSpecifications].reverse()) {
       database.prepare(`DELETE FROM ${specification.name} WHERE ${specification.key} = ?`)
         .run(workspaceKey);
@@ -499,6 +504,8 @@ export function restoreWorkspaceData(sessionId: string, backup: WorkspaceBackupD
         insert.run(workspaceKey, ...specification.columns.map((column) => row[column]));
       }
     }
+    const markCheckedIn = database.prepare("UPDATE attendance SET checked_in = 1 WHERE workspace_key = ? AND user_id = ? AND live_id = ?");
+    for (const row of checkedIn) markCheckedIn.run(workspaceKey, row.user_id, row.live_id);
     database.exec("COMMIT");
   } catch {
     database.exec("ROLLBACK");
