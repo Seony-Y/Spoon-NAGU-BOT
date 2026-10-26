@@ -371,7 +371,16 @@ function migrateDatabase(database: DatabaseSync) {
   }
   database.exec(`
     CREATE INDEX IF NOT EXISTS song_requests_session_idx
-    ON song_requests (session_key, id)
+    ON song_requests (session_key, id);
+    -- Donation de-duplication (donor + time) on every donation and backfill.
+    CREATE INDEX IF NOT EXISTS audience_events_user_time_idx
+    ON audience_events (workspace_key, user_id, occurred_at);
+    -- Per-broadcast reads: bot start restore and the current-broadcast ranking.
+    CREATE INDEX IF NOT EXISTS audience_events_live_idx
+    ON audience_events (workspace_key, live_id, event_type, user_id);
+    -- Sessions are matched by their workspace, falling back to their own key.
+    CREATE INDEX IF NOT EXISTS oauth_sessions_workspace_idx
+    ON oauth_sessions (COALESCE(workspace_key, id_hash));
   `);
 
   const rpsRoundColumns = database.prepare("PRAGMA table_info(rps_rounds)").all() as Array<{
@@ -514,13 +523,27 @@ function instrumentStatement(statement: StatementSync, sql: string) {
   });
 }
 
+// Store functions call prepare() on every use; compiling the SQL each time cost
+// about ten times the query itself, so statements are reused by their SQL text.
+// The SQL in this app is a fixed set (only table names are interpolated), and
+// the cap just guards against that changing.
+const STATEMENT_CACHE_LIMIT = 1000;
+
 function instrumentDatabase(database: DatabaseSync) {
+  const statements = new Map<string, StatementSync>();
   return new Proxy(database, {
     get(target, property) {
       const value = Reflect.get(target, property, target);
       if (typeof value !== "function") return value;
       if (property === "prepare") {
-        return (sql: string) => instrumentStatement(target.prepare(sql), sql);
+        return (sql: string) => {
+          const cached = statements.get(sql);
+          if (cached) return cached;
+          const statement = instrumentStatement(target.prepare(sql), sql);
+          if (statements.size >= STATEMENT_CACHE_LIMIT) statements.clear();
+          statements.set(sql, statement);
+          return statement;
+        };
       }
       if (property === "exec") {
         return (sql: string) => timeQuery(sql, () => target.exec(sql));
@@ -573,6 +596,10 @@ export function getDatabase() {
   database.exec("PRAGMA synchronous = NORMAL");
   migrateDatabase(database);
   migratedDatabase = database;
+  // Without statistics the planner can pick the wrong index. The limit keeps
+  // this to a sample per index, so it stays quick on a large database.
+  database.exec("PRAGMA analysis_limit = 400");
+  database.exec("PRAGMA optimize = 0x10002");
 
   globalForDatabase.naguSessionDatabase = database;
   return database;
@@ -587,6 +614,11 @@ export function getWorkspaceKey(sessionKey: string) {
     "SELECT workspace_key FROM oauth_sessions WHERE id_hash = ?",
   ).get(sessionKey) as Pick<SessionRow, "workspace_key"> | undefined;
   return row?.workspace_key || sessionKey;
+}
+
+// Refreshes planner statistics for tables that changed a lot; run daily.
+export function optimizeDatabase() {
+  getDatabase().exec("PRAGMA optimize");
 }
 
 // Folds the WAL into the main database file; best effort at shutdown.

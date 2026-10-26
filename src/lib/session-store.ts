@@ -8,6 +8,7 @@ export {
   getDatabasePath,
   getSessionKey,
   isDatabaseOnPersistentVolume,
+  optimizeDatabase,
   setAppState,
 } from "./store/db";
 export * from "./store/maintenance";

@@ -10,6 +10,7 @@ import {
   deleteStaleSessions,
   getAppState,
   getDatabasePath,
+  optimizeDatabase,
   setAppState,
 } from "./session-store";
 
@@ -66,6 +67,8 @@ export function runDailyCleanup(now = Date.now()) {
     rouletteResults: deleteOldRouletteResults(now - envNumber("ROULETTE_RESULT_RETENTION_DAYS", 365) * DAY_MS),
     audienceRows: compactAudienceHistory(now - envNumber("AUDIENCE_EVENT_RETENTION_DAYS", 180) * DAY_MS),
   };
+  // After the deletes, so the statistics reflect what is left.
+  optimizeDatabase();
   setAppState("maintenance:last_cleanup", today);
   return result;
 }
