@@ -3,7 +3,8 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
+import { sendAlert } from "../alerts";
 
 export type SessionRow = {
   id_hash: string;
@@ -467,6 +468,64 @@ function migrateDatabase(database: DatabaseSync) {
   );
 }
 
+// Every query runs synchronously on the one event loop all bots share, so a
+// slow one stalls every broadcast at once. Queries at or above SLOW_QUERY_MS
+// (default 100) are logged with their SQL (never their parameters), and lock
+// timeouts raise an alert. Tunable through env: SLOW_QUERY_MS.
+const SLOW_QUERY_MS = Number(process.env.SLOW_QUERY_MS) > 0 ? Number(process.env.SLOW_QUERY_MS) : 100;
+
+function timeQuery<T>(sql: string, run: () => T): T {
+  const startedAt = performance.now();
+  try {
+    return run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/database is (locked|busy)/iu.test(message)) {
+      sendAlert("db-busy", `DB 잠금 대기 시간 초과: ${message} (${sqlLabel(sql)})`);
+    }
+    throw error;
+  } finally {
+    const elapsed = performance.now() - startedAt;
+    if (elapsed >= SLOW_QUERY_MS) {
+      console.warn(`[slow-query] ${Math.round(elapsed)}ms ${sqlLabel(sql)}`);
+    }
+  }
+}
+
+function sqlLabel(sql: string) {
+  const compact = sql.replace(/\s+/gu, " ").trim();
+  return compact.length > 200 ? `${compact.slice(0, 200)}…` : compact;
+}
+
+function instrumentStatement(statement: StatementSync, sql: string) {
+  return new Proxy(statement, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (property === "run" || property === "get" || property === "all") {
+        return (...args: unknown[]) => timeQuery(sql, () => value.apply(target, args));
+      }
+      return value.bind(target);
+    },
+  });
+}
+
+function instrumentDatabase(database: DatabaseSync) {
+  return new Proxy(database, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (property === "prepare") {
+        return (sql: string) => instrumentStatement(target.prepare(sql), sql);
+      }
+      if (property === "exec") {
+        return (sql: string) => timeQuery(sql, () => target.exec(sql));
+      }
+      return value.bind(target);
+    },
+  });
+}
+
 // Module-scoped so migrations run once per process, yet rerun when this module
 // is re-evaluated by dev HMR while the connection itself is reused.
 let migratedDatabase: DatabaseSync | undefined;
@@ -505,7 +564,7 @@ export function getDatabase() {
 
   // Wait briefly instead of failing at once if another process (a deploy
   // overlap, the sqlite CLI, a backup) holds the write lock.
-  const database = new DatabaseSync(databasePath, { timeout: 5_000 });
+  const database = instrumentDatabase(new DatabaseSync(databasePath, { timeout: 5_000 }));
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA synchronous = NORMAL");
   migrateDatabase(database);

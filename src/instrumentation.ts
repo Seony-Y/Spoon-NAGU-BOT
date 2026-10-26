@@ -14,6 +14,8 @@ export async function register() {
     restoreEnabledBots();
     const { startMaintenance } = await import("./lib/maintenance");
     startMaintenance();
+    const { startMetrics } = await import("./lib/metrics");
+    startMetrics();
     // Next handles these signals and exits soon after; this runs alongside it
     // as a best effort, so it must stay synchronous.
     const onShutdown = () => {

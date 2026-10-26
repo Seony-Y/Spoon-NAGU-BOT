@@ -1038,6 +1038,15 @@ export function getBotSnapshot(sessionId: string): BotSnapshot {
   };
 }
 
+// Bots with a live worker task in this process, for the metrics log.
+export function countRunningBots() {
+  let count = 0;
+  for (const runtime of runtimes.values()) {
+    if (runtime.task) count += 1;
+  }
+  return count;
+}
+
 export function restoreEnabledBots() {
   if (globalForBots.naguBotRestoreStarted) return;
   globalForBots.naguBotRestoreStarted = true;
