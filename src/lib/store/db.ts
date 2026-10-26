@@ -369,6 +369,10 @@ function migrateDatabase(database: DatabaseSync) {
   if (!songRequestColumns.some((column) => column.name === "artist")) {
     database.exec("ALTER TABLE song_requests ADD COLUMN artist TEXT NOT NULL DEFAULT ''");
   }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS song_requests_session_idx
+    ON song_requests (session_key, id)
+  `);
 
   const rpsRoundColumns = database.prepare("PRAGMA table_info(rps_rounds)").all() as Array<{
     name: string;

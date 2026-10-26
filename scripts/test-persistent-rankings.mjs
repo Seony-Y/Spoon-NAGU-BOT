@@ -465,6 +465,22 @@ assert.equal(store.getBotSettings(secondSessionId).djNickname, "DJ 나구");
 assert.equal(store.listRecentBotEventsByKey(secondSessionKey)[0].type, "presence");
 store.clearRecentBotEventsByKey(secondSessionKey);
 assert.deepEqual(store.listRecentBotEventsByKey(secondSessionKey), []);
+// Trimmed in batches: the newest 50 are listed and the table stays bounded.
+for (let index = 0; index < 120; index += 1) {
+	store.recordRecentBotEventByKey(
+		secondSessionKey,
+		{ ...presence, id: `event-trim-${index}` },
+		new Date(Date.UTC(2026, 9, 1, 0, 0, index)).toISOString(),
+	);
+}
+const recentAfterBurst = store.listRecentBotEventsByKey(secondSessionKey);
+assert.equal(recentAfterBurst.length, 50);
+assert.equal(recentAfterBurst[0].id, "event-trim-119");
+assert.equal(recentAfterBurst.at(-1).id, "event-trim-70");
+const recentReader = new DatabaseSync(process.env.SESSION_STORE_PATH, { readOnly: true });
+assert.ok(recentReader.prepare("SELECT COUNT(*) AS count FROM recent_bot_events").get().count <= 100);
+recentReader.close();
+store.clearRecentBotEventsByKey(secondSessionKey);
 assert.deepEqual(
 	store.listRouletteKeeps(secondSessionId).map((keep) => [keep.nickname, keep.itemLabel, keep.count]),
 	[["룰렛팬", "노래 신청권", 2], ["룰렛팬", "커피 쿠폰", 2]],

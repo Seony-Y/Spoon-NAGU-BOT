@@ -23,6 +23,16 @@ export type PersistedBotEvent = {
   receivedAt: string;
 };
 
+const RECENT_EVENT_LIMIT = 50;
+
+// Inserts since the last trim of recent_bot_events, per workspace. Lost on
+// restart, which only delays the next trim.
+const globalForAudience = globalThis as typeof globalThis & {
+  naguRecentEventInserts?: Map<string, number>;
+};
+const recentEventInserts = globalForAudience.naguRecentEventInserts ?? new Map<string, number>();
+globalForAudience.naguRecentEventInserts = recentEventInserts;
+
 function getEventTime(event: Exclude<ParsedSseEvent, { event: "end" }>) {
   const value = event.event === "chat" ? event.data.sentTime : event.data.time;
   const timestamp = Date.parse(value);
@@ -192,14 +202,23 @@ export function recordRecentBotEventByKey(
     JSON.stringify(event.data),
     Number.isNaN(timestamp) ? Date.now() : timestamp,
   );
+  // Trimming on every event doubled the writes on the busiest path, so it runs
+  // once per RECENT_EVENT_LIMIT inserts: the table holds at most twice the
+  // limit per workspace, and reads still return the newest RECENT_EVENT_LIMIT.
+  const inserted = (recentEventInserts.get(workspaceKey) ?? 0) + 1;
+  if (inserted < RECENT_EVENT_LIMIT) {
+    recentEventInserts.set(workspaceKey, inserted);
+    return;
+  }
+  recentEventInserts.delete(workspaceKey);
   database.prepare(`
     DELETE FROM recent_bot_events
     WHERE workspace_key = ? AND event_id NOT IN (
       SELECT event_id FROM recent_bot_events
       WHERE workspace_key = ?
-      ORDER BY received_at DESC LIMIT 50
+      ORDER BY received_at DESC LIMIT ?
     )
-  `).run(workspaceKey, workspaceKey);
+  `).run(workspaceKey, workspaceKey, RECENT_EVENT_LIMIT);
 }
 
 export function listRecentBotEventsByKey(sessionKey: string): PersistedBotEvent[] {
@@ -207,8 +226,8 @@ export function listRecentBotEventsByKey(sessionKey: string): PersistedBotEvent[
     SELECT event_id, event_type, data_json, received_at
     FROM recent_bot_events
     WHERE workspace_key = ?
-    ORDER BY received_at DESC LIMIT 50
-  `).all(getWorkspaceKey(sessionKey)) as Array<{
+    ORDER BY received_at DESC LIMIT ?
+  `).all(getWorkspaceKey(sessionKey), RECENT_EVENT_LIMIT) as Array<{
     event_id: string;
     event_type: PersistedBotEvent["type"];
     data_json: string;
