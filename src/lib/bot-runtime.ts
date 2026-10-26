@@ -15,6 +15,7 @@ import {
 import { isRecentBotMessage, sendBotChat } from "./chat";
 import { clearGameAcks, flushAllGameAcks, flushGameAcks, queueGameAck } from "./chat-acks";
 import { formatMultilineMessages, resolveCommandFallback, truncateChatMessage } from "./chat-message";
+import { createCommandCooldown } from "./command-cooldown";
 import { formatFundingReached } from "./counter-command";
 import { parseDjCommand } from "./dj-command";
 import { announceSecretWordFound, announceTeamBattleOutcome, runDjCommand } from "./live-actions";
@@ -174,10 +175,13 @@ type BotRuntime = BotSnapshot & {
 const globalForBots = globalThis as typeof globalThis & {
   naguBotRuntimes?: Map<string, BotRuntime>;
   naguBotRestoreStarted?: boolean;
+  naguCommandCooldown?: ReturnType<typeof createCommandCooldown>;
 };
 
 const runtimes = globalForBots.naguBotRuntimes ?? new Map<string, BotRuntime>();
 globalForBots.naguBotRuntimes = runtimes;
+const commandCooldown = globalForBots.naguCommandCooldown ?? createCommandCooldown();
+globalForBots.naguCommandCooldown = commandCooldown;
 
 function hasEventScope(scope: string) {
   const scopes = scope.split(" ");
@@ -490,7 +494,8 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent, { fromDashboard 
       Date.now(),
     );
     if (foundSecret) announceSecretWordFound(sessionKey, foundSecret);
-    const command = event.data.message.trim().toLocaleLowerCase("ko-KR");
+    if (!event.data.isDj && !commandCooldown.allow(sessionKey, event.data.user.id, event.data.message)) return;
+    const command =event.data.message.trim().toLocaleLowerCase("ko-KR");
     const attendanceReply = applyAttendanceCommand(sessionKey, event.data.message, event.data.user.id, event.data.user.nickname, runtime.currentLiveId, event.data.isDj);
     if (attendanceReply) {
       void sendBotChat(sessionKey, attendanceReply);
@@ -557,6 +562,7 @@ function recordEvent(sessionKey: string, event: ParsedSseEvent, { fromDashboard 
       event.data.message,
       event.data.isDj,
       event.data.user.nickname,
+      event.data.user.id,
     );
     if (Array.isArray(songRequestReply)) {
       for (const message of songRequestReply) void sendBotChat(sessionKey, message);

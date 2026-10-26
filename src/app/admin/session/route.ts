@@ -3,6 +3,7 @@ import { verifyAdminPassword } from "@/lib/admin-auth";
 import { blockBotByKey } from "@/lib/bot-runtime";
 import { createFailureLimiter, getClientKey } from "@/lib/rate-limit";
 import { listAdminSessions, setSessionBlockedByKey } from "@/lib/session-store";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
-  const formData = await request.formData().catch(() => new FormData());
+  const formData = await readFormData(request);
   if (!verifyAdminPassword(String(formData.get("password") ?? ""))) {
     limiter.recordFailure(clientKey);
     return NextResponse.json({ error: "authentication_required" }, { status: 401 });

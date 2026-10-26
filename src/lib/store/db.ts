@@ -369,6 +369,10 @@ function migrateDatabase(database: DatabaseSync) {
   if (!songRequestColumns.some((column) => column.name === "artist")) {
     database.exec("ALTER TABLE song_requests ADD COLUMN artist TEXT NOT NULL DEFAULT ''");
   }
+  // For the per-listener limit only; kept out of backups (fixed columns).
+  if (!songRequestColumns.some((column) => column.name === "requester_user_id")) {
+    database.exec("ALTER TABLE song_requests ADD COLUMN requester_user_id TEXT");
+  }
   database.exec(`
     CREATE INDEX IF NOT EXISTS song_requests_session_idx
     ON song_requests (session_key, id);

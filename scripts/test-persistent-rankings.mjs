@@ -307,6 +307,23 @@ assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 삭제 2
 assert.deepEqual(store.listSongRequests(firstSessionId).map((request) => [request.number, request.title]), [[1, "밤편지"], [2, "너랑나"]]);
 assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 삭제 9", true, "DJ"), /찾지 못했어요/);
 store.clearSongRequests(firstSessionId);
+// Limits: 5 waiting requests per listener (not the DJ), 100 in total.
+for (let index = 1; index <= 5; index += 1) {
+	assert.match(store.applySongRequestCommand(firstSessionKey, `!신청곡 곡${index}-가수`, false, "열혈 청취자", "eager-listener"), /접수 완료!$/);
+}
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 곡6-가수", false, "열혈 청취자", "eager-listener"), /한 사람당 5곡까지/);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 다른곡-가수", false, "다른 청취자", "other-listener"), /^신청곡 6번 /);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 DJ곡-가수", true, "DJ", "dj-user"), /^신청곡 7번 /);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 삭제 1", true, "DJ"), /삭제했어요/);
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 곡7-가수", false, "열혈 청취자", "eager-listener"), /접수 완료!$/, "a slot frees up after a deletion");
+for (let index = 0; store.listSongRequests(firstSessionId).length < 100; index += 1) {
+	store.applySongRequestCommand(firstSessionKey, `!신청곡 채움${index}-가수`, true, "DJ", "dj-user");
+}
+assert.match(store.applySongRequestCommand(firstSessionKey, "!신청곡 넘침-가수", true, "DJ", "dj-user"), /가득 찼어요/);
+const fullList = store.applySongRequestCommand(firstSessionKey, "!신청곡 목록", false, "청취자 A", "list-listener");
+assert.ok(fullList.length <= 3);
+assert.match(fullList.at(-1), /…외 \d+곡$/);
+store.clearSongRequests(firstSessionId);
 store.applySongRequestCommand(firstSessionKey, "!신청곡 밤편지-아이유", false, "청취자 A");
 
 // Funding counter: goal display, donations add spoons, the goal is reported once.
@@ -627,6 +644,34 @@ store.linkDjWorkspaceByKey(loginAKey, "other-dj-id", "다른 DJ");
 assert.equal(store.getSessionDjUserIdByKey(loginAKey), "other-dj-id");
 assert.equal(store.listBotCommands(loginA).some((command) => command.command === "!로그인"), false);
 assert.ok(store.listBotCommands(loginB).some((command) => command.command === "!로그인"));
+
+// Login always issues a fresh session; the one it replaces in this browser is retired.
+const retireDj = "retire-dj-id";
+const unlinkedBefore = "retire-unlinked-before";
+store.saveSession(unlinkedBefore, token);
+store.upsertBotCommand(unlinkedBefore, "!미연결", "연결 전에 만든 명령");
+const retireFresh = "retire-fresh-login";
+store.saveSession(retireFresh, token);
+store.linkDjWorkspaceByKey(store.getSessionKey(retireFresh), retireDj, null);
+store.retirePreviousSession(store.getSessionKey(unlinkedBefore), retireDj);
+assert.ok(store.listBotCommands(retireFresh).some((command) => command.command === "!미연결"), "data saved before identification joins the DJ");
+assert.equal(store.getSession(unlinkedBefore), null, "the replaced session is signed out");
+assert.ok(store.getSession(retireFresh));
+// The same DJ's previous session keeps running when it runs the bot.
+const botBefore = "retire-bot-before";
+store.saveSession(botBefore, token);
+store.linkDjWorkspaceByKey(store.getSessionKey(botBefore), retireDj, null);
+store.setBotEnabled(botBefore, true);
+store.retirePreviousSession(store.getSessionKey(botBefore), retireDj);
+assert.ok(store.getSession(botBefore), "a session running the bot stays valid");
+store.setBotEnabled(botBefore, false);
+// Another DJ's session in a shared browser is left alone.
+store.retirePreviousSession(loginAKey, retireDj);
+assert.ok(store.getSession(loginA));
+assert.equal(store.getSessionDjUserIdByKey(loginAKey), "other-dj-id");
+// An id the database has never seen is ignored.
+store.retirePreviousSession(store.getSessionKey("never-issued"), retireDj);
+assert.equal(store.getSession("never-issued"), null);
 
 // Batched acknowledgements: an accepted entry goes to the callback, not a reply.
 const ackedNames = [];

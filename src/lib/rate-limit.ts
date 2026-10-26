@@ -51,8 +51,11 @@ export function createFailureLimiter(name: string, options: {
   };
 }
 
+// The last X-Forwarded-For entry is the one added by the proxy in front of the
+// app; earlier entries come from the client and can be anything, which made
+// every attempt look like a new client and left only the global limit.
 export function getClientKey(request: NextRequest) {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+  return request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim()
     || request.headers.get("x-real-ip")
     || "unknown";
 }

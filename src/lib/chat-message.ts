@@ -33,6 +33,23 @@ export function formatMultilineMessages(
   return messages;
 }
 
+// Like formatMultilineMessages, but at most maxMessages messages: lines that do
+// not fit are dropped and summarized by a last line from moreLine(count).
+export function formatLimitedMultilineMessages(
+  heading: string,
+  continuationHeading: string,
+  lines: string[],
+  maxMessages: number,
+  moreLine: (remaining: number) => string,
+) {
+  for (let shown = lines.length; shown > 0; shown -= 1) {
+    const kept = shown === lines.length ? lines : [...lines.slice(0, shown), moreLine(lines.length - shown)];
+    const messages = formatMultilineMessages(heading, continuationHeading, kept);
+    if (messages.length <= maxMessages) return messages;
+  }
+  return formatMultilineMessages(heading, continuationHeading, [moreLine(lines.length)]);
+}
+
 export function getCommandReply(message: string, nickname: string | null) {
   switch (message.trim().toLocaleLowerCase("ko-KR")) {
     case "!안녕": {

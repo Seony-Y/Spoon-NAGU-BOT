@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/session";
 import { setAttendanceAnnounce } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
   const session = await getAuthSession(sessionId);
   if (!sessionId || !session) return redirect(request, "authentication_required");
 
-  const formData = await request.formData().catch(() => new FormData());
+  const formData = await readFormData(request);
   const announce = String(formData.get("announce") ?? "");
   if (announce !== "on" && announce !== "off") return redirect(request, "invalid_action");
   setAttendanceAnnounce(sessionId, announce === "on");

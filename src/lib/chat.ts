@@ -24,6 +24,7 @@ export type ChatSendResult =
 const globalForChat = globalThis as typeof globalThis & {
   naguChatQueues?: Map<string, Promise<ChatSendResult>>;
   naguRecentlySentChats?: Map<string, Array<{ text: string; at: number }>>;
+  naguQueuedChatCounts?: Map<string, number>;
 };
 
 const chatQueues = globalForChat.naguChatQueues ?? new Map<string, Promise<ChatSendResult>>();
@@ -136,7 +137,19 @@ export function isRecentBotMessage(sessionKey: string, message: string) {
     .some((entry) => entry.text === text && now - entry.at < SENT_ECHO_WINDOW_MS);
 }
 
+// Messages are sent one at a time; past this many waiting for one session,
+// new ones are dropped instead of piling up in memory behind a slow or
+// rate-limited Spoon.
+const MAX_QUEUED_CHATS = 30;
+const queuedCounts = globalForChat.naguQueuedChatCounts ?? new Map<string, number>();
+globalForChat.naguQueuedChatCounts = queuedCounts;
+
 function enqueueChat(sessionKey: string, message: string, rememberAsBot = true) {
+  const waiting = queuedCounts.get(sessionKey) ?? 0;
+  if (waiting >= MAX_QUEUED_CHATS) {
+    return Promise.resolve<ChatSendResult>({ kind: "rate_limited" });
+  }
+  queuedCounts.set(sessionKey, waiting + 1);
   const previous = chatQueues.get(sessionKey) ?? Promise.resolve<ChatSendResult>({ kind: "sent" });
   const queued = previous
     .catch(() => ({ kind: "unavailable" }) as ChatSendResult)
@@ -155,6 +168,9 @@ function enqueueChat(sessionKey: string, message: string, rememberAsBot = true) 
 
   chatQueues.set(sessionKey, queued);
   void queued.finally(() => {
+    const remaining = (queuedCounts.get(sessionKey) ?? 1) - 1;
+    if (remaining > 0) queuedCounts.set(sessionKey, remaining);
+    else queuedCounts.delete(sessionKey);
     if (chatQueues.get(sessionKey) === queued) chatQueues.delete(sessionKey);
   }).catch(() => undefined);
   return queued;

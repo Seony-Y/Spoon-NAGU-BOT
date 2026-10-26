@@ -21,6 +21,7 @@ import {
   upsertBotCommand,
 } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -61,7 +62,7 @@ function redirect(request: NextRequest, status: string, automation?: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const formData = await request.formData().catch(() => new FormData());
+  const formData = await readFormData(request);
   const mode = formData.get("mode");
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);

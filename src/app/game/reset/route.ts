@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/session";
 import { RESETTABLE_GAMES, resetGameHistory, type ResettableGame } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -17,13 +18,13 @@ function redirect(request: NextRequest, game: string, status: string) {
 // Dashboard sessions belong to the DJ (or their own devices), so any signed-in
 // session of the workspace may reset its game records.
 export async function POST(request: NextRequest) {
-  const formData = await request.formData().catch(() => new FormData());
-  const game = String(formData.get("game") ?? "") as ResettableGame;
-  const target = RESETTABLE_GAMES.includes(game) ? game : "rps";
-
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await getAuthSession(sessionId);
-  if (!sessionId || !session) return redirect(request, target, "authentication_required");
+  if (!sessionId || !session) return redirect(request, "rps", "authentication_required");
+
+  const formData = await readFormData(request);
+  const game = String(formData.get("game") ?? "") as ResettableGame;
+  const target = RESETTABLE_GAMES.includes(game) ? game : "rps";
   if (!RESETTABLE_GAMES.includes(game)) return redirect(request, target, "invalid");
 
   resetGameHistory(sessionId, game);

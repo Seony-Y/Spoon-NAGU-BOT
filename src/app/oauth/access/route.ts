@@ -8,6 +8,7 @@ import {
 } from "@/lib/access-code";
 import { createFailureLimiter, getClientKey } from "@/lib/rate-limit";
 import { buildApplicationUrl } from "@/lib/spoon";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
-  const formData = await request.formData().catch(() => new FormData());
+  const formData = await readFormData(request);
   if (!verifyAccessCode(String(formData.get("code") ?? ""))) {
     limiter.recordFailure(clientKey);
     return NextResponse.json({ error: "invalid" }, { status: 401 });

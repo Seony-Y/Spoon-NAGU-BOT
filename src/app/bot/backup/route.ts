@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { ensureBotRunning, settleBotAfterDataChange } from "@/lib/bot-runtime";
 import { SESSION_COOKIE } from "@/lib/session";
+import { readLimitedFormData } from "@/lib/request-body";
 import { buildApplicationUrl } from "@/lib/spoon";
 import {
   createSignedWorkspaceBackup,
@@ -47,11 +48,11 @@ export async function POST(request: NextRequest) {
   const sessionId = await authenticate(request);
   if (!sessionId) return redirect(request, "authentication_required");
 
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (contentLength > MAX_BACKUP_BYTES) return redirect(request, "backup_too_large");
-
   try {
-    const formData = await request.formData().catch(() => new FormData());
+    // The limit covers the whole multipart body, so it allows a little more
+    // than the file itself; the file size is checked again below.
+    const formData = await readLimitedFormData(request, MAX_BACKUP_BYTES + 64 * 1024);
+    if (formData === "too_large") return redirect(request, "backup_too_large");
     const file = formData.get("backup");
     if (!(file instanceof File) || file.size === 0 || file.size > MAX_BACKUP_BYTES) {
       return redirect(request, file instanceof File && file.size > MAX_BACKUP_BYTES

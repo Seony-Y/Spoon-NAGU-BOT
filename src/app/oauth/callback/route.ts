@@ -8,7 +8,7 @@ import {
   isDjBlocked,
   isSessionBlocked,
   linkDjWorkspaceByKey,
-  sessionBelongsToOtherDj,
+  retirePreviousSession,
 } from "@/lib/session-store";
 import {
   buildApplicationUrl,
@@ -105,14 +105,14 @@ export async function GET(request: NextRequest) {
       await revokeIssuedToken(token);
       return redirectWithError(request, "account_blocked");
     }
-    const reusableSessionId = currentSessionId
-      && !(djUserId && sessionBelongsToOtherDj(getSessionKey(currentSessionId), djUserId))
-      ? currentSessionId
-      : undefined;
-    const sessionId = createAuthSession(reusableSessionId, token);
+    // Never the cookie's id: reusing it let an id known before the login (or
+    // kept after a sign-out) become valid again, and without the DJ's identity
+    // it could hand one DJ's workspace to another DJ using the same browser.
+    const sessionId = createAuthSession(undefined, token);
     if (djUserId) {
       const sessionKey = getSessionKey(sessionId);
       linkDjWorkspaceByKey(sessionKey, djUserId, null);
+      if (currentSessionId) retirePreviousSession(getSessionKey(currentSessionId), djUserId);
       // One token set per DJ (Spoon's guidance): the DJ's other devices switch
       // to this login's token and the tokens they held are revoked.
       void Promise.allSettled(adoptTokenForDjSessions(sessionKey).map((refreshToken) => revokeToken(refreshToken)));

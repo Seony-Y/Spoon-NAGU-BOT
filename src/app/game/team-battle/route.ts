@@ -9,6 +9,7 @@ import {
   type TeamBattleMetric,
 } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
   if (!sessionId || !session) return redirect(request, "authentication_required");
   const sessionKey = getSessionKey(sessionId);
 
-  const formData = await request.formData().catch(() => new FormData());
+  const formData = await readFormData(request);
   const action = String(formData.get("action") ?? "");
 
   if (action === "settings" || action === "start") {

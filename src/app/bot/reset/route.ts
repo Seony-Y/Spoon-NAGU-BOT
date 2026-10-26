@@ -4,6 +4,7 @@ import { announceInLiveBroadcast, ensureBotRunning, settleBotAfterDataChange } f
 import { SESSION_COOKIE } from "@/lib/session";
 import { resetWorkspaceData } from "@/lib/session-store";
 import { buildApplicationUrl } from "@/lib/spoon";
+import { readFormData } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   if (!sessionId || !(await getAuthSession(sessionId))) return redirect(request, "authentication_required");
 
-  const formData = await request.formData().catch(() => new FormData());
+  const formData = await readFormData(request);
   if (String(formData.get("confirm") ?? "").trim() !== RESET_CONFIRM_WORD) return redirect(request, "data_reset_unconfirmed");
   if (!resetWorkspaceData(sessionId)) return redirect(request, "data_reset_failed");
   settleBotAfterDataChange(sessionId);

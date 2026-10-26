@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
+import { createCommandCooldown, getCooldownCommand } from "../src/lib/command-cooldown.ts";
+import { readLimitedFormData } from "../src/lib/request-body.ts";
 import {
+	formatLimitedMultilineMessages,
 	formatMultilineMessages,
 	getCommandReply,
 	resolveCommandFallback,
@@ -172,4 +175,56 @@ assert.equal(parseDjCommand("!실드 +1"), null);
 assert.equal(parseDjCommand("!참여"), null);
 assert.equal(parseDjCommand("안녕하세요"), null);
 
-console.log("Chat checks passed: validation, replies, counters, song requests, and DJ commands");
+// A long list is cut to a few messages, ending with how many were left out.
+const manySongs = Array.from({ length: 100 }, (_, index) => `#${index + 1} 아주 긴 노래 제목 ${index + 1} - 가수 이름 ${index + 1}`);
+const limitedSongs = formatLimitedMultilineMessages("신청곡 목록:", "신청곡 (이어서)", manySongs, 3, (count) => `…외 ${count}곡`);
+assert.equal(limitedSongs.length, 3);
+assert.ok(limitedSongs.every((message) => message.length <= 200));
+const shownSongs = limitedSongs.join("\n").split("\n").filter((line) => line.startsWith("#")).length;
+assert.ok(limitedSongs.at(-1).endsWith(`…외 ${100 - shownSongs}곡`));
+assert.deepEqual(
+	formatLimitedMultilineMessages("목록:", "이어서", ["#1 a", "#2 b"], 3, (count) => `외 ${count}`),
+	["목록:\n#1 a\n#2 b"],
+);
+
+// Command cooldown: per listener and command word; game entries are exempt.
+const cooldown = createCommandCooldown(2_000);
+assert.equal(cooldown.allow("dj", "u1", "!명령어", 0), true);
+assert.equal(cooldown.allow("dj", "u1", "!명령어", 1_000), false);
+assert.equal(cooldown.allow("dj", "u1", " !명령어 ", 1_500), false);
+assert.equal(cooldown.allow("dj", "u2", "!명령어", 1_000), true, "another listener");
+assert.equal(cooldown.allow("other-dj", "u1", "!명령어", 1_000), true, "another broadcast");
+assert.equal(cooldown.allow("dj", "u1", "!신청곡 목록", 1_000), true, "another command");
+assert.equal(cooldown.allow("dj", "u1", "!신청곡 a-b", 1_500), false, "same command word");
+assert.equal(cooldown.allow("dj", "u1", "!명령어", 2_000), true, "after the cooldown");
+assert.equal(cooldown.allow("dj", "u1", "!정답 사과", 0), true);
+assert.equal(cooldown.allow("dj", "u1", "!정답 배", 100), true, "quiz guesses are exempt");
+assert.equal(cooldown.allow("dj", "u1", "그냥 채팅", 0), true);
+assert.equal(cooldown.allow("dj", "u1", "그냥 채팅", 100), true, "plain chat is not a command");
+assert.equal(getCooldownCommand("!!!"), "!!!");
+assert.equal(getCooldownCommand("!"), null);
+
+// Form bodies are capped while reading, with or without a declared length.
+const smallForm = new FormData();
+smallForm.set("message", "안녕");
+const smallRequest = new Request("http://localhost/", { method: "POST", body: smallForm });
+assert.equal((await readLimitedFormData(smallRequest, 1024)).get("message"), "안녕");
+const bigForm = new FormData();
+bigForm.set("message", "x".repeat(10_000));
+assert.equal(await readLimitedFormData(new Request("http://localhost/", { method: "POST", body: bigForm }), 1024), "too_large");
+const chunkedBody = new ReadableStream({
+	start(controller) {
+		for (let index = 0; index < 10; index += 1) controller.enqueue(new Uint8Array(500));
+		controller.close();
+	},
+});
+const chunkedRequest = new Request("http://localhost/", {
+	method: "POST",
+	body: chunkedBody,
+	duplex: "half",
+	headers: { "content-type": "application/x-www-form-urlencoded" },
+});
+assert.equal(await readLimitedFormData(chunkedRequest, 1024), "too_large");
+assert.equal([...(await readLimitedFormData(new Request("http://localhost/", { method: "POST", body: "garbage", headers: { "content-type": "multipart/form-data; boundary=x" } }), 1024)).keys()].length, 0);
+
+console.log("Chat checks passed: validation, replies, counters, song requests, DJ commands, list limits, cooldowns, and body limits");

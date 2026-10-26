@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatMultilineMessages } from "../chat-message";
+import { formatLimitedMultilineMessages, formatMultilineMessages } from "../chat-message";
 import { formatCounterAdjustment, formatFundingReached, parseCounterCommand } from "../counter-command";
 import { parseSongRequestCommand } from "../song-request-command";
 import { getDatabase, getSessionKey, getWorkspaceKey } from "./db";
@@ -437,11 +437,18 @@ export function clearSongRequests(sessionId: string) {
   ).run(getWorkspaceKey(getSessionKey(sessionId))).changes;
 }
 
+// A listener could otherwise queue thousands of requests and then make one
+// `!신청곡 목록` send hundreds of messages, using up the DJ's daily chat limit.
+export const SONG_REQUEST_LIMIT = 100;
+export const SONG_REQUESTS_PER_LISTENER = 5;
+const SONG_LIST_MAX_MESSAGES = 3;
+
 export function applySongRequestCommand(
   sessionKey: string,
   message: string,
   isDj: boolean,
   requesterNickname: string | null,
+  requesterUserId: string | null = null,
 ) {
   const command = parseSongRequestCommand(message);
   if (!command) return null;
@@ -458,7 +465,13 @@ export function applySongRequestCommand(
     const labels = requests.map((request) => (
       `#${request.number} ${request.title}${request.artist ? ` - ${request.artist}` : ""}`
     ));
-    return formatMultilineMessages("신청곡 목록:", "신청곡 (이어서)", labels);
+    return formatLimitedMultilineMessages(
+      "신청곡 목록:",
+      "신청곡 (이어서)",
+      labels,
+      SONG_LIST_MAX_MESSAGES,
+      (remaining) => `…외 ${remaining}곡`,
+    );
   }
   if (command.kind === "delete") {
     if (!isDj) return "신청곡 삭제는 DJ만 할 수 있어요.";
@@ -468,17 +481,30 @@ export function applySongRequestCommand(
     return `신청곡 ${command.id}번(${target.title})을 삭제했어요. 뒤 번호는 하나씩 당겨져요.`;
   }
 
+  const { count: queued } = database.prepare("SELECT COUNT(*) AS count FROM song_requests WHERE session_key = ?")
+    .get(workspaceKey) as { count: number };
+  if (queued >= SONG_REQUEST_LIMIT) {
+    return `신청곡이 가득 찼어요(최대 ${SONG_REQUEST_LIMIT}곡). DJ가 정리한 뒤 다시 신청해 주세요.`;
+  }
+  if (!isDj && requesterUserId) {
+    const { count: mine } = database.prepare(`
+      SELECT COUNT(*) AS count FROM song_requests WHERE session_key = ? AND requester_user_id = ?
+    `).get(workspaceKey, requesterUserId) as { count: number };
+    if (mine >= SONG_REQUESTS_PER_LISTENER) {
+      return `신청곡은 한 사람당 ${SONG_REQUESTS_PER_LISTENER}곡까지 신청할 수 있어요.`;
+    }
+  }
   database.prepare(`
-    INSERT INTO song_requests (session_key, requester_nickname, title, artist, created_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO song_requests (session_key, requester_nickname, requester_user_id, title, artist, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     workspaceKey,
     requesterNickname?.trim().slice(0, 50) || "청취자",
+    requesterUserId,
     command.title,
     command.artist,
     Date.now(),
   );
-  const { count } = database.prepare("SELECT COUNT(*) AS count FROM song_requests WHERE session_key = ?")
-    .get(workspaceKey) as { count: number };
+  const count = queued + 1;
   return `신청곡 ${count}번 ${command.title} - ${command.artist} 접수 완료!`;
 }

@@ -452,6 +452,26 @@ export function sessionBelongsToOtherDj(sessionKey: string, djUserId: string) {
   return owner !== null && owner !== djUserId;
 }
 
+// At login the browser always gets a fresh session id, so an id known before
+// the login (or kept after a sign-out) never becomes valid. The session it
+// replaces: data saved there before the DJ was identified joins the DJ's
+// workspace (as when the session itself was reused), and a leftover session of
+// the same DJ is signed out unless it is running the bot. Another DJ's session
+// (a shared browser) is left alone so that DJ's bot keeps running.
+export function retirePreviousSession(previousSessionKey: string, djUserId: string) {
+  const database = getDatabase();
+  const row = database.prepare("SELECT bot_enabled FROM oauth_sessions WHERE id_hash = ?")
+    .get(previousSessionKey) as { bot_enabled: number } | undefined;
+  if (!row) return;
+  const owner = getWorkspaceOwner(getWorkspaceKey(previousSessionKey));
+  if (owner === null) linkDjWorkspaceByKey(previousSessionKey, djUserId, null);
+  else if (owner !== djUserId) return;
+  if (row.bot_enabled === 0) {
+    database.prepare("UPDATE oauth_sessions SET auth_valid = 0, updated_at = ? WHERE id_hash = ?")
+      .run(Date.now(), previousSessionKey);
+  }
+}
+
 export function exportWorkspaceData(sessionId: string, includeAudience: boolean): WorkspaceBackupData {
   const sessionKey = getSessionKey(sessionId);
   const workspaceKey = getWorkspaceKey(sessionKey);
