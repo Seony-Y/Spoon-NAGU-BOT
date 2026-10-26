@@ -15,7 +15,7 @@ const LISTENER_COMMANDS: CommandRow[] = [
   ["!안녕", "인사 (DJ가 만든 명령어도 같은 방식)"],
   ["!실드", "카운터 값 보기 (카운터 이름마다, 예: !펀딩)"],
   ["!신청곡 밤편지-아이유", "신청곡 신청 (곡명-가수)"],
-  ["!신청곡 목록", "신청곡 대기 목록 보기"],
+  ["!신청곡 목록", "신청곡 대기 목록 보기 (길면 앞부분과 남은 곡 수)"],
   ["!출석", "출석 확인과 연속·누적 횟수"],
   ["!출석왕", "이번 달 출석 TOP 5"],
   ["!가위바위보 가위", "가위바위보 참여 (가위·바위·보)"],
@@ -89,7 +89,7 @@ export default function GuidePage() {
       eyebrow="GETTING STARTED"
       title="사용 방법"
       summary="Spoon DJ 연결부터 방송 운영과 게임까지, 필요한 부분을 메뉴에서 골라 보세요."
-      updatedAt="2026년 10월 23일"
+      updatedAt="2026년 10월 26일"
     >
       <ol className="guide-quickstart" aria-label="빠른 시작">
         <li><strong>입장코드 입력</strong><span>운영자 나구링(@gu._.ling)에게 받은 코드를 홈에 입력합니다.</span></li>
@@ -130,6 +130,7 @@ export default function GuidePage() {
           <Section id="commands" number="02" title="명령어" summary="청취자 명령어와 DJ 전용 명령어 한눈에 보기">
             <CommandTable caption="청취자 (누구나)" rows={LISTENER_COMMANDS} />
             <CommandTable caption="DJ 전용 (DJ 계정으로 방송 채팅에 입력)" rows={DJ_COMMANDS} />
+            <p className="guide-note">같은 청취자가 같은 명령어를 <strong>2초 안에</strong> 다시 입력하면 봇은 처음 한 번만 답합니다. 봇 메시지가 채팅을 덮거나 DJ 계정의 하루 채팅 한도를 다 쓰지 않도록 막는 장치입니다. 게임 참여(<code>!정답</code>·<code>!참여</code>·<code>!가위바위보</code>·<code>!팀</code>)와 DJ 명령어는 제한 없이 동작합니다.</p>
             <p className="guide-note">DJ 명령어는 봇이 방송에 있을 때 동작하고, 대시보드 버튼과 똑같은 일을 합니다. 대시보드 채팅창에 입력해도 됩니다. 채팅은 청취자에게도 보이므로 퀴즈 정답과 비밀 단어는 방송 전에 대시보드에 등록해 두세요.</p>
           </Section>
 
@@ -179,6 +180,11 @@ export default function GuidePage() {
             <div className="guide-topic">
               <h3>신청곡</h3>
               <p>청취자가 <code>!신청곡 곡명-가수</code>로 신청하면 목록에 쌓입니다. DJ는 화면이나 <code>!신청곡 삭제 번호</code>로 지웁니다. 번호는 지금 목록 순서라서 앞 번호를 지우면 뒤 번호가 당겨집니다.</p>
+              <ul>
+                <li>청취자 한 명은 <strong>5곡</strong>까지 대기시킬 수 있습니다. 신청곡이 지워지면 그만큼 다시 신청할 수 있습니다(DJ는 제한 없음).</li>
+                <li>목록은 <strong>최대 100곡</strong>입니다. 가득 차면 DJ가 정리할 때까지 새 신청을 받지 않습니다.</li>
+                <li><code>!신청곡 목록</code>은 채팅 3개 분량까지만 보여 주고, 나머지는 <strong>…외 N곡</strong>으로 알립니다. 전체 목록은 봇 운영 &gt; 신청곡 화면에서 봅니다.</li>
+              </ul>
             </div>
           </Section>
 
@@ -232,7 +238,7 @@ export default function GuidePage() {
           <Section id="data" number="06" title="데이터와 연결 해제" summary="자동 저장, 백업, 초기화, 계정 전환">
             <div className="guide-topic">
               <h3>자동 저장</h3>
-              <p>설정과 기록은 서버에 자동으로 저장됩니다. 새로고침, 방송 종료, 서버 재시작, 연결 해제 후 다시 로그인해도 그대로 이어집니다.</p>
+              <p>설정과 기록은 PC가 아니라 서버에 DJ 계정별로 자동 저장됩니다. 새로고침, 방송 종료, 컴퓨터를 꺼도, 다른 컴퓨터에서 로그인하거나 연결 해제 후 다시 로그인해도 그대로 이어집니다. 봇도 서버에서 돌아가므로 대시보드를 닫거나 PC를 꺼도 방송에 남아 있습니다.</p>
             </div>
             <div className="guide-topic">
               <h3>백업과 복원</h3>

@@ -113,10 +113,12 @@ Listener commands:
 - `!안녕` — greeting
 - `!실드` (and every named counter) — show the value ("실드 8개"); `!실드 +2` / `!실드 -1` change it (DJ only, never below 0). A counter with a goal is a funding counter ("펀딩 [1,200 / 5,000 스푼]", goal stored in `counter_goals`); with 후원 자동 반영 each new donation in a live broadcast (recovered ones included) adds its spoons, and the change that crosses the goal — a donation, or a DJ adjustment in chat or on the remote — is announced (a counter already past it, or capped at 1,000,000, does not repeat it)
 - `!` commands typed in the dashboard chat box run as DJ chat while the bot is live (Spoon never echoes API-sent messages)
-- `!신청곡 곡명-가수`, `!신청곡 목록`; `!신청곡 삭제 번호` (DJ only). Numbers are positions in the DJ's current list (1, 2, 3 …), not database ids
+- `!신청곡 곡명-가수`, `!신청곡 목록`; `!신청곡 삭제 번호` (DJ only). Numbers are positions in the DJ's current list (1, 2, 3 …), not database ids. At most 5 waiting requests per listener (`requester_user_id`; the DJ is exempt) and 100 in total; the chat list stops at 3 messages and ends with "…외 N곡"
 - `!가위바위보 가위·바위·보`, `!참여` (raffle), `!정답 (답)` (quiz), `!팀 (번호|이름)` (team battle, once per battle)
 - `!출석` — "출석 완료!" the first time in a broadcast, "이미 출석했어요." after that, both with streak and total (the DJ is told the DJ is not counted); `!출석왕` — this month's top 5
 - `!내 킵`; `!킵 삭제 닉네임 / 경품 이름 / 수량` (DJ only)
+
+A listener repeating the same command word within 2 seconds gets no second reply (`command-cooldown.ts`; game entries `!정답` `!참여` `!가위바위보` `!팀` and the DJ are exempt), and at most 30 bot messages wait per DJ, so a listener cannot spend the DJ's daily chat limit.
 
 Successful game entries are acknowledged in one message per game every few seconds ("[추첨] 응모 완료! (A, B, …)", split over several messages when long), and pending acknowledgements are sent before that game's results. Error replies stay immediate.
 

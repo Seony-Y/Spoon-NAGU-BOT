@@ -29,7 +29,7 @@ export function BotCard({ view }: { view: DashboardView }) {
 
       {scopes.includes("events.presence") && (
         <p className="manager-help">
-          Spoon에서 NAGU BOT을 매니저로 지정하면 1분 안에 입장 환영이 켜집니다.
+          Spoon에서 NAGU BOT을 매니저로 지정하면 1분 안에 입장 환영과 팔로우 감사가 켜집니다.
         </p>
       )}
 

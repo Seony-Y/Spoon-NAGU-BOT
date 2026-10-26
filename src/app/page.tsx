@@ -32,7 +32,7 @@ export default async function Home({ searchParams }: HomeProps) {
             <div className="hero-copy">
               <p className="eyebrow">SPOON LIVE ASSISTANT</p>
               <h1 id="page-title">방송 운영을<br />더 편리하게</h1>
-              <p className="summary">NAGU BOT이 반복 안내와 채팅 명령을 돕습니다.</p>
+              <p className="summary">입장 인사와 후원 감사, 채팅 명령어와 게임까지 NAGU BOT이 방송 운영을 돕습니다.</p>
             </div>
             <div className="hero-visual">
               <Image
@@ -100,7 +100,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <span className="notice-icon" aria-hidden="true">✓</span>
                 <div>
                   <strong>연결 해제 완료</strong>
-                  <span>Spoon 로그인 정보를 안전하게 삭제했습니다.</span>
+                  <span>Spoon 로그인 정보를 안전하게 삭제했습니다. 봇 설정과 기록은 남아 있어 다시 로그인하면 이어서 쓸 수 있습니다.</span>
                 </div>
               </div>
             )}
@@ -120,7 +120,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <>
                   {missingRequiredScopes.length > 0 && <OAuthLoginGate label="권한 다시 허용하기" />}
                   <form action="/oauth/disconnect" method="post">
-                    <ConfirmButton className="disconnect" type="submit" message="Spoon 연결을 해제할까요? 이 DJ 계정으로 로그인한 모든 기기에서 로그아웃되고, 봇도 방송에서 나갑니다.">연결 해제</ConfirmButton>
+                    <ConfirmButton className="disconnect" type="submit" message="Spoon 연결을 해제할까요? 이 DJ 계정으로 로그인한 모든 기기에서 로그아웃되고, 봇도 방송에서 나갑니다. 봇 설정과 기록은 그대로 남습니다.">연결 해제</ConfirmButton>
                   </form>
                 </>
               ) : (

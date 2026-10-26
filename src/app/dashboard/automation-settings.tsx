@@ -145,10 +145,14 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
           <li><div><strong>!가위바위보 가위·바위·보</strong><span>진행 중인 가위바위보에 한 번 참여</span></div></li>
           <li><div><strong>!참여</strong><span>진행 중인 추첨에 계정당 한 번 참여 · 모두 사용 가능</span></div></li>
           <li><div><strong>!정답 정답내용</strong><span>진행 중인 퀴즈에 답안 제출 · 다른 답안으로 다시 제출 가능</span></div></li>
-          <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 모두 사용 가능</span></div></li>
-          <li><div><strong>!신청곡 목록</strong><span>접수된 신청곡 번호·곡명·가수 조회 · 모두 사용 가능</span></div></li>
+          <li><div><strong>!팀 번호·이름</strong><span>진행 중인 팀 대항전에서 팀 고르기 · 한 번만, 변경 불가</span></div></li>
+          <li><div><strong>!신청곡 곡명-가수</strong><span>곡명과 가수로 신청 · 한 사람당 5곡까지</span></div></li>
+          <li><div><strong>!신청곡 목록</strong><span>신청곡 번호·곡명·가수 조회 · 길면 앞부분과 남은 곡 수</span></div></li>
+          <li><div><strong>!출석</strong><span>내 출석 확인과 연속·누적 횟수</span></div></li>
+          <li><div><strong>!출석왕</strong><span>이번 달 출석 TOP 5</span></div></li>
           <li><div><strong>!내 킵</strong><span>내 룰렛 당첨 항목과 수량 조회</span></div></li>
         </ul>
+        <p className="command-cooldown-note">같은 청취자가 같은 명령어를 2초 안에 다시 입력하면 봇은 처음 한 번만 답합니다. 게임 참여 명령어와 DJ는 제외입니다.</p>
         {botCounters.length > 0 && (
           <>
             <h5 className="command-group-title">카운터 명령어 · 조회는 누구나</h5>
@@ -173,7 +177,10 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
           ))}
           <li><div><strong>!신청곡 삭제 번호</strong><span>접수된 신청곡 삭제 · DJ만 사용 가능</span></div></li>
           <li><div><strong>!킵 삭제 닉네임 / 항목명 / 수량</strong><span>사용자 킵을 지정 수량만큼 삭제 · 수량 생략 시 1개</span></div></li>
+          <li><div><strong>!봇 · !봇 상태</strong><span>DJ 명령어 목록 · 진행 중인 게임과 자동 기능 상태</span></div></li>
+          <li><div><strong>!환영 · !후원 · !하트 · !팔로우 · !공지 켜기/끄기</strong><span>자동 기능 켜고 끄기</span></div></li>
         </ul>
+        <p className="command-cooldown-note">게임 진행 명령어(시작·종료 등)는 게임 탭의 각 게임 아래에 있습니다.</p>
         <h5 className="command-group-title">사용자 정의 명령어 · 누구나 사용</h5>
         {botCommands.some((item) => !["!명령어", "!안녕"].includes(item.command)) && (
           <ul>
@@ -201,12 +208,14 @@ export function AutomationSettings({ view }: { view: DashboardView }) {
           <label htmlFor="command-response">응답 메시지<input id="command-response" name="response" placeholder="추가할 응답 메시지" maxLength={200} required /></label>
           <button type="submit">추가</button>
         </form>
+        <p className="command-cooldown-note">명령어는 <code>!</code>로 시작하고 띄어쓰기 없이 20자까지, 응답은 200자까지입니다. 응답의 <code>{"{nickname}"}</code>은 입력한 청취자 닉네임으로 바뀝니다.</p>
       </div>}
 
       {automationTab === "requests" && <div className="song-request-editor">
         <div className="counter-guide">
           <h4>신청곡 관리</h4>
-          <p>청취자는 <code>!신청곡 곡명-가수</code>로 신청하고 <code>!신청곡 목록</code>으로 전체 목록을 확인할 수 있습니다. DJ는 채팅의 <code>!신청곡 삭제 번호</code> 또는 여기서 삭제할 수 있습니다.</p>
+          <p>청취자는 <code>!신청곡 곡명-가수</code>로 신청하고 <code>!신청곡 목록</code>으로 목록을 확인합니다. DJ는 채팅의 <code>!신청곡 삭제 번호</code> 또는 여기서 삭제할 수 있습니다.</p>
+          <p>청취자 한 명은 <strong>5곡</strong>까지, 목록 전체는 <strong>100곡</strong>까지 받습니다. 채팅의 <code>!신청곡 목록</code>은 3개 메시지 분량까지만 보여 주고 나머지는 <strong>…외 N곡</strong>으로 알리니, 전체 목록은 이 화면에서 확인하세요.</p>
         </div>
         {songRequests.length > 0 ? <ol className="song-request-list">
           {songRequests.map((request) => <li key={request.id}>

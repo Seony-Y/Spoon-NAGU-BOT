@@ -494,6 +494,18 @@
   color: var(--red);
 }
 
+.command-cooldown-note {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.command-form + .command-cooldown-note {
+  margin-top: 10px;
+}
+
 .command-editor ul {
   display: grid;
   margin: 12px 0;
