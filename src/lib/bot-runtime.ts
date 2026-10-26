@@ -95,6 +95,13 @@ const LISTENER_POLL_MS = 10_000;
 // Spoon sends a `:heartbeat` comment about every 15 seconds; this much silence
 // means a half-open connection that would otherwise look "connected".
 const STREAM_IDLE_MS = 45_000;
+// Waiting for the stream's response headers; the idle timer starts only after.
+const STREAM_CONNECT_TIMEOUT_MS = 15_000;
+// A stream must stay up this long before the reconnect backoff starts over.
+const STABLE_STREAM_MS = 30_000;
+const RECONNECT_JITTER_MS = 2_000;
+// Spacing between bots restored at startup, so they do not hit Spoon at once.
+const RESTORE_STAGGER_MS = 300;
 const BACKFILL_SLACK_MS = 30_000;
 const REFRESH_BACKFILL_INTERVAL_MS = 5 * 60_000;
 const MAX_DAILY_LIMIT_WAIT_MS = 60 * 60 * 1000;
@@ -658,8 +665,11 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
 
     // Set when this connection is the periodic permission refresh (no gap).
     let permissionRefresh: AbortSignal | undefined;
+    let streamOpenedAt: number | undefined;
     try {
       const live = await getCurrentLive(session.access_token);
+      // Stopped while waiting: the map may already hold a newer bot's runtime.
+      if (signal.aborted) return;
       const runtime = runtimes.get(sessionKey);
       if (!live) {
         if (runtime?.currentLiveId !== undefined) clearBroadcastState(sessionKey, runtime);
@@ -669,7 +679,6 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         await abortableDelay(OFFLINE_RETRY_MS, signal);
         continue;
       }
-      if (signal.aborted) return;
       recordBroadcastByKey(sessionKey, live.liveId);
       if (runtime && runtime.currentLiveId !== live.liveId) {
         clearBroadcastState(sessionKey, runtime);
@@ -685,6 +694,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       const streamSignal = permissionRefresh ? AbortSignal.any([signal, permissionRefresh]) : signal;
       const idleController = new AbortController();
       const connectionSignal = AbortSignal.any([streamSignal, idleController.signal]);
+      const connectTimer = setTimeout(() => idleController.abort(), STREAM_CONNECT_TIMEOUT_MS);
       const response = await fetch(`${getSpoonConfig().baseUrl}/v1/live/events`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -692,7 +702,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         },
         cache: "no-store",
         signal: connectionSignal,
-      });
+      }).finally(() => clearTimeout(connectTimer));
 
       if (response.status === 401) {
         if (retriedUnauthorized) {
@@ -724,7 +734,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
         throw new Error(`Event stream failed with ${response.status}`);
       }
 
-      retryAttempt = 0;
+      streamOpenedAt = Date.now();
       if (runtime) {
         runtime.state = "connected";
         runtime.connectedAt = new Date().toISOString();
@@ -781,7 +791,16 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
 
       if (signal.aborted) return;
       if (streamSignal.aborted) continue;
-      if (reason === "RECONNECT") continue;
+      // A stream that drops right after connecting (an overloaded or failing
+      // gateway) keeps the backoff growing; resetting it on every connect let
+      // each bot retry about once a second, all in step.
+      const stable = Date.now() - streamOpenedAt >= STABLE_STREAM_MS;
+      if (stable) retryAttempt = 0;
+      if (reason === "RECONNECT" && stable) {
+        // Spoon may ask every stream to reconnect at once; spread them out.
+        await abortableDelay(Math.random() * RECONNECT_JITTER_MS, signal);
+        continue;
+      }
       if (reason === "TOKEN_EXPIRED") {
         forceRefresh = true;
         continue;
@@ -803,6 +822,7 @@ async function runBot(sessionKey: string, signal: AbortSignal) {
       }
     } catch (error) {
       if (signal.aborted) return;
+      if (streamOpenedAt !== undefined && Date.now() - streamOpenedAt >= STABLE_STREAM_MS) retryAttempt = 0;
       const failedRuntime = runtimes.get(sessionKey);
       // The permission refresh ends the stream by timing out its read; that
       // reconnect has no gap, so it does not walk the donation list again.
@@ -901,7 +921,8 @@ function startBotByKey(sessionKey: string, { joinedNow = false } = {}) {
     if (runtime.repeatTimer) clearTimeout(runtime.repeatTimer);
     runtime.repeatTimer = undefined;
     runtime.heartBatcher.clear();
-    clearGameAcks(sessionKey);
+    // A bot restarted right after a stop already owns the session's acks.
+    if (runtimes.get(sessionKey) === runtime) clearGameAcks(sessionKey);
     runtime.task = undefined;
     runtime.controller = undefined;
     // stop/suspend/block set a specific state when aborting; keep it.
@@ -1060,16 +1081,33 @@ export function restoreEnabledBots() {
     sendAlert("restore", `서버 시작 시 봇을 복원하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
+  const failed = (sessionKey: string, error: unknown) => {
+    sendAlert(`restore:${sessionLabel(sessionKey)}`, `봇(${sessionLabel(sessionKey)})을 복원하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+  };
+  let position = 0;
   for (const { sessionKey, token } of sessions) {
     try {
       if (!hasEventScope(token.scope)) {
         setBotEnabledByKey(sessionKey, false);
         continue;
       }
-      startBotByKey(sessionKey);
     } catch (error) {
-      sendAlert(`restore:${sessionLabel(sessionKey)}`, `봇(${sessionLabel(sessionKey)})을 복원하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      failed(sessionKey, error);
+      continue;
     }
+    // Staggered so a deploy does not send every bot's token refresh and first
+    // requests to Spoon in the same second.
+    const delay = position * RESTORE_STAGGER_MS + Math.random() * RESTORE_STAGGER_MS;
+    position += 1;
+    setTimeout(() => {
+      try {
+        // Stopped or blocked while waiting its turn.
+        if (!isBotEnabledByKey(sessionKey)) return;
+        startBotByKey(sessionKey);
+      } catch (error) {
+        failed(sessionKey, error);
+      }
+    }, delay);
   }
 }
 
